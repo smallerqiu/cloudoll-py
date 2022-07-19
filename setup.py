@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 # Note: To use the 'upload' functionality of this file, you must:
-#   $ pipenv install twine --dev
-
+#   $ pipenv install twine --dev # pip install --user --upgrade twine
+# python setup.py sdist build && python setup.py bdist_wheel && python setup.py sdist upload
 import io
 import os
 import sys
@@ -18,11 +18,12 @@ URL = 'https://gitee.com/chuchur/cloudoll-py'
 EMAIL = 'chuchur@qq.com'
 AUTHOR = 'chuchur'
 REQUIRES_PYTHON = '>=3.6.0'
-VERSION = '0.0.1'
+VERSION = '0.0.3'
 
 # What packages are required for this module to be executed?
 REQUIRED = [
     # 'requests', 'maya', 'records',
+    'aiomysql'
 ]
 
 # What packages are optional?
