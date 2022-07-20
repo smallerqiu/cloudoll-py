@@ -93,7 +93,7 @@ class Ezmysql(dict):
         id = kw.get("id", None)
         if id is None:
             raise KeyError("缺少主键ID")
-        kw.__delitem__("id")
+        kw.pop("id")
         keys = ",".join(list(map(lambda f: "`%s`=?" % f, kw)))
         args = list(map(lambda f: "%s" % kw[f], kw))
         sql = "update `%s` set %s where id=?" % (table, keys)
@@ -130,13 +130,15 @@ class Ezmysql(dict):
         where = kw.get("where", "1=1")
         cols = kw.get("cols", "*")
         params = kw.get("params", [])
-
+        orderBy = kw.get("orderBy", "")
+        if orderBy != "":
+            orderBy = "order by %s" % orderBy
         sql = "select `%s` from `%s`"
 
         if cols != "*":
             cols = ",".join(list(map(lambda f: "`%s`" % f, cols)))
 
-        sql = "select %s from `%s` where %s limit 1" % (cols, table, where)
+        sql = "select %s from `%s` where %s %s limit 1" % (cols, table, where, orderBy)
         args = tuple(params)
 
         result = await self.query(sql, args)

@@ -3,7 +3,6 @@ __author__ = "chuchur/chuchur.com"
 import requests, time, logging
 from types import MethodType
 
-
 PROXIES = {
     "http": "http://127.0.0.1:7890",
     "https": "http://127.0.0.1:7890",
@@ -38,7 +37,11 @@ def _base(method, url, **kw):
             kw["proxies"] = PROXIES
         else:
             kw["proxies"] = proxies
-    trytimes = kw.get("trytimes", 2)
+    trytimes = 2
+    _trytimes = kw.get("trytimes", None)
+    if _trytimes is not None:
+        trytimes = _trytimes
+        kw.pop("trytimes")
     result = None
     while trytimes > 0:
         try:
