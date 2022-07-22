@@ -18,7 +18,7 @@ URL = 'https://gitee.com/chuchur/cloudoll-py'
 EMAIL = 'chuchur@qq.com'
 AUTHOR = 'chuchur'
 REQUIRES_PYTHON = '>=3.6.0'
-VERSION = '0.0.3'
+VERSION = '0.0.5'
 
 # What packages are required for this module to be executed?
 REQUIRED = [
@@ -130,3 +130,5 @@ setup(
         'upload': UploadCommand,
     },
 )
+
+# python setup.py sdist build && python setup.py bdist_wheel && python setup.py sdist upload

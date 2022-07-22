@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 __author__ = "chuchur"
 
 """
@@ -80,6 +83,9 @@ class Mail(object):
             raise
 
     def send(self):
+        """
+        发送邮件
+        """
         self._login()
         # msg = MIMEText(self._content, "plain", "uft-8")
         msg = self._msg
@@ -99,15 +105,28 @@ class Mail(object):
         self._server.quit()
 
     def add_to_addr(self, nick, addr):
+        """
+        添加收件人
+        :params nick 收件人昵称
+        :params addr 收件人地址
+        """
         if addr is None:
             raise KeyError("请输入邮箱地址")
         obj = {"name": nick, "addr": addr}
         self._to_addr.append(obj)
 
     def addhtml(self, htmltext):
+        """
+        添加html正文
+        :params htmltext html正文内容
+        """
         self._msg.attach(MIMEText(htmltext, "html", "utf-8"))
 
     def addfile(self, filepath):
+        """
+        添加附件
+        :params filepath 附件绝对路径
+        """
         index = self._file_index
         with open(filepath, "rb") as f:
             mime_type = mimetypes.guess_type(filepath)[0]  # image/png
@@ -138,16 +157,30 @@ class Mail(object):
 
     @property
     def subject(self):
+        """
+        邮件标题内容
+        """
         return self._subject
 
     @subject.setter
     def subject(self, value):
+        """
+        邮件标题内容
+        :params value 标题内容
+        """
         self._subject = value
 
     @property
     def content(self):
+        """
+        邮件正文内容
+        """
         return self._content
 
     @content.setter
     def content(self, value):
+        """
+        邮件正文内容
+        :params value 正文内容
+        """
         self._content = value
