@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 __author__ = "chuchur/chuchur.com"
 
 import requests, time, logging
@@ -49,9 +46,15 @@ def _base(method, url, **kw):
             fun = getattr(requests, method, None)
             result = fun(url, **kw)
             trytimes = 0
+            head = result.headers
+            ctype = head["Content-Type"]
+            if "application/json" in ctype:
+                return result.json()
+            elif "text/html" in ctype:
+                return result.text
             return result
         except BaseException as e:
-            logging.info(e)
+            # logging.info(e)
             logging.info("Network error ,try gain....")
             trytimes -= 1
             time.sleep(2)
@@ -60,86 +63,23 @@ def _base(method, url, **kw):
 
 
 def get(url, **kw):
-    """
-    get 请求
-    :params url
-    :params params 传参 dict 类型
-    :params trytimes 出错重试次数 默认2
-    :params headers 头
-    :params proxies 代理开关 boolean or object
-    :params cookies
-    """
     return _base("get", url, **kw)
 
 
 def post(url, **kw):
-    """
-    post 请求
-    :params url
-    :params trytimes 出错重试次数 默认2
-    :params headers 头
-    :params proxies 代理开关 boolean or object
-    :params cookies
-    :params data 传参
-    :params files 上传文件
-    """
     return _base("post", url, **kw)
 
 
 def put(url, **kw):
-    """
-    post 请求
-    :params url
-    :params trytimes 出错重试次数 默认2
-    :params headers 头
-    :params proxies 代理开关 boolean or object
-    :params cookies
-    """
     return _base("put", url, **kw)
 
 
 def delete(url, **kw):
-    """
-    post 请求
-    :params url
-    :params trytimes 出错重试次数 默认2
-    :params headers 头
-    :params proxies 代理开关 boolean or object
-    :params cookies
-    """
     return _base("delete", url, **kw)
 
-def head(url, **kw):
-    """
-    head 请求
-    :params url
-    :params trytimes 出错重试次数 默认2
-    :params headers 头
-    :params proxies 代理开关 boolean or object
-    :params cookies
-    """
-    return _base("head", url, **kw)
-
-def options(url, **kw):
-    """
-    options 请求
-    :params url
-    :params trytimes 出错重试次数 默认2
-    :params headers 头
-    :params proxies 代理开关 boolean or object
-    :params cookies
-    """
-    return _base("options", url, **kw)
 
 def download(url, savepath=None, **kw):
-    """
-    下载文件
-    :params url 下载文件的地址
-    :params savepath 文件保存路径
-    :params headers 头
-    :params proxies 代理开关 boolean or object
-    :params cookies
-    """
+
     rb = _base("get", url, **kw)
     if not savepath:
         return rb.content
