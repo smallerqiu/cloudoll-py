@@ -78,6 +78,14 @@ def delete(url, **kw):
     return _base("delete", url, **kw)
 
 
+def head(url, **kw):
+    return _base("head", url, **kw)
+
+
+def option(url, **kw):
+    return _base("option", url, **kw)
+
+
 def download(url, savepath=None, **kw):
 
     rb = _base("get", url, **kw)

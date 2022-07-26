@@ -3,276 +3,401 @@
 
 __author__ = "chuchur/chuchur.com"
 
-import aiomysql, logging
+import aiomysql, logging, asyncio
 
 
-def log(sql, args=()):
-    logging.info("SQL: %s " % sql)
+async def connect(loop=None, **kw):
+    config = kw.get("db")
+    global _pool, _debug
+    _debug = kw.get("debug", False) or False
+    _pool = await aiomysql.create_pool(
+        host=config.get("host", "localhost"),
+        port=config.get("port", 3306),
+        user=config["user"],
+        password=config["password"],
+        db=config["db"],
+        charset=config.get("charset", "utf8"),
+        autocommit=config.get("autocommit", True),
+        maxsize=config.get("maxsize", 10),
+        minsize=config.get("minsize", 1),
+        cursorclass=aiomysql.DictCursor,
+        loop=loop,
+    )
 
 
-class Ezmysql(dict):
-    def __init__(self, **kw):
-        # print(dict(conf))
-        self._debug = kw["debug"]
-        self._config = kw["db"]
+async def query(sql, args, autocommit=True):
+    """
+    自定义sql
+    :params sql 要执行的sql
+    :params args 防注入tuple类型
+    """
+    if not _pool:
+        raise ValueError("请定义SQL Pool")
+    if _debug is True:
+        logging.info("SQL: %s " % sql)
+    with (await _pool) as conn:
+        if not autocommit:
+            await conn.begin()
+        try:
+            cur = await conn.cursor()
+            sql = sql.replace("?", "%s")
+            await cur.execute(sql, args or ())
+            # result = cur.rowcount
 
-    async def connect(self, loop=None):
-        config = self._config
-        self._pool = await aiomysql.create_pool(
-            host=config.get("host", "localhost"),
-            port=config.get("port", 3306),
-            user=config["user"],
-            password=config["password"],
-            db=config["db"],
-            charset=config.get("charset", "utf8"),
-            autocommit=config.get("autocommit", True),
-            maxsize=config.get("maxsize", 10),
-            minsize=config.get("minsize", 1),
-            cursorclass=aiomysql.DictCursor,
-            loop=loop,
-        )
+            # result = await cur  #.fetchall()
 
-    async def query(self, sql, args, autocommit=True):
-        """
-        自定义sql
-        :params sql 要执行的sql 
-        :params args 防注入tuple类型
-        """
-        if "_pool" not in dir(self):
-            raise ValueError("请定义SQL Pool")
-        if self._debug is True:
-            log(sql)
-        with (await self._pool) as conn:
+            await cur.close()
             if not autocommit:
-                await conn.begin()
-            try:
-                cur = await conn.cursor()
-                sql = sql.replace("?", "%s")
-                await cur.execute(sql, args or ())
-                # result = cur.rowcount
+                await conn.commit()
+        except BaseException as e:
+            if not autocommit:
+                await conn.rollback()
+            raise  # ValueError('执行出错了')
+        return cur
 
-                # result = await cur  #.fetchall()
 
-                await cur.close()
-                if not autocommit:
-                    await conn.commit()
-            except BaseException as e:
-                if not autocommit:
-                    await conn.rollback()
-                raise  # ValueError('执行出错了')
-            return cur
+async def lists(table, **kw):
+    """
+    读取列表
+    :params table 表名
+    :params cols 要查询的字段 默认*所有
+    :params limit 查询的数量
+    :params offset 偏移量(page-1)*limit
+    :params where 查询条件 eg: where='name=? and age=?'
+    :params params 防注入对应where eg: ['马云',30]
+    :params orderBy 排序 eg: orderBy='id desc'
+    """
+    cols = kw.get("cols", "*")
+    offset = kw.get("offset", 0)
+    limit = kw.get("limit", 5)
+    where = kw.get("where", "1=1")
+    orderBy = kw.get("orderBy", "")
+    args = tuple(kw.get("params", []))
+    if orderBy != "":
+        orderBy = "order by %s" % orderBy
 
-    async def list(self, table, **kw):
-        """
-        读取列表
-        :params table 表名
-        :params cols 要查询的字段 默认*所有
-        :params limit 查询的数量
-        :params offset 偏移量(page-1)*limit
-        :params where 查询条件 eg: where='name=? and age=?'
-        :params params 防注入对应where eg: ['马云',30]
-        :params orderBy 排序 eg: orderBy='id desc'
-        """
-        cols = kw.get("cols", "*")
-        offset = kw.get("offset", 0)
-        limit = kw.get("limit", 5)
-        where = kw.get("where", "1=1")
-        orderBy = kw.get("orderBy", "")
-        args = tuple(kw.get("params", []))
-        if orderBy != "":
-            orderBy = "order by %s" % orderBy
+    if cols != "*":
+        cols = ",".join("`%s`" % f for f in cols)
 
-        if cols != "*":
-            cols = ",".join(list(map(lambda f: "`%s`" % f, cols)))
+    sql = "select %s from `%s` where %s %s limit %s offset %s" % (
+        cols,
+        table,
+        where,
+        orderBy,
+        limit,
+        offset,
+    )
 
-        sql = "select %s from `%s` where %s %s limit %s offset %s" % (
-            cols,
-            table,
-            where,
-            orderBy,
-            limit,
-            offset,
-        )
+    result = await query(sql, args)
+    rows = await result.fetchall()
+    return rows
 
-        result = await self.query(sql, args)
-        rows = await result.fetchall()
-        return rows
 
-    async def insert(self, table, **kw):
-        """
-        插入数据
-        :params table 表名
-        :params args key=value
-        """
-        keys = ",".join(list(map(lambda f: "`%s`=?" % f, kw)))
-        args = tuple(map(lambda f: "%s" % kw[f] or None, kw))
-        sql = "insert into `%s` set %s" % (table, keys)
-        result = await self.query(sql, args)
-        if result.rowcount > 0:
-            return {"id": result.lastrowid}
-        return {}
+async def insert(table, **kw):
+    """
+    插入数据
+    :params table 表名
+    :params args key=value
+    """
+    keys = ",".join(list(map(lambda f: "`%s`=?" % f, kw)))
+    args = tuple(map(lambda f: "%s" % kw[f] or None, kw))
+    sql = "insert into `%s` set %s" % (table, keys)
+    result = await query(sql, args)
+    if result.rowcount > 0:
+        return {"id": result.lastrowid}
+    return {}
 
-    async def update(self, table, **kw):
-        """
-        更新数据
-        :params table 表名
-        :params args key=value
-        """
-        id = kw.get("id", None)
-        if not id:
-            raise KeyError("缺少主键ID")
-        kw.pop("id")
-        keys = ",".join(list(map(lambda f: "`%s`=?" % f, kw)))
-        args = list(map(lambda f: "%s" % kw[f], kw))
-        sql = "update `%s` set %s where id=?" % (table, keys)
-        args.append(id)
-        result = await self.query(sql, tuple(args))
-        return result.rowcount > 0
 
-    async def save(self, table, **kw):
-        """
-        保存数据
-        :params table 表名
-        :params args key=value，没有id就是更新
-        """
-        id = kw.get("id", None)
-        if not id:
-            return await self.insert(table, **kw)
-        return await self.update(table, **kw)
+async def update(table, **kw):
+    """
+    更新数据
+    :params table 表名
+    :params args key=value
+    """
+    id = kw.get("id", None)
+    if not id:
+        raise KeyError("缺少主键ID")
+    kw.pop("id")
+    keys = ",".join(list(map(lambda f: "`%s`=?" % f, kw)))
+    args = list(map(lambda f: "%s" % kw[f], kw))
+    sql = "update `%s` set %s where id=?" % (table, keys)
+    args.append(id)
+    result = await query(sql, tuple(args))
+    return result.rowcount > 0
 
-    async def update_batch(self, table, **kw):
-        """
-        批量更新
-        :params table 表名
-        :params where 更新条件
-        :params params 防注入
-        :params args key=value
-        """
-        id = kw.get("id", None)
-        if id:
-            raise KeyError("id 不能被修改。")
-        where = kw.get("where", None)
-        params = kw.get("params", None)
-        kw.pop('where')
-        kw.pop('params')
-        if not where or not params:
-            raise KeyError(r"批量修改必须传值 { where: 'a=?', params:[2] }。")
 
-        keys = ",".join(list(map(lambda f: "`%s`=?" % f, kw)))
-        args = list(map(lambda f: "%s" % kw[f], kw))
-        sql = "update `%s` set %s where %s" % (table, keys, where)
+async def save(table, **kw):
+    """
+    保存数据
+    :params table 表名
+    :params args key=value，没有id就是更新
+    """
+    id = kw.get("id", None)
+    if not id:
+        return await insert(table, **kw)
+    return await update(table, **kw)
+
+
+async def update_batch(table, **kw):
+    """
+    批量更新
+    :params table 表名
+    :params where 更新条件
+    :params params 防注入
+    :params args key=value
+    """
+    id = kw.get("id", None)
+    if id:
+        raise KeyError("id 不能被修改。")
+    where = kw.get("where", None)
+    params = kw.get("params", None)
+    kw.pop("where")
+    kw.pop("params")
+    if not where or not params:
+        raise KeyError(r"批量修改必须传值 { where: 'a=?', params:[2] }。")
+
+    keys = ",".join(map(lambda f: "`%s`=?" % f, kw))
+    args = list(map(lambda f: "%s" % kw[f], kw))
+    sql = "update `%s` set %s where %s" % (table, keys, where)
+    if params:
         args += params
-        result = await self.query(sql, tuple(args))
-        return result.rowcount > 0
+    result = await query(sql, tuple(args))
+    return result.rowcount > 0
 
-    async def load(self, table, **kw):
-        """
-        只取一条数据
-        :params table 表名
-        :params cols 要查询的字段 默认*所有
-        :params where 查询条件 eg: where='name=? and age=?'
-        :params params 防注入对应where eg: ['马云',30]
-        :params orderBy 排序 eg: orderBy='id desc'
-        """
-        where = kw.get("where", "1=1")
-        cols = kw.get("cols", "*")
-        params = kw.get("params", [])
-        orderBy = kw.get("orderBy", "")
-        if orderBy != "":
-            orderBy = "order by %s" % orderBy
-        sql = "select `%s` from `%s`"
 
-        if cols != "*":
-            cols = ",".join(list(map(lambda f: "`%s`" % f, cols)))
+async def load(table, **kw):
+    """
+    只取一条数据
+    :params table 表名
+    :params cols 要查询的字段 默认*所有
+    :params where 查询条件 eg: where='name=? and age=?'
+    :params params 防注入对应where eg: ['马云',30]
+    :params orderBy 排序 eg: orderBy='id desc'
+    """
+    where = kw.get("where", "1=1")
+    cols = kw.get("cols", "*")
+    params = kw.get("params", [])
+    orderBy = kw.get("orderBy", "")
+    if orderBy != "":
+        orderBy = "order by %s" % orderBy
+    sql = "select `%s` from `%s`"
 
-        sql = "select %s from `%s` where %s %s limit 1" % (cols, table, where, orderBy)
-        args = tuple(params)
+    if cols != "*":
+        cols = ",".join(list(map(lambda f: "`%s`" % f, cols)))
 
-        result = await self.query(sql, args)
-        rows = await result.fetchall()
+    sql = "select %s from `%s` where %s %s limit 1" % (cols, table, where, orderBy)
+    args = tuple(params)
 
-        if result.rowcount > 0:
-            return rows[0]
-        return None
+    result = await query(sql, args)
+    rows = await result.fetchall()
 
-    async def load_by_kv(self, table, key, value):
-        """
-        通过字段和值查询数据
-        :params table 表名
-        :params key 要查询的字段
-        :params value 字段对应的值
-        """
-        if not key:
-            raise KeyError("缺少key")
-        if not value:
-            raise KeyError("缺少value")
+    if result.rowcount > 0:
+        return rows[0]
+    return None
 
-        return await self.load(table, where="%s=?" % key, params=[value])
 
-    async def load_by_id(self, table, id):
-        """
-        通过id查询数据
-        :params table 表名
-        :params id 要查询的id
-        """
-        return await self.load(table, where="`id`=?", params=[id])
+async def load_by_kv(table, key, value):
+    """
+    通过字段和值查询数据
+    :params table 表名
+    :params key 要查询的字段
+    :params value 字段对应的值
+    """
+    if not key:
+        raise KeyError("缺少key")
+    if not value:
+        raise KeyError("缺少value")
 
-    async def delete(self, table, **kw):
-        """
-        删除数据
-        :params table 表名
-        :params where 条件
-        :params params 防注入
-        """
-        where = kw.get("where", "1=2")
-        sql = "delete from `%s` where %s" % (table, where)
-        args = tuple(kw.get("params", []))
-        return await self.query(sql, args)
+    return await load(table, where="%s=?" % key, params=[value])
 
-    async def count(self, table, **kw):
-        """
-        统计数据条数
-        :params table 表名
-        :params where 条件
-        :params params 防注入
-        """
-        where = kw.get("where", "1=1")
-        sql = "select count(*) as total from `%s` where %s" % (table, where)
-        args = tuple(kw.get("params", []))
-        result = await self.query(sql, args)
-        rows = await result.fetchall()
-        if result.rowcount > 0:
-            return rows[0]["total"]
-        else:
-            return 0
 
-    async def sum(self, table, **kw):
-        """
-        累计数据
-        :params table 表名
-        :params col 统计字段
-        :params where 条件
-        :params params 防注入
-        """
-        where = kw.get("where", "1=1")
-        col = kw.get("col", None)
-        if not col:
-            raise KeyError("缺少col")
-        sql = "select sum(`%s`) as total from `%s` where %s" % (col, table, where)
-        args = tuple(kw.get("params", []))
-        result = await self.query(sql, args)
-        rows = await result.fetchall()
-        if result.rowcount > 0:
-            return rows[0]["total"]
-        else:
-            return 0
+async def load_by_id(table, id):
+    """
+    通过id查询数据
+    :params table 表名
+    :params id 要查询的id
+    """
+    return await load(table, where="`id`=?", params=[id])
 
-    async def exists(self, table, **kw):
-        """
-        是判断数据是否存在
-        :params table 表名
-        :params where 条件
-        :params params 防注入
-        """
-        count = await self.count(table, **kw)
-        return count > 0
+
+async def delete(table, **kw):
+    """
+    删除数据
+    :params table 表名
+    :params where 条件
+    :params params 防注入
+    """
+    where = kw.get("where", "1=2")
+    sql = "delete from `%s` where %s" % (table, where)
+    args = tuple(kw.get("params", []))
+    return await query(sql, args)
+
+
+async def count(table, **kw):
+    """
+    统计数据条数
+    :params table 表名
+    :params where 条件
+    :params params 防注入
+    """
+    where = kw.get("where", "1=1")
+    sql = "select count(*) as total from `%s` where %s" % (table, where)
+    args = tuple(kw.get("params", []))
+    result = await query(sql, args)
+    rows = await result.fetchall()
+    if result.rowcount > 0:
+        return rows[0]["total"]
+    else:
+        return 0
+
+
+async def sum(table, **kw):
+    """
+    累计数据
+    :params table 表名
+    :params col 统计字段
+    :params where 条件
+    :params params 防注入
+    """
+    where = kw.get("where", "1=1")
+    col = kw.get("col", None)
+    if not col:
+        raise KeyError("缺少col")
+    sql = "select sum(`%s`) as total from `%s` where %s" % (col, table, where)
+    args = tuple(kw.get("params", []))
+    result = await query(sql, args)
+    rows = await result.fetchall()
+    if result.rowcount > 0:
+        return rows[0]["total"]
+    else:
+        return 0
+
+
+async def exists(table, **kw):
+    """
+    是判断数据是否存在
+    :params table 表名
+    :params where 条件
+    :params params 防注入
+    """
+    count = await count(table, **kw)
+    return count > 0
+
+
+class Field(object):
+    def __init__(self, name, column_type, primary_key, default):
+        self.name = name
+        self.column_type = column_type
+        self.primary_key = primary_key
+        self.default = default
+
+    def __str__(self):
+        return "<%s:%s>" % (self.__class__.__name__, self.column_type, self.name)
+
+
+class StringField(Field):
+    def __init__(self, name=None, primary_key=False, default=None, ddl="varchar(100)"):
+        super().__init__(name, ddl, primary_key, default)
+
+
+class BooleanField(Field):
+    def __init__(self, name=None, default=False):
+        super().__init__(name, "boolean", False, default)
+
+
+class IntegerField(Field):
+    def __init__(self, name=None, primary_key=False, default=0):
+        super().__init__(name, "bigint", primary_key, default)
+
+
+class FloatField(Field):
+    def __init__(self, name=None, primary_key=False, default=0.0):
+        super().__init__(name, "real", primary_key, default)
+
+
+class TextField(Field):
+    def __init__(self, name=None, default=None):
+        super().__init__(name, "text", False, default)
+
+
+class LongTextField(Field):
+    def __init__(self, name=None, default=None):
+        super().__init__(name, "longtext", False, default)
+
+
+class DatetimeField(Field):
+    def __init__(self, name=None, default=None):
+        super().__init__(name, "datetime", False, default)
+
+
+class JsonField(Field):
+    def __init__(self, name=None, default=None):
+        super().__init__(name, "json", False, default)
+
+
+class ModelMetaclass(type):
+    def __new__(cls, name, bases, attrs):
+        if name == "Model":
+            return type.__new__(cls, name, bases, attrs)
+        logging.info("Found model:%s" % name)
+        # 表名
+        table_name = attrs.get("__table__", None) or name
+        primary_key = None
+        mappings = dict()
+        fields = []
+        for k, v in attrs.items():
+            if isinstance(v, Field):
+                logging.info("Found mapping:%s, %s" % (k, v))
+                mappings[k] = v
+                if v.primary_key:
+                    if primary_key:
+                        raise RuntimeError("主键重复")
+                    primary_key = k
+
+                else:
+                    fields.append(k)
+
+        if not primary_key:
+            raise RuntimeError("表缺少主键")
+
+        for k in mappings.keys():
+            attrs.pop(k)
+
+        escaped_fields = list(map(lambda f: "`%s`" % f, fields))
+        attrs["__mappings__"] = mappings
+        attrs["__table__"] = table_name
+        attrs["__primary_key__"] = primary_key
+        attrs["__fields__"] = escaped_fields
+
+        return type.__new__(cls, name, bases, attrs)
+
+
+class Model(dict, metaclass=ModelMetaclass):
+    def __init__(self, **kw):
+        super(Model, self).__init__(**kw)
+
+    def __getattr__(self, key):
+        try:
+            return self[key]
+        except KeyError:
+            # raise AttributeError(r"'Model' object has no attribute '%s'" % key)
+            return None
+
+    def __setattr__(self, name, value):
+        self[key] = value
+
+    def getValue(self, key):
+        return getattr(self, key, None)
+
+    @asyncio.coroutine
+    def save(self):
+        fields = []
+        params = []
+        args = []
+        for k, v in self.__mappings__.items():
+            fields.append(v.name)
+            # params.append("?")
+            logging.info(v.name)
+            args.append(getattr(self, k, None))
+        # logging.info(fields)
+        logging.info("msg")
