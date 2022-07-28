@@ -117,10 +117,11 @@ class HandleLog:
         :param file_handler: 日志记录器
         """
         formatter = logging.Formatter(
-            FORMATS["log_format"], datefmt="%Y-%m-%d %H:%M:%S"
+            FORMATS["log_format"],
+            datefmt="%Y-%m-%d %H:%M:%S"
             # FORMATS["log_format"], datefmt="%a, %d %b %Y %H:%M:%S"
         )
-        
+
         file_handler.setFormatter(formatter)
 
     @staticmethod
@@ -182,7 +183,7 @@ class HandleLog:
 _handler = HandleLog()
 
 
-def getLogger(name):
+def getLogger(name=None):
     # print(os.fspath(name),os.path.abspath(name))
     return _handler.getLogger(name)
 

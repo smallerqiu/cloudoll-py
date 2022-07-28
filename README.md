@@ -6,6 +6,8 @@
 快速配置发送邮件
 
 ```python
+# test_mail.py
+
 from cloudoll.mail import smtp
 
 MAIL = {
@@ -17,29 +19,43 @@ MAIL = {
     "debug_level": 1,
 }
 
-m = smtp.Mail(**MAIL)
+client = smtp.Client(**MAIL)
 # 标题
-m.subject = "test title"
+client.subject = "test title"
 # 正文
-m.content = "long long ago..."
-
-# 嵌入html 和 html 调用附件
-m.addfile("/home/chuchur/img/a.jpg") # cid 0
-m.addfile("/home/chuchur/img/b.jpg") # cid 1
-m.addhtml("<html><body><h1>Hello</h1>" + '<p><img src="cid:0"><img src="cid:1"></p>' + "</body></html>")
-
-# 多个收件人
-m.add_to_addr("李彦宏", "liyanhong@baidu.com")
-m.add_to_addr("马云", "jackma@alibaba.com")
-
-# 附件
-m.addfile(filepathA)
-m.addfile(filepathB)
+client.content = "long long ago..."
+#收件人
+client.add_to_addr("chuchur", "chuchur@qq.com")
 
 # 发送
-m.send()
+client.send()
+```
+### 多个收件人
+
+```python
+client.add_to_addr("李彦宏", "liyanhong@baidu.com")
+client.add_to_addr("马云", "jackma@alibaba.com")
+```
+
+### 附件
+
+```python
+filepathA = '/home/chuchur/img/a.jpg'
+filepathB = '/home/chuchur/img/b.jpg'
+
+client.addfile(filepathA)
+client.addfile(filepathB)
 
 ```
+### 嵌入html 和 html 调用附件
+
+```python
+client.addfile("/home/chuchur/img/a.jpg") # cid 0
+client.addfile("/home/chuchur/img/b.jpg") # cid 1
+client.addhtml("<html><body><h1>Hello</h1>" + '<p><img src="cid:0"><img src="cid:1"></p>' + "</body></html>")
+```
+
+
 
 ## Orm
 
@@ -47,7 +63,7 @@ m.send()
 模型映射更新中...
 
 ```python
-from cloudoll.robot import dingtalk
+from cloudoll.orm import mysql
 
 MYSQL = {
     "debug": False,
@@ -103,7 +119,7 @@ print(result)
 
 # 批量修改
 
-result = mysql.update_batch(table_name,where="name=?" ,params=['mayun'] ,name="马云")
+result = mysql.update_batch(table_name,where="name=? and sex=1" ,params=['mayun'] ,name="马云")
 print(result)
 
 ```
@@ -207,7 +223,10 @@ data = http.get(url,headers=headers ,cookies=cookies ,proxies=proxies)
 
 from cloudoll import logging
 
-logging.getLogger(None)
+logging.getLogger()
+# or
+# logging.getLogger(__file__)
+
 
 logging.debug('I am debug...')
 logging.info('I am info...')

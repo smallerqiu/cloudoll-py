@@ -53,7 +53,7 @@ def _format_addr(s):
     return formataddr((Header(name, "utf-8").encode(), addr))
 
 
-class Mail(object):
+class Client(object):
     def __init__(self, **config):
 
         smtp_server = config.get("smtp_server")
