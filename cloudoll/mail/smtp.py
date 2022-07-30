@@ -37,7 +37,7 @@ m.send()
 
 """
 
-import smtplib, os, logging
+import smtplib, os
 from email import encoders
 from email.header import Header
 from email.mime.text import MIMEText
@@ -46,6 +46,9 @@ from email.mime.multipart import MIMEMultipart
 
 from email.utils import parseaddr, formataddr
 import mimetypes
+from cloudoll import logging
+
+logging.getLogger()
 
 
 def _format_addr(s):
@@ -62,8 +65,8 @@ class Client(object):
         self._account = config.get("account", "")
         self._account_name = config.get("account_name", "")
         self._password = config.get("password", "")
-        self._server = smtplib.SMTP(smtp_server, port)
-        self._server.starttls()  # 调用starttls()方法加密
+        self._server = smtplib.SMTP_SSL(smtp_server, port)
+        # self._server.starttls()  # 调用starttls()方法加密
         self._server.set_debuglevel(debug_level)  # 打印出和SMTP服务器交互的所有信息
         self._msg = MIMEMultipart()
         self._to_addr = []
@@ -76,7 +79,7 @@ class Client(object):
             password = self._password
             if account is None or password is None:
                 raise KeyError("请设置账号密码")
-            logging.info("loging...")
+            logging.info("登录中...")
             self._server.login(account, password)
         except BaseException as e:
             logging.error(e)
@@ -86,23 +89,26 @@ class Client(object):
         """
         发送邮件
         """
-        self._login()
-        # msg = MIMEText(self._content, "plain", "uft-8")
-        msg = self._msg
-        msg["From"] = _format_addr("%s <%s>" % (self._account_name, self._account))
-        to = []
-        for t in self._to_addr:
-            to.append("%s <%s>" % (t["name"], t["addr"]))
-        msg["To"] = _format_addr(",".join(to))
+        try:
+            self._login()
+            # msg = MIMEText(self._content, "plain", "uft-8")
+            msg = self._msg
+            msg["From"] = _format_addr("%s <%s>" % (self._account_name, self._account))
+            to = []
+            for t in self._to_addr:
+                to.append("%s <%s>" % (t["name"], t["addr"]))
+            msg["To"] = _format_addr(",".join(to))
 
-        # 邮件标题
-        msg["Subject"] = Header(self._subject, "utf-8").encode()
+            # 邮件标题
+            msg["Subject"] = Header(self._subject, "utf-8").encode()
 
-        # 邮件正文
-        msg.attach(MIMEText(self._content, self._mime_type, "utf-8"))
-        to_addr = list(map(lambda x: x["addr"], self._to_addr))
-        self._server.sendmail(self._account, to_addr, msg.as_string())
-        self._server.quit()
+            # 邮件正文
+            msg.attach(MIMEText(self._content, self._mime_type, "utf-8"))
+            to_addr = list(map(lambda x: x["addr"], self._to_addr))
+            self._server.sendmail(self._account, to_addr, msg.as_string())
+            self._server.quit()
+        except BaseException as er:
+            logging.error(er)
 
     def add_to_addr(self, nick, addr):
         """
