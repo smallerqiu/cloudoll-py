@@ -1,8 +1,10 @@
 __author__ = "chuchur/chuchur.com"
 
-import requests, time, logging
+import requests, time
 from types import MethodType
+from cloudoll import logging
 
+logging.getLogger()
 PROXIES = {
     "http": "http://127.0.0.1:7890",
     "https": "http://127.0.0.1:7890",
@@ -24,78 +26,89 @@ HEADERS = {
 }
 
 
-def _base(method, url, **kw):
-    headers = kw.get("headers", None)
-    if headers is None:
-        headers = HEADERS
-    else:
-        headers = {**headers, **HEADERS}
-    kw["headers"] = headers
-    proxies = kw.get("proxies", False)
-    if proxies:
-        if proxies is True:
-            kw["proxies"] = PROXIES
+class Client(object):
+    def __init__(self):
+        self.session = requests.Session()
+
+    def requests(self, method, url, **kw):
+        headers = kw.get("headers", None)
+        if headers is None:
+            headers = HEADERS
         else:
-            kw["proxies"] = proxies
-    trytimes = kw.get("trytimes", 2)
-    if trytimes != 2:
-        kw.pop("trytimes")
-    result = None
-    while trytimes > 0:
-        try:
-            fun = getattr(requests, method, None)
-            result = fun(url, **kw)
-            trytimes = 0
-            head = result.headers
-            ctype = head["Content-Type"]
-            if "application/json" in ctype:
-                return result.json()
-            elif "text/html" in ctype:
-                return result.text
-            return result
-        except BaseException as e:
-            # logging.info(e)
-            logging.info("Network error ,try gain....")
-            trytimes -= 1
-            time.sleep(2)
-            # logging.info(e)
-    return result
+            headers = {**headers, **HEADERS}
+        kw["headers"] = headers
+        proxies = kw.get("proxies", False)
+        if proxies:
+            if proxies is True:
+                kw["proxies"] = PROXIES
+            else:
+                kw["proxies"] = proxies
+        trytimes = kw.get("trytimes", 2)
+        if trytimes != 2:
+            kw.pop("trytimes")
+        result = None
+        while trytimes > 0:
+            try:
+                fun = getattr(self.session, method, None)
+                result = fun(url, **kw)
+                trytimes = 0
+                head = result.headers
+                ctype = head["Content-Type"]
+                if "application/json" in ctype:
+                    return result.json()
+                elif "text/html" in ctype:
+                    return result.text
+                return result
+            except BaseException as e:
+                # logging.info(e)
+                logging.error("Network error ,try gain....")
+                trytimes -= 1
+                time.sleep(2)
+                # logging.info(e)
+        return result
+
+
+http = Client()
 
 
 def get(url, **kw):
-    return _base("get", url, **kw)
+    return http.requests("get", url, **kw)
 
 
 def post(url, **kw):
-    return _base("post", url, **kw)
+    return http.requests("post", url, **kw)
 
 
 def put(url, **kw):
-    return _base("put", url, **kw)
+    return http.requests("put", url, **kw)
 
 
 def delete(url, **kw):
-    return _base("delete", url, **kw)
+    return http.requests("delete", url, **kw)
 
 
 def head(url, **kw):
-    return _base("head", url, **kw)
+    return http.requests("head", url, **kw)
 
 
 def option(url, **kw):
-    return _base("option", url, **kw)
+    return http.requests("option", url, **kw)
 
 
 def download(url, savepath=None, **kw):
 
-    rb = _base("get", url, **kw)
+    rb = http.requests("get", url, **kw)
     if not savepath:
         return rb.content
     if not rb:
         logging.error("下载出错")
         return False
     else:
-        with open(savepath, "wb") as f:
-            f.write(rb.content)
-            logging.info("下载完成！")
+        try:
+            with open(savepath, "wb") as f:
+                f.write(rb.content)
+                logging.info("下载完成！")
+        except BaseException as e:
+            logging.error("e")
+            return False
     return True

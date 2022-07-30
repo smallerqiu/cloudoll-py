@@ -3,7 +3,7 @@
 
 __author__ = "chuchur/chuchur.com"
 
-import aiomysql, asyncio, re
+import aiomysql, asyncio, re, enum
 import cloudoll.logging as logging
 
 
@@ -102,14 +102,23 @@ async def findAll(table, **kw):
     return await query(sql, args)
 
 
+def get_key_args(**kw):
+    keys = []
+    args = []
+    for k, v in kw.items():
+        if v:
+            keys.append("`%s`=?" % k)
+            args.append(v)
+    return ",".join(keys), args
+
+
 async def insert(table, **kw):
     """
     插入数据
     :params table 表名
     :params args key=value
     """
-    keys = ",".join(list(map(lambda f: "`%s`=?" % f, kw)))
-    args = tuple(map(lambda f: "%s" % kw[f] or None, kw))
+    keys, args = get_key_args(**kw)
     sql = "insert into `%s` set %s" % (table, keys)
     return await query(sql, args, exec_type="insert")
 
@@ -125,11 +134,10 @@ async def update(table, pk="id", **kw):
         raise KeyError("缺少主键,默认主键为id")
     pkv = kw.get(pk)
     kw.pop(pk)
-    keys = ",".join(list(map(lambda f: "`%s`=?" % f, kw)))
-    args = list(map(lambda f: "%s" % kw[f], kw))
+    keys, args = get_key_args(**kw)
     sql = "update `%s` set %s where %s=?" % (table, keys, pk)
     args.append(pkv)
-    return await query(sql, tuple(args), exec_type="update")
+    return await query(sql, args, exec_type="update")
 
 
 async def save(table, pk="id", **kw):
@@ -155,14 +163,15 @@ async def updateAll(table, **kw):
     if id:
         raise KeyError("id 不能被修改。")
     where = kw.get("where", None)
+    if not where:
+        where = "1=2"
     params = kw.get("params", None)
     kw.pop("where")
     kw.pop("params")
     if not where or not params:
-        raise KeyError(r"批量修改必须传值 { where: 'a=?', params:[2] }。")
+        raise KeyError("批量修改必须传值 { where: 'a=?', params:[2] }。")
 
-    keys = ",".join(map(lambda f: "`%s`=?" % f, kw))
-    args = list(map(lambda f: "%s" % kw[f], kw))
+    keys, args = get_key_args(**kw)
     sql = "update `%s` set %s where %s" % (table, keys, where)
     if params:
         args += params
@@ -237,6 +246,8 @@ async def count(table, **kw):
     :params params 防注入
     """
     where = kw.get("where", "1=1")
+    if not where:
+        where = "1=1"
     sql = "select count(*) as total from `%s` where %s" % (table, where)
     args = tuple(kw.get("params", []))
     rows = await query(sql, args)
@@ -255,6 +266,8 @@ async def sum(table, **kw):
     :params params 防注入
     """
     where = kw.get("where", "1=1")
+    if not where:
+        where = "1=1"
     col = kw.get("col", None)
     if not col:
         raise KeyError("缺少col")
@@ -279,36 +292,111 @@ async def exists(table, **kw):
 
 
 def get_col(field):
-    name = field["Field"]
-    column_type = ""
-    primary_key = field["Key"] == "PRI"
-    default = field["Default"]
-    max_length = ""
-    auto_increment = field["Extra"] == "auto_increment"
-    not_null = field["Null"] == "YES"
-    created_generated = "DEFAULT_GENERATED" in field["Extra"]
-    update_generated = "on update CURRENT_TIMESTAMP" == field["Extra"]
-    comment = field["Comment"]
-
+    fields = {
+        "name": field["Field"],
+        "column_type": None,
+        "primary_key": field["Key"] == "PRI",
+        "default": field["Default"],
+        "max_length": None,
+        "auto_increment": field["Extra"] == "auto_increment",
+        "not_null": field["Null"] == "NO",
+        "created_generated": "DEFAULT_GENERATED on" in field["Extra"],
+        "update_generated": "on update CURRENT_TIMESTAMP" == field["Extra"],
+        "comment": field["Comment"],
+    }
     Type = field["Type"]
 
-    if Type in ["int", "bigint", "double", "text", "longtext", "tinyint", "datetime"]:
-        column_type = Type
+    t = re.match(r"(\w+)[(](.*?)[)]", Type)
+    if not t:
+        fields["column_type"] = Type
+    else:
+        fields["column_type"] = t.groups()[0]
+        fields["max_length"] = t.groups()[1]
+    return fields
 
 
-async def findCols(table):
+class ColTypes(enum.Enum):
+    varchar = "Char"
+    tinyint = "Boolean"
+    int = "Integer"
+    bigint = "BigInteger"
+    double = "Float"
+    text = "Text"
+    longtext = "LongText"
+    mediumtext = "Mediumtext"
+    datetime = "Datetime"
+    decimal = "Decimal"
+    date = "Date"
+    json = "Json"
+    timestamp = "Timestamp"
+
+
+async def table2model(table):
+    """
+    Table转 Model
+    :params table 表名
+    """
     rows = await query("show full COLUMNS from `%s`" % table)
 
-    tb = "class %s(Model):\n" % table.capitalize()
+    tb = "\nclass %s(Model):\n\n" % table.capitalize()
+    tb += "\t__table__ = '%s'\n\n" % table
     for f in rows:
-        tb += "\t%s = models."
-    return rows
+        fields = get_col(f)
+        name = fields["name"]
+        column_type = fields["column_type"]
+        values = []
+        if fields["primary_key"]:
+            values.append("primary_key=True")
+        if fields["max_length"]:
+            values.append("max_length='%s'" % fields["max_length"])
+        if (
+            fields["default"]
+            and not fields["created_generated"]
+            and not fields["update_generated"]
+        ):
+            values.append("default='%s'" % fields["default"])
+        if fields["auto_increment"]:
+            values.append("auto_increment=True")
+        if fields["not_null"]:
+            values.append("not_null=True")
+        if fields["created_generated"]:
+            values.append("created_generated=True")
+        if fields["update_generated"]:
+            values.append("update_generated=True")
+        if fields["comment"]:
+            values.append("comment='%s'" % fields["comment"])
+        if "unsigned" in column_type:
+            column_type = column_type.replace(" unsigned", "")
+            values.append("unsigned=True")
+        tb += "\t%s = models.%sField(%s)\n" % (
+            name,
+            ColTypes[column_type].value,
+            ",".join(values),
+        )
+    tb += "\n"
+    return tb
 
 
-async def findTables():
-    curs = await query("show tables")
-    tables = [list(c.values())[0] for c in curs]
-    return tables
+async def tables2models(tables: list = None, savepath: str = None):
+    """
+    Table转Models
+    :params tables 要输出的表 ['user',...],不传取所有
+    :params savepath model存放路径 不传返回 str
+    """
+    tbs = []
+    if tables and len(tables) > 0:
+        tbs = tables
+    else:
+        result = await query("show tables")
+        tbs = [list(c.values())[0] for c in result]
+    ms = "from cloudoll.orm.mysql import models, Model\n\n"
+    for t in tbs:
+        ms += await table2model(t)
+    if savepath:
+        with open(savepath, "a", encoding="utf-8") as f:
+            f.write(ms)
+    else:
+        return ms
 
 
 class Field(object):
@@ -317,12 +405,13 @@ class Field(object):
         name,  # 列名
         column_type,  # 类型
         primary_key,  # 主键
-        default,  # 默认值
+        default=None,  # 默认值
         max_length=None,  # 长度
         auto_increment=False,  # 自增
         not_null=False,  # 非空
         created_generated=False,  # 创建时for datetime
         update_generated=False,  # 更新时for datetime
+        unsigned=False,  # 无符号，没有负数
         comment=None,  # 备注
     ):
         self.name = name
@@ -336,6 +425,7 @@ class Field(object):
         self.update_generated = update_generated
         self.not_null = not_null
         self.comment = comment
+        self.unsigned = unsigned
 
     def __str__(self):
         return "<%s, %s:%s>" % (self.__class__.__name__, self.column_type, self.name)
@@ -351,12 +441,28 @@ class Models(object):
         not_null=False,
         comment=None,
     ):
+        """
+        varchar
+        :params max_length 长度
+        :params not_null 非空
+        :params comment 备注
+        """
         return Field(
             name, "varchar", primary_key, default, max_length, not_null, comment=comment
         )
 
-    def BooleanField(self, name=None, default=False, comment=None):
-        return Field(name, "boolean", default, comment=comment)
+    def BooleanField(
+        self, name=None, default=False, max_length=None, not_null=False, comment=None
+    ):
+        return Field(
+            name,
+            "boolean",
+            None,
+            default,
+            max_length=max_length,
+            not_null=not_null,
+            comment=comment,
+        )
 
     def IntegerField(
         self,
@@ -365,6 +471,7 @@ class Models(object):
         default=0,
         auto_increment=False,
         not_null=False,
+        unsigned=False,
         comment=None,
     ):
         return Field(
@@ -374,6 +481,7 @@ class Models(object):
             default,
             auto_increment=auto_increment,
             not_null=not_null,
+            unsigned=unsigned,
             comment=comment,
         )
 
@@ -384,6 +492,7 @@ class Models(object):
         default=0,
         auto_increment=False,
         not_null=False,
+        unsigned=False,
         comment=None,
     ):
         return Field(
@@ -393,22 +502,64 @@ class Models(object):
             default,
             auto_increment=auto_increment,
             not_null=not_null,
+            unsigned=unsigned,
             comment=comment,
         )
 
     def FloatField(
-        self, name=None, primary_key=False, default=0.0, not_null=False, comment=None
+        self,
+        name=None,
+        primary_key=False,
+        default=0.0,
+        not_null=False,
+        max_length=None,
+        unsigned=False,
+        comment=None,
     ):
         return Field(
-            name, "double", primary_key, default, not_null=not_null, comment=comment
+            name,
+            "double",
+            primary_key,
+            default,
+            not_null=not_null,
+            max_length=max_length,
+            unsigned=unsigned,
+            comment=comment,
+        )
+
+    def DecimalField(
+        self,
+        name=None,
+        primary_key=False,
+        default=0.0,
+        not_null=False,
+        max_length="10,2",
+        unsigned=False,
+        comment=None,
+    ):
+        return Field(
+            name,
+            "decimal",
+            primary_key,
+            default,
+            not_null=not_null,
+            unsigned=unsigned,
+            comment=comment,
         )
 
     def TextField(
-        self, name=None, default=None, max_length=255, not_null=False, comment=None
+        self,
+        name=None,
+        primary_key=False,
+        default=None,
+        max_length=255,
+        not_null=False,
+        comment=None,
     ):
         return Field(
             name,
             "text",
+            primary_key,
             default,
             max_length=max_length,
             not_null=not_null,
@@ -416,23 +567,100 @@ class Models(object):
         )
 
     def LongTextField(
-        self, name=None, default=None, max_length=500, not_null=False, comment=None
+        self,
+        name=None,
+        primary_key=False,
+        default=None,
+        max_length=500,
+        not_null=False,
+        comment=None,
     ):
         return Field(
             name,
             "longtext",
+            primary_key,
             default,
             max_length=max_length,
             not_null=not_null,
             comment=comment,
         )
 
+    def MediumtextField(
+        self,
+        name=None,
+        primary_key=False,
+        default=None,
+        max_length=500,
+        not_null=False,
+        comment=None,
+    ):
+        return Field(
+            name,
+            "mediumtext",
+            primary_key,
+            default,
+            not_null=not_null,
+            comment=comment,
+        )
+
     def DatetimeField(
-        self, name=None, default=None, max_length=6, not_null=False, comment=None
+        self,
+        name=None,
+        default=None,
+        max_length=6,
+        not_null=False,
+        created_generated=False,
+        update_generated=False,
+        comment=None,
     ):
         return Field(
             name,
             "datetime",
+            False,
+            default,
+            max_length,
+            not_null=not_null,
+            created_generated=created_generated,
+            update_generated=update_generated,
+            comment=comment,
+        )
+
+    def DateField(
+        self,
+        name=None,
+        default=None,
+        max_length=6,
+        not_null=False,
+        created_generated=False,
+        update_generated=False,
+        comment=None,
+    ):
+        return Field(
+            name,
+            "date",
+            False,
+            default,
+            max_length,
+            not_null=not_null,
+            created_generated=created_generated,
+            update_generated=update_generated,
+            comment=comment,
+        )
+
+    def TimestampField(
+        self,
+        name=None,
+        default=None,
+        max_length=6,
+        not_null=False,
+        created_generated=False,
+        update_generated=False,
+        comment=None,
+    ):
+        return Field(
+            name,
+            "timestamp",
+            False,
             default,
             max_length,
             not_null=not_null,
@@ -442,7 +670,7 @@ class Models(object):
         )
 
     def JsonField(self, name=None, default=None, not_null=False, comment=None):
-        return JsonField(name, "json", default, not_null=not_null, comment=comment)
+        return Field(name, "json", False, default, not_null=not_null, comment=comment)
 
 
 models = Models()
@@ -453,7 +681,7 @@ class ModelMetaclass(type):
         if name == "Model":
             return type.__new__(cls, name, bases, attrs)
         # if _debug:
-        logging.debug("Found model:%s" % name)
+        # logging.debug("Found model:%s" % name)
         # 表名
         table_name = attrs.get("__table__", None) or name
         primary_key = None
@@ -462,9 +690,10 @@ class ModelMetaclass(type):
         for k, v in attrs.items():
             if isinstance(v, Field):
                 # if _debug:
-                logging.debug("Found mapping:%s, %s" % (k, v))
+                # logging.debug("Found mapping:%s, %s" % (k, v))
                 mappings[k] = v
                 if v.primary_key:
+                    logging.info("主键" + k)
                     if primary_key:
                         raise RuntimeError("主键重复")
                     primary_key = k
@@ -473,7 +702,7 @@ class ModelMetaclass(type):
                     fields.append(k)
 
         if not primary_key:
-            raise RuntimeError("表缺少主键")
+            logging.warning("%s表缺少主键" % table_name)
 
         for k in mappings.keys():
             attrs.pop(k)
