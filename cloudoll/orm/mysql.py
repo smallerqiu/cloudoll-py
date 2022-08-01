@@ -12,6 +12,8 @@ async def connect(loop=None, **kw):
     global _pool
     global _debug
     _debug = kw.get("debug", False) or False
+    if not loop:
+        loop = asyncio.get_event_loop()
     _pool = await aiomysql.create_pool(
         host=config.get("host", "localhost"),
         port=config.get("port", 3306),
@@ -27,7 +29,7 @@ async def connect(loop=None, **kw):
     )
 
 
-async def query(sql, args=(), exec_type="select", autocommit=True):
+async def query(sql, args, exec_type="select", autocommit=True):
     """
     自定义sql
     :params sql 要执行的sql
@@ -38,14 +40,14 @@ async def query(sql, args=(), exec_type="select", autocommit=True):
         raise ValueError("请定义SQL Pool")
     if _debug:
         logging.debug("SQL: %s " % sql)
-    with (await _pool) as conn:
+    async with _pool.acquire() as conn:
         if not autocommit:
             await conn.begin()
         try:
             result = None
             cur = await conn.cursor()
             sql = sql.replace("?", "%s")
-            await cur.execute(sql, args or ())
+            await cur.execute(sql, args)
 
             if exec_type == "select":
                 result = await cur.fetchall()
@@ -198,7 +200,8 @@ async def find(table, **kw):
     if cols != "*":
         cols = ",".join(list(map(lambda f: "`%s`" % f, cols)))
 
-    sql = "select %s from `%s` where %s %s limit 1" % (cols, table, where, orderBy)
+    sql = "select %s from `%s` where %s %s limit 1" % (cols, table, where,
+                                                       orderBy)
     args = tuple(params)
 
     rows = await query(sql, args)
@@ -349,11 +352,8 @@ async def table2model(table):
             values.append("primary_key=True")
         if fields["max_length"]:
             values.append("max_length='%s'" % fields["max_length"])
-        if (
-            fields["default"]
-            and not fields["created_generated"]
-            and not fields["update_generated"]
-        ):
+        if (fields["default"] and not fields["created_generated"]
+                and not fields["update_generated"]):
             values.append("default='%s'" % fields["default"])
         if fields["auto_increment"]:
             values.append("auto_increment=True")
@@ -400,19 +400,20 @@ async def tables2models(tables: list = None, savepath: str = None):
 
 
 class Field(object):
+
     def __init__(
-        self,
-        name,  # 列名
-        column_type,  # 类型
-        primary_key,  # 主键
-        default=None,  # 默认值
-        max_length=None,  # 长度
-        auto_increment=False,  # 自增
-        not_null=False,  # 非空
-        created_generated=False,  # 创建时for datetime
-        update_generated=False,  # 更新时for datetime
-        unsigned=False,  # 无符号，没有负数
-        comment=None,  # 备注
+            self,
+            name,  # 列名
+            column_type,  # 类型
+            primary_key,  # 主键
+            default=None,  # 默认值
+            max_length=None,  # 长度
+            auto_increment=False,  # 自增
+            not_null=False,  # 非空
+            created_generated=False,  # 创建时for datetime
+            update_generated=False,  # 更新时for datetime
+            unsigned=False,  # 无符号，没有负数
+            comment=None,  # 备注
     ):
         self.name = name
         self.column_type = column_type
@@ -428,10 +429,12 @@ class Field(object):
         self.unsigned = unsigned
 
     def __str__(self):
-        return "<%s, %s:%s>" % (self.__class__.__name__, self.column_type, self.name)
+        return "<%s, %s:%s>" % (self.__class__.__name__, self.column_type,
+                                self.name)
 
 
 class Models(object):
+
     def CharField(
         self,
         name=None,
@@ -447,13 +450,20 @@ class Models(object):
         :params not_null 非空
         :params comment 备注
         """
-        return Field(
-            name, "varchar", primary_key, default, max_length, not_null, comment=comment
-        )
+        return Field(name,
+                     "varchar",
+                     primary_key,
+                     default,
+                     max_length,
+                     not_null,
+                     comment=comment)
 
-    def BooleanField(
-        self, name=None, default=False, max_length=None, not_null=False, comment=None
-    ):
+    def BooleanField(self,
+                     name=None,
+                     default=False,
+                     max_length=None,
+                     not_null=False,
+                     comment=None):
         return Field(
             name,
             "boolean",
@@ -670,13 +680,19 @@ class Models(object):
         )
 
     def JsonField(self, name=None, default=None, not_null=False, comment=None):
-        return Field(name, "json", False, default, not_null=not_null, comment=comment)
+        return Field(name,
+                     "json",
+                     False,
+                     default,
+                     not_null=not_null,
+                     comment=comment)
 
 
 models = Models()
 
 
 class ModelMetaclass(type):
+
     def __new__(cls, name, bases, attrs):
         if name == "Model":
             return type.__new__(cls, name, bases, attrs)
@@ -693,7 +709,7 @@ class ModelMetaclass(type):
                 # logging.debug("Found mapping:%s, %s" % (k, v))
                 mappings[k] = v
                 if v.primary_key:
-                    logging.info("主键" + k)
+                    # logging.info("主键" + k)
                     if primary_key:
                         raise RuntimeError("主键重复")
                     primary_key = k
@@ -717,6 +733,7 @@ class ModelMetaclass(type):
 
 
 class Model(dict, metaclass=ModelMetaclass):
+
     def __init__(self, **kw):
         super(Model, self).__init__(**kw)
 
@@ -738,7 +755,8 @@ class Model(dict, metaclass=ModelMetaclass):
         if not value:
             field = self.__mappings__[key]
             if field.default:
-                value = field.default() if callable(field.default) else field.default
+                value = field.default() if callable(
+                    field.default) else field.default
                 setattr(self, key, value)
         return value
 

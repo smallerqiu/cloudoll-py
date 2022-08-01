@@ -24,7 +24,9 @@ VERSION = "0.1.0"
 REQUIRED = [
     # 'requests', 'maya', 'records',
     "aiomysql",
-    "colorlog"
+    "colorlog",
+    "aiohttp",
+    "jinja2"
 ]
 
 # What packages are optional?
