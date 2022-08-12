@@ -29,7 +29,7 @@ async def connect(loop=None, **kw):
     )
 
 
-async def query(sql, args, exec_type="select", autocommit=True):
+async def query(sql, args=None, exec_type="select", autocommit=True):
     """
     自定义sql
     :params sql 要执行的sql
@@ -38,8 +38,8 @@ async def query(sql, args, exec_type="select", autocommit=True):
     """
     if not _pool:
         raise ValueError("请定义SQL Pool")
-    if _debug:
-        logging.debug("SQL: %s " % sql)
+    # if _debug:
+    # logging.debug("SQL: %s \n params:%s" % (sql, args))
     async with _pool.acquire() as conn:
         if not autocommit:
             await conn.begin()
@@ -85,7 +85,7 @@ async def findAll(table, **kw):
     if not where:
         where = "1=1"
     orderBy = kw.get("orderBy", "")
-    args = tuple(kw.get("params", []))
+    args = kw.get("params")
     if orderBy != "":
         orderBy = "order by %s" % orderBy
 
@@ -108,7 +108,7 @@ def get_key_args(**kw):
     keys = []
     args = []
     for k, v in kw.items():
-        if v:
+        if v is not None:
             keys.append("`%s`=?" % k)
             args.append(v)
     return ",".join(keys), args
@@ -167,7 +167,7 @@ async def updateAll(table, **kw):
     where = kw.get("where", None)
     if not where:
         where = "1=2"
-    params = kw.get("params", None)
+    params = kw.get("params")
     kw.pop("where")
     kw.pop("params")
     if not where or not params:
@@ -176,8 +176,11 @@ async def updateAll(table, **kw):
     keys, args = get_key_args(**kw)
     sql = "update `%s` set %s where %s" % (table, keys, where)
     if params:
+        # if args:
         args += params
-    return await query(sql, tuple(args), exec_type="update")
+    # else:
+    # args = params
+    return await query(sql, args, exec_type="update")
 
 
 async def find(table, **kw):
@@ -191,7 +194,7 @@ async def find(table, **kw):
     """
     where = kw.get("where", "1=1")
     cols = kw.get("cols", "*")
-    params = kw.get("params", [])
+    args = kw.get("params")
     orderBy = kw.get("orderBy", "")
     if orderBy != "":
         orderBy = "order by %s" % orderBy
@@ -202,8 +205,6 @@ async def find(table, **kw):
 
     sql = "select %s from `%s` where %s %s limit 1" % (cols, table, where,
                                                        orderBy)
-    args = tuple(params)
-
     rows = await query(sql, args)
 
     if len(rows) > 0:
@@ -237,7 +238,7 @@ async def delete(table, **kw):
     if not where:
         where = "1=2"
     sql = "delete from `%s` where %s" % (table, where)
-    args = tuple(kw.get("params", []))
+    args = kw.get("params")
     return await query(sql, args, exec_type="delete")
 
 
@@ -252,7 +253,7 @@ async def count(table, **kw):
     if not where:
         where = "1=1"
     sql = "select count(*) as total from `%s` where %s" % (table, where)
-    args = tuple(kw.get("params", []))
+    args = kw.get("params")
     rows = await query(sql, args)
     if len(rows) > 0:
         return rows[0]["total"]
@@ -275,7 +276,7 @@ async def sum(table, **kw):
     if not col:
         raise KeyError("缺少col")
     sql = "select sum(`%s`) as total from `%s` where %s" % (col, table, where)
-    args = tuple(kw.get("params", []))
+    args = kw.get("params")
     rows = await query(sql, args)
     if len(rows) > 0:
         return rows[0]["total"]
@@ -693,9 +694,9 @@ models = Models()
 
 class ModelMetaclass(type):
 
-    def __new__(cls, name, bases, attrs):
+    def __new__(self, name, bases, attrs):
         if name == "Model":
-            return type.__new__(cls, name, bases, attrs)
+            return type.__new__(self, name, bases, attrs)
         # if _debug:
         # logging.debug("Found model:%s" % name)
         # 表名
@@ -729,13 +730,17 @@ class ModelMetaclass(type):
         attrs["__primary_key__"] = primary_key
         attrs["__fields__"] = fields
 
-        return type.__new__(cls, name, bases, attrs)
+        return type.__new__(self, name, bases, attrs)
 
 
 class Model(dict, metaclass=ModelMetaclass):
 
     def __init__(self, **kw):
         super(Model, self).__init__(**kw)
+
+    def __call__(self, **kw):
+        super(Model, self).__init__(**kw)
+        return self
 
     def __getattr__(self, key):
         try:
@@ -744,7 +749,7 @@ class Model(dict, metaclass=ModelMetaclass):
             # raise AttributeError(r"'Model' object has no attribute '%s'" % key)
             return None
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, key, value):
         self[key] = value
 
     def getValue(self, key):
@@ -752,27 +757,15 @@ class Model(dict, metaclass=ModelMetaclass):
 
     def getDefault(self, key):
         value = getattr(self, key, None)
-        if not value:
-            field = self.__mappings__[key]
-            if field.default:
-                value = field.default() if callable(
-                    field.default) else field.default
-                setattr(self, key, value)
+        # if value is None:
+        #     field = self.__mappings__[key]
+        #     if field.default:
+        #         value = field.default() if callable(
+        #             field.default) else field.default
+        #         setattr(self, key, value)
         return value
 
-    @asyncio.coroutine
-    def save(self):
-        """
-        主键保存数据
-        """
-        data = dict()
-        for f in self.__fields__:
-            data[f] = self.getDefault(f)
-        table = self.__table__
-        return save(table, **data)
-
-    @asyncio.coroutine
-    def update(self):
+    async def update(self):
         """
         主键更新数据
         """
@@ -782,59 +775,63 @@ class Model(dict, metaclass=ModelMetaclass):
         pk = self.__primary_key__
         data[pk] = self.getDefault(pk)
         table = self.__table__
-        return update(table, pk, **data)
+        return await update(table, pk, **data)
 
-    @asyncio.coroutine
-    def delete(self):
+    async def delete(self):
         """
         通过主键删除数据
         """
         table = self.__table__
-        where = "1=2"
         pkv = self.getDefault(self.__primary_key__)
-        args = []
-        if pkv:
-            where = "%s=?" % self.__primary_key__
-            args.append(pkv)
-        sql = "delete from `%s` where %s" % (table, where)
-        return query(sql, args)
+        return await delete(table,
+                            where="%s=?" % self.__primary_key__,
+                            params=[pkv])
 
-    @classmethod
-    @asyncio.coroutine
-    def updateAll(cls, **kw):
+    async def updateAll(self, **kw):
         """
         批量更新数据
         :params where 更新条件'a=?'
         :params params 防注入:[]
         """
-        table = cls.__table__
-        return updateAll(table, **kw)
+        table = self.__table__
+        return await updateAll(table, **kw)
 
-    @classmethod
-    @asyncio.coroutine
-    def deleteAll(cls, **kw):
+    async def deleteAll(self, **kw):
         """
         批量删除数据
         :params where 条件 'a=?'
         :params params 防注入:[]
         """
-        table = cls.__table__
-        return delete(table, **kw)
+        table = self.__table__
+        return await delete(table, **kw)
 
-    @classmethod
-    @asyncio.coroutine
-    def find(cls, pkv):
+    async def save(self):
+        """
+        主键保存数据
+        """
+        data = dict()
+        for f in self.__fields__:
+            data[f] = self.getDefault(f)
+        table = self.__table__
+        pk = self.__primary_key__
+        data[pk] = self.getDefault(pk)
+        return await save(table, pk, **data)
+
+    async def find(self):
         """
         通过主键值查找数据
         :params pkv primary_key_value 主键值
         """
-        table = cls.__table__
-        pk = cls.__primary_key__
-        return find(table, where="%s=?" % pk, params=[pkv])
+        table = self.__table__
+        pk = self.__primary_key__
+        pkv = self.getDefault(pk)
+        res = await find(table, where="%s=?" % pk, params=[pkv])
+        if not res:
+            res = dict()
+        return self(**res)
 
     @classmethod
-    @asyncio.coroutine
-    def findAll(cls, **kw):
+    async def findAll(self, **kw):
         """
         批量查找
         :params cols 要查询的字段['id'] 默认*所有
@@ -844,50 +841,60 @@ class Model(dict, metaclass=ModelMetaclass):
         :params params 防注入对应where eg: ['马云',30]
         :params orderBy 排序 eg: orderBy='id desc'
         """
-        table = cls.__table__
-        return findAll(table, **kw)
+        table = self.__table__
+        return await findAll(table, **kw)
 
-    @classmethod
-    @asyncio.coroutine
-    def findBy(cls, key, value):
+    async def findBy(self):
         """
         批量查找
         :params key 要查询的字段
         :params value 字段对应的值
         """
-        table = cls.__table__
-        return findBy(table, key, value)
-
+        table = self.__table__
+        keys = self.__fields__
+        keys.append(self.__primary_key__)
+        where = []
+        params = []
+        for f in keys:
+            v = self.getDefault(f)
+            if v:
+                where.append('%s=?' % f)
+                params.append(v)
+        if len(where) > 0:
+            where = ' and '.join(where)
+        else:
+            where = '1=1'
+        res = await find(table, where=where, params=params)
+        if not res:
+            res = dict()
+        return self(**res)
     @classmethod
-    @asyncio.coroutine
-    def count(cls, **kw):
+    async def count(self, **kw):
         """
         统计数据条数
         :params where 条件
         :params params 防注入
         """
-        table = cls.__table__
-        return count(table, **kw)
+        table = self.__table__
+        return await count(table, **kw)
 
     @classmethod
-    @asyncio.coroutine
-    def exists(cls, **kw):
+    async def exists(self, **kw):
         """
         是判断数据是否存在
         :params where 条件
         :params params 防注入
         """
-        table = cls.__table__
-        return exists(table, **kw)
+        table = self.__table__
+        return await exists(table, **kw)
 
     @classmethod
-    @asyncio.coroutine
-    def sum(cls, **kw):
+    async def sum(self, **kw):
         """
         累计数据
         :params col 统计字段
         :params where 条件
         :params params 防注入
         """
-        table = cls.__table__
-        return sum(table, **kw)
+        table = self.__table__
+        return await sum(table, **kw)
