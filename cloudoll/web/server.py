@@ -19,7 +19,6 @@ logging.getLogger()
 
 
 class Handler(object):
-
     def __init__(self, fn):
         self.fn = fn
 
@@ -28,11 +27,11 @@ class Handler(object):
         session = await get_session(request)
 
         data = dict()
-        if content_type.startswith('application/json'):
+        if content_type.startswith("application/json"):
             data = await request.json()
-        elif content_type.startswith('application/x-www-form-urlencoded'
-                                     ) or content_type.startswith(
-                                         'multipart/form-data'):
+        elif content_type.startswith(
+            "application/x-www-form-urlencoded"
+        ) or content_type.startswith("multipart/form-data"):
             data = await request.post()
         qs = request.query_string
         if qs:
@@ -48,26 +47,26 @@ class Handler(object):
 
 
 class Server(object):
-
     def __init__(self):
         self.__routes = web.RouteTableDef()
         self._routes = []
 
-    def _get_modules(self, module='.'):
+    def _get_modules(self, module="."):
         modules = set()
         s = find_packages(module)
         for pkg in s:
             # modules.add(pkg)
-            pkgpath = module + '/' + pkg.replace('.', '/')
-            if sys.version_info.major == 2 or (sys.version_info.major == 3
-                                               and sys.version_info.minor < 6):
+            pkgpath = module + "/" + pkg.replace(".", "/")
+            if sys.version_info.major == 2 or (
+                sys.version_info.major == 3 and sys.version_info.minor < 6
+            ):
                 for _, name, ispkg in pkgutil.iter_modules([pkgpath]):
                     if not ispkg:
-                        modules.add('.' + pkg + '.' + name)
+                        modules.add("." + pkg + "." + name)
             else:
                 for info in pkgutil.iter_modules([pkgpath]):
                     if not info.ispkg:
-                        modules.add('.' + pkg + '.' + info.name)
+                        modules.add("." + pkg + "." + info.name)
         return modules
 
     def _reg_router(self, router):
@@ -75,13 +74,15 @@ class Server(object):
         for module in modules:
             importlib.import_module(module, router)
 
-    def create(self,
-               loop=None,
-               template=None,
-               static=None,
-               error_handler=None,
-               controllers=None,
-               middlewares: list = []):
+    def create(
+        self,
+        loop=None,
+        template=None,
+        static=None,
+        error_handler=None,
+        controllers=None,
+        middlewares: list = [],
+    ):
         """
         创建server
         :params loop asyncio 的 loop
@@ -103,8 +104,8 @@ class Server(object):
             if type(static) == dict:
                 self.app.router.add_static(**static)
             else:
-                self.app.router.add_static('/static', path='static')
-            logging.warning('静态资源建议用nginx/apache 等代理')
+                self.app.router.add_static("/static", path="static")
+            logging.warning("静态资源建议用nginx/apache 等代理")
         if template:
             self.env = Environment(loader=FileSystemLoader(template))
 
@@ -116,27 +117,36 @@ class Server(object):
         """
         self.app.add_routes(self.__routes)
         for r in self._routes:
-            self.app.router.add_route(r['method'], r['path'], r['handler'])
-        port = kw.get('port', 8080)
-        host = kw.get('host', '127.0.0.1')
-        logging.info('Server run at http://%s:%s' % (host, port))
-        if kw.get('port'): kw.pop('port')
-        if kw.get('host'): kw.pop('host')
-        return self.loop.create_server(self.app.make_handler(),
-                                       host=host,
-                                       port=port,
-                                       **kw)
+            print(r["path"])
+            self.app.router.add_route(r["method"], r["path"], r["handler"], **r["kw"])
+        port = kw.get("port", 8080)
+        host = kw.get("host", "127.0.0.1")
+        logging.info("Server run at http://%s:%s" % (host, port))
+        if kw.get("port"):
+            kw.pop("port")
+        if kw.get("host"):
+            kw.pop("host")
+        return self.loop.create_server(
+            self.app.make_handler(), host=host, port=port, **kw
+        )
         # web.run_app(self.app, host=host, port=port, loop=self.loop)
+
     @property
     def routes(self):
         return self._routes
 
-    def _actions(self, path, method):
+    def get_route(self, path, method="GET"):
+        for r in self._routes:
+            if r["path"] == path and r["method"] == method:
+                return r["handler"]
+        return None
 
+    def _actions(self, path, method, **kw):
         def inner(handler):
             handler = Handler(handler)
-            self._routes.append(dict(method=method, path=path,
-                                     handler=handler))
+            self._routes.append(
+                dict(method=method, path=path, handler=handler, kw=dict(**kw))
+            )
             return handler
 
         return inner
@@ -146,7 +156,6 @@ server = Server()
 
 
 class JsonEncoder(json.JSONEncoder):
-
     def default(self, obj):
         if isinstance(obj, np.integer):
             return int(obj)
@@ -155,7 +164,7 @@ class JsonEncoder(json.JSONEncoder):
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
         elif isinstance(obj, bytes):
-            return str(obj, encoding='utf-8')
+            return str(obj, encoding="utf-8")
         if isinstance(obj, datetime.datetime) or isinstance(obj, time):
             return obj.__str__()
         else:
@@ -163,19 +172,19 @@ class JsonEncoder(json.JSONEncoder):
 
 
 def get(path, **kw):
-    return server._actions(path, 'GET')
+    return server._actions(path, "GET", **kw)
 
 
 def post(path, **kw):
-    return server._actions(path, 'POST')
+    return server._actions(path, "POST", **kw)
 
 
 def put(path, **kw):
-    return server._actions(path, 'PUT')
+    return server._actions(path, "PUT", **kw)
 
 
 def delete(path, **kw):
-    return server._actions(path, 'DELETE')
+    return server._actions(path, "DELETE", **kw)
 
 
 def all(path, **kw):
@@ -186,16 +195,17 @@ def all(path, **kw):
 def jsons(data, **kw):
     if not data:
         data = dict()
-    data['timestamp'] = int(datetime.datetime.now().timestamp())
+    data["timestamp"] = int(datetime.datetime.now().timestamp())
     text = json.dumps(data, ensure_ascii=False, cls=JsonEncoder)
     return web.json_response(text=text, **kw)
 
 
 def view(template=None, **kw):
     body = server.env.get_template(template).render(
-        **kw, timestamp=int(datetime.datetime.now().timestamp()))
+        **kw, timestamp=int(datetime.datetime.now().timestamp())
+    )
     view = web.Response(body=body)
-    view.content_type = 'text/html;charset=utf-8'
+    view.content_type = "text/html;charset=utf-8"
     return view
 
 
