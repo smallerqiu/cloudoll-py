@@ -161,9 +161,6 @@ async def updateAll(table, **kw):
     :params where 更新条件'a=?'
     :params params 防注入:[]
     """
-    id = kw.get("id", None)
-    if id:
-        raise KeyError("id 不能被修改。")
     where = kw.get("where", None)
     if not where:
         where = "1=2"
@@ -787,6 +784,7 @@ class Model(dict, metaclass=ModelMetaclass):
                             where="%s=?" % self.__primary_key__,
                             params=[pkv])
 
+    @classmethod
     async def updateAll(self, **kw):
         """
         批量更新数据
@@ -796,6 +794,7 @@ class Model(dict, metaclass=ModelMetaclass):
         table = self.__table__
         return await updateAll(table, **kw)
 
+    @classmethod
     async def deleteAll(self, **kw):
         """
         批量删除数据

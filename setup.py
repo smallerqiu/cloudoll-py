@@ -18,11 +18,10 @@ URL = "https://gitee.com/chuchur/cloudoll-py"
 EMAIL = "chuchur@qq.com"
 AUTHOR = "chuchur"
 REQUIRES_PYTHON = ">=3.6.0"
-VERSION = "0.1.2"
+VERSION = "0.1.3"
 
 # What packages are required for this module to be executed?
 REQUIRED = [
-    # 'requests', 'maya', 'records',
     "aiomysql",
     "colorlog",
     "aiohttp",
