@@ -75,10 +75,18 @@ http = Client()
 
 
 def get(url, **kw):
+    """
+    get 请求
+    :params params=dict() 传参
+    """
     return http.requests("get", url, **kw)
 
 
 def post(url, **kw):
+    """
+    post 请求
+    :params data=dict() or json=dict() 传参
+    """
     return http.requests("post", url, **kw)
 
 

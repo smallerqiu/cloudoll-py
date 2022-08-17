@@ -117,7 +117,6 @@ class Server(object):
         """
         self.app.add_routes(self.__routes)
         for r in self._routes:
-            print(r["path"])
             self.app.router.add_route(r["method"], r["path"], r["handler"], **r["kw"])
         port = kw.get("port", 8080)
         host = kw.get("host", "127.0.0.1")
