@@ -1,5 +1,12 @@
 # cloudoll 云端玩具
 
+## 更新日志
+
+`0.1.4` 2022-09-12
+- 优化orm 超时的问题
+- 增加websocket 支持
+
+
 ## 安装
 
 ```sh
@@ -73,27 +80,27 @@ from cloudoll.web.server import get,post,delete,put ,jsons
 
 #get
 @get('/v2/message/list')
-async def list(request,fm)
+async def list(request,fm):
   return jsons(dict(code=1, msg='ok'))
 
 #post
 @post('/v2/message/list')
-async def list(request,fm)
+async def list(request,fm):
   return jsons(dict(code=1, msg='ok'))
 
 #delete
 @delete('/v2/message/list')
-async def list(request,fm)
+async def list(request,fm):
   return jsons(dict(code=1, msg='ok'))
 
 #get
 @get('/v2/message/list')
-async def list(request,fm)
+async def list(request,fm):
   return jsons(dict(code=1, msg='ok'))
 
 #put
 @put('/v2/message/list')
-async def list(request,fm)
+async def list(request,fm):
   return jsons(dict(code=1, msg='ok'))
 ```
 访问 http://127.0.0.1:9000/v2/message/list , 返回：
@@ -119,7 +126,7 @@ $.post('/v2/message/list?id=1&age=20',data=data)
 ```python
 # url = '/v2/message/list'
 @get('/v2/message/list')
-async def list(request,fm)
+async def list(request,fm):
   id = fm['id'] # 1
   age = fm['age']  # 20
   a = fm['a'] # 1
@@ -151,10 +158,35 @@ async def upload_image(request,fm):
 #### 动态路由
 ```python
 @get('/v2/message/{id}')
-async def list(request,fm)
+async def list(request,fm):
   id = request.route["id"] #取得路由id 值
 
   return jsons(dict(code=1, msg='ok'))
+```
+
+#### Websocket
+```python
+from cloudoll.web.server import get, WebSocket
+
+@get("/v2/ws/test")
+async def getrecord(req, fm):
+
+    ws = WebSocket() # 初始化 WebSocket
+    await ws.prepare(req)
+
+    async for msg in ws:
+        if msg.type == 1:
+            text = msg.data # 收到客户端的消息
+            if text == "close":
+                await ws.close()
+            else:
+                await ws.send_str('收到消息：'+text) #给客户端发送消息
+        elif msg.type == 258:
+            print("ws connection closed with exception %s" % ws.exception())
+
+    print("websocket connection closed")
+
+    return ws
 ```
 #### `Seesion`
 
@@ -162,7 +194,7 @@ async def list(request,fm)
 from cloudoll.web.server import get
 
 @get('/test')
-async def test(request,fm)
+async def test(request,fm):
   #读取Seesion
   a = request.session.get('a')
   #设置Seesion
@@ -179,7 +211,7 @@ import cloudoll.web.jwt as jwt
 AUTH_KEY = 'fjkdsal&*(%^^&'
 
 @post('/v2/login')
-async def test(request,fm)
+async def test(request,fm):
   # ...
   # 如果账号密码匹配成功
   user = {

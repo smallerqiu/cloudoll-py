@@ -107,7 +107,11 @@ def option(url, **kw):
 
 
 def download(url, savepath=None, **kw):
-
+    """
+    下载文件
+    :params url 文件的地址
+    :params savepath 保存路径
+    """
     rb = http.requests("get", url, **kw)
     if not savepath:
         return rb.content
@@ -120,6 +124,6 @@ def download(url, savepath=None, **kw):
                 f.write(rb.content)
                 logging.info("下载完成！")
         except BaseException as e:
-            logging.error("e")
+            logging.error(e)
             return False
     return True

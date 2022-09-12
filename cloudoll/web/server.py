@@ -7,7 +7,7 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader
 import functools, os, importlib
 from cloudoll import logging
-import pkgutil, sys, json, time, datetime, base64, uuid
+import pkgutil, sys, json, time, datetime, base64, uuid,decimal
 from setuptools import find_packages
 import numpy as np
 from urllib import parse
@@ -158,13 +158,19 @@ class JsonEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.integer):
             return int(obj)
-        elif isinstance(obj, np.floating):
+        elif isinstance(obj, np.float):
             return float(obj)
+        elif isinstance(obj, decimal.Decimal):
+            return str(obj)
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
         elif isinstance(obj, bytes):
             return str(obj, encoding="utf-8")
-        if isinstance(obj, datetime.datetime) or isinstance(obj, time):
+        if (
+            isinstance(obj, datetime.datetime)
+            or isinstance(obj, time)
+            or isinstance(obj, datetime.date)
+        ):
             return obj.__str__()
         else:
             return super(JsonEncoder, self).default(obj)
@@ -214,3 +220,6 @@ def redirect(urlpath):
 
 def middleware(f):
     return web.middleware(f)
+
+def WebSocket(**kw):
+    return web.WebSocketResponse(**kw)

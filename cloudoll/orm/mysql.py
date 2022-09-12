@@ -1,6 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+from cloudoll.orm import mysql
 
+MYSQL = {
+    "debug": False,
+    "db": {
+        "host": "127.0.0.1",
+        "port": 3306,
+        "user": "root",
+        "password": "abcdefg",
+        "db": "test",
+        "charset":"utf8mb4"
+    }
+}
+
+await mysql.connect(loop=None,**MYSQL)
+"""
 __author__ = "chuchur/chuchur.com"
 
 import aiomysql, asyncio, re, enum
@@ -29,6 +45,12 @@ async def connect(loop=None, **kw):
     )
 
 
+async def _get_cursor():
+    conn = await _pool.acquire()
+    cur = await conn.cursor()
+    return conn, cur
+
+
 async def query(sql, args=None, exec_type="select", autocommit=True):
     """
     自定义sql
@@ -40,31 +62,40 @@ async def query(sql, args=None, exec_type="select", autocommit=True):
         raise ValueError("请定义SQL Pool")
     # if _debug:
     # logging.debug("SQL: %s \n params:%s" % (sql, args))
-    async with _pool.acquire() as conn:
+    conn, cur = await _get_cursor()
+
+    if not autocommit:
+        await conn.begin()
+    try:
+        result = None
+        # await conn.ping()
+
+        sql = sql.replace("?", "%s")
+        await cur.execute(sql, args)
+
+        if exec_type == "select":
+            result = await cur.fetchall()
+        elif exec_type in ["delete", "update"]:
+            result = cur.rowcount > 0
+        elif exec_type == "insert":
+            result = {"id": cur.lastrowid} if cur.rowcount > 0 else {}
+
+        # await cur.close()
+
         if not autocommit:
-            await conn.begin()
-        try:
-            result = None
-            cur = await conn.cursor()
-            sql = sql.replace("?", "%s")
-            await cur.execute(sql, args)
-
-            if exec_type == "select":
-                result = await cur.fetchall()
-            elif exec_type in ["delete", "update"]:
-                result = cur.rowcount > 0
-            elif exec_type == "insert":
-                result = {"id": cur.lastrowid} if cur.rowcount > 0 else {}
-
+            await conn.commit()
+    except BaseException as e:
+        logging.error(e)
+        if not autocommit:
+            await conn.rollback()
+        # raise  # ValueError('执行出错了')
+    finally:
+        if cur:
             await cur.close()
+        await _pool.release(conn)
+        # _pool.release(conn)
 
-            if not autocommit:
-                await conn.commit()
-        except BaseException as e:
-            if not autocommit:
-                await conn.rollback()
-            raise  # ValueError('执行出错了')
-        return result
+    return result
 
 
 async def findAll(table, **kw):
@@ -200,11 +231,10 @@ async def find(table, **kw):
     if cols != "*":
         cols = ",".join(list(map(lambda f: "`%s`" % f, cols)))
 
-    sql = "select %s from `%s` where %s %s limit 1" % (cols, table, where,
-                                                       orderBy)
+    sql = "select %s from `%s` where %s %s limit 1" % (cols, table, where, orderBy)
     rows = await query(sql, args)
 
-    if len(rows) > 0:
+    if rows and len(rows) > 0:
         return rows[0]
     return None
 
@@ -298,6 +328,7 @@ def get_col(field):
         "column_type": None,
         "primary_key": field["Key"] == "PRI",
         "default": field["Default"],
+        "charset": field["Collation"],
         "max_length": None,
         "auto_increment": field["Extra"] == "auto_increment",
         "not_null": field["Null"] == "NO",
@@ -348,10 +379,15 @@ async def table2model(table):
         values = []
         if fields["primary_key"]:
             values.append("primary_key=True")
+        if fields["charset"]:
+            values.append("charset='%s'" % fields["charset"])
         if fields["max_length"]:
             values.append("max_length='%s'" % fields["max_length"])
-        if (fields["default"] and not fields["created_generated"]
-                and not fields["update_generated"]):
+        if (
+            fields["default"]
+            and not fields["created_generated"]
+            and not fields["update_generated"]
+        ):
             values.append("default='%s'" % fields["default"])
         if fields["auto_increment"]:
             values.append("auto_increment=True")
@@ -398,24 +434,25 @@ async def tables2models(tables: list = None, savepath: str = None):
 
 
 class Field(object):
-
     def __init__(
-            self,
-            name,  # 列名
-            column_type,  # 类型
-            primary_key,  # 主键
-            default=None,  # 默认值
-            max_length=None,  # 长度
-            auto_increment=False,  # 自增
-            not_null=False,  # 非空
-            created_generated=False,  # 创建时for datetime
-            update_generated=False,  # 更新时for datetime
-            unsigned=False,  # 无符号，没有负数
-            comment=None,  # 备注
+        self,
+        name,  # 列名
+        column_type,  # 类型
+        primary_key,  # 主键
+        default=None,  # 默认值
+        charset=None,  # 编码
+        max_length=None,  # 长度
+        auto_increment=False,  # 自增
+        not_null=False,  # 非空
+        created_generated=False,  # 创建时for datetime
+        update_generated=False,  # 更新时for datetime
+        unsigned=False,  # 无符号，没有负数
+        comment=None,  # 备注
     ):
         self.name = name
         self.column_type = column_type
         self.primary_key = primary_key
+        self.charset = charset
         self.default = default
         self.max_length = max_length
         self.auto_increment = auto_increment
@@ -427,17 +464,16 @@ class Field(object):
         self.unsigned = unsigned
 
     def __str__(self):
-        return "<%s, %s:%s>" % (self.__class__.__name__, self.column_type,
-                                self.name)
+        return "<%s, %s:%s>" % (self.__class__.__name__, self.column_type, self.name)
 
 
 class Models(object):
-
     def CharField(
         self,
         name=None,
         primary_key=False,
         default=None,
+        charset=None,
         max_length=None,
         not_null=False,
         comment=None,
@@ -448,20 +484,20 @@ class Models(object):
         :params not_null 非空
         :params comment 备注
         """
-        return Field(name,
-                     "varchar",
-                     primary_key,
-                     default,
-                     max_length,
-                     not_null,
-                     comment=comment)
+        return Field(
+            name,
+            "varchar",
+            primary_key,
+            default,
+            charset=charset,
+            max_length=max_length,
+            not_null=not_null,
+            comment=comment,
+        )
 
-    def BooleanField(self,
-                     name=None,
-                     default=False,
-                     max_length=None,
-                     not_null=False,
-                     comment=None):
+    def BooleanField(
+        self, name=None, default=False, max_length=None, not_null=False, comment=None
+    ):
         return Field(
             name,
             "boolean",
@@ -476,7 +512,7 @@ class Models(object):
         self,
         name=None,
         primary_key=False,
-        default=0,
+        default=None,
         auto_increment=False,
         not_null=False,
         unsigned=False,
@@ -497,7 +533,7 @@ class Models(object):
         self,
         name=None,
         primary_key=False,
-        default=0,
+        default=None,
         auto_increment=False,
         not_null=False,
         unsigned=False,
@@ -560,6 +596,7 @@ class Models(object):
         name=None,
         primary_key=False,
         default=None,
+        charset=None,
         max_length=255,
         not_null=False,
         comment=None,
@@ -569,6 +606,7 @@ class Models(object):
             "text",
             primary_key,
             default,
+            charset=charset,
             max_length=max_length,
             not_null=not_null,
             comment=comment,
@@ -579,6 +617,7 @@ class Models(object):
         name=None,
         primary_key=False,
         default=None,
+        charset=None,
         max_length=500,
         not_null=False,
         comment=None,
@@ -588,6 +627,7 @@ class Models(object):
             "longtext",
             primary_key,
             default,
+            charset=charset,
             max_length=max_length,
             not_null=not_null,
             comment=comment,
@@ -598,6 +638,7 @@ class Models(object):
         name=None,
         primary_key=False,
         default=None,
+        charset=None,
         max_length=500,
         not_null=False,
         comment=None,
@@ -607,6 +648,7 @@ class Models(object):
             "mediumtext",
             primary_key,
             default,
+            charset=charset,
             not_null=not_null,
             comment=comment,
         )
@@ -677,20 +719,24 @@ class Models(object):
             comment=comment,
         )
 
-    def JsonField(self, name=None, default=None, not_null=False, comment=None):
-        return Field(name,
-                     "json",
-                     False,
-                     default,
-                     not_null=not_null,
-                     comment=comment)
+    def JsonField(
+        self, name=None, default=None, charset=None, not_null=False, comment=None
+    ):
+        return Field(
+            name,
+            "json",
+            False,
+            default,
+            charset=charset,
+            not_null=not_null,
+            comment=comment,
+        )
 
 
 models = Models()
 
 
 class ModelMetaclass(type):
-
     def __new__(self, name, bases, attrs):
         if name == "Model":
             return type.__new__(self, name, bases, attrs)
@@ -731,7 +777,6 @@ class ModelMetaclass(type):
 
 
 class Model(dict, metaclass=ModelMetaclass):
-
     def __init__(self, **kw):
         super(Model, self).__init__(**kw)
 
@@ -780,9 +825,7 @@ class Model(dict, metaclass=ModelMetaclass):
         """
         table = self.__table__
         pkv = self.getDefault(self.__primary_key__)
-        return await delete(table,
-                            where="%s=?" % self.__primary_key__,
-                            params=[pkv])
+        return await delete(table, where="%s=?" % self.__primary_key__, params=[pkv])
 
     @classmethod
     async def updateAll(self, **kw):
@@ -857,16 +900,17 @@ class Model(dict, metaclass=ModelMetaclass):
         for f in keys:
             v = self.getDefault(f)
             if v:
-                where.append('%s=?' % f)
+                where.append("%s=?" % f)
                 params.append(v)
         if len(where) > 0:
-            where = ' and '.join(where)
+            where = " and ".join(where)
         else:
-            where = '1=1'
+            where = "1=1"
         res = await find(table, where=where, params=params)
         if not res:
             res = dict()
         return self(**res)
+
     @classmethod
     async def count(self, **kw):
         """
