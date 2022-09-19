@@ -58,7 +58,7 @@ class HandleLog:
         return self.__logger
         # return log_path
 
-    def __create_handler(self, log_path):
+    def __create_handler(self, log_path, level):
         handler = RotatingFileHandler(
             log_path,
             maxBytes=LOG_SIZE,
@@ -69,16 +69,16 @@ class HandleLog:
             FORMATS["log_format"], datefmt="%Y-%m-%d %H:%M-%S"
         )
         handler.setFormatter(formatter)
-        handler.setLevel(level=logging.DEBUG)
+        handler.setLevel(level=level)
         self.__logger.addHandler(handler)
         return handler
 
     def log(self, method, message):
         logger = self.__logger
         # all
-        all_handler = self.__create_handler(self.__all_log_path)
+        all_handler = self.__create_handler(self.__all_log_path, logging.DEBUG)
         # error
-        error_handler = self.__create_handler(self.__error_log_path)
+        error_handler = self.__create_handler(self.__error_log_path, logging.ERROR)
         # console
         console_handle = colorlog.StreamHandler()
         console_fmt = colorlog.ColoredFormatter(
