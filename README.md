@@ -1,6 +1,10 @@
 # cloudoll 云端玩具
 
 ## 更新日志
+`0.1.6` 2022-11-03
+- orm 允许更新为空数据
+- server 文件上传加入大小限制
+- smtp 出错异常处理
 
 `0.1.5` 2022-09-19
 - 修复logging level 错误的问题
@@ -65,12 +69,13 @@ async def init(loop=None):
           # static=static, # 静态资源 ,测试用
           controllers="controllers", # 路由目录，路由会自动注册
           middlewares=[], # 中间件，可选
+          client_max_size=1024*10*2 # 最大上传2MB 文件 ，，可选
       )
 
   await server.run(port=9000)
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
     loop.run_until_complete(init(loop))
     loop.run_forever()
 ```
@@ -474,7 +479,7 @@ result = await Users.exists(where="uid=1")
 #### 分页查询
 
 ```python
-res = msyql.lists(table_name ,
+res = msyql.findAll(table_name ,
     cols:['uid','age'],
     where="age>? and name like %?% ",
     limit=10,

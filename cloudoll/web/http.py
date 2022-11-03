@@ -4,7 +4,6 @@
 __author__ = "chuchur/chuchur.com"
 
 import requests, time
-from types import MethodType
 from cloudoll import logging
 
 logging.getLogger()
@@ -91,6 +90,10 @@ def post(url, **kw):
 
 
 def put(url, **kw):
+    """
+    post 请求
+    data=dict()传参
+    """
     return http.requests("put", url, **kw)
 
 

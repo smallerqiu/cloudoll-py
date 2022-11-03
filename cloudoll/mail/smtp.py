@@ -135,7 +135,13 @@ class Client(object):
         """
         index = self._file_index
         with open(filepath, "rb") as f:
-            mime_type = mimetypes.guess_type(filepath)[0]  # image/png
+            mime_type = ""
+            mime_types = mimetypes.guess_type(filepath)  # image/png
+            if len(mime_types) > 0:
+                mime_type = mime_types[0]
+            else:
+                logging.error("无法匹配附件类型,可以尝试安装httpd服务")
+            ## 这里如果拿不到type 需要安装httpd ,dnf install httpd
             [t, n] = mime_type.split("/")
             filename = os.path.basename(filepath)  #'a.txt'
             # 设置附件的MIME和文件名

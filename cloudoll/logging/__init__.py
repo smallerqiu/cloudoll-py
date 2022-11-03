@@ -20,9 +20,9 @@ COLORS = {
 
 FORMATS = {
     # 终端输出格式
-    "console_format": "%(log_color)s%(asctime)s-%(name)s-%(filename)s-[line:%(lineno)d]-%(levelname)s-[日志信息]: %(message)s",
+    "console_format": "%(log_color)s%(asctime)s-%(name)s-%(filename)s-%(module)s-%(funcName)s-[line:%(lineno)d]-%(levelname)s-[日志信息]: %(message)s",
     # 日志输出格式
-    "log_format": "%(asctime)s-%(name)s-%(filename)s-[line:%(lineno)d]-%(levelname)s-[日志信息]: %(message)s",
+    "log_format": "%(asctime)s-%(name)s-%(filename)s-%(module)s-%(funcName)s-[line:%(lineno)d]-%(levelname)s-[日志信息]: %(message)s",
 }
 
 LOG_SIZE = 1024 * 1024 * 1  # 1MB 日志最大1MB

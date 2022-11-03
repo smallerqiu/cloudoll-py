@@ -7,7 +7,7 @@ from aiohttp import web
 from jinja2 import Environment, FileSystemLoader
 import functools, os, importlib
 from cloudoll import logging
-import pkgutil, sys, json, time, datetime, base64, uuid,decimal
+import pkgutil, sys, json, time, datetime, base64, uuid, decimal
 from setuptools import find_packages
 import numpy as np
 from urllib import parse
@@ -82,6 +82,7 @@ class Server(object):
         error_handler=None,
         controllers=None,
         middlewares: list = [],
+        client_max_size=None,
     ):
         """
         创建server
@@ -90,7 +91,9 @@ class Server(object):
         :params static 静态资源目录 or static=dict(prefix='/other',path='/home/...')
         :params middlewares 中间件
         """
-        self.app = web.Application(loop=loop, middlewares=middlewares)
+        self.app = web.Application(
+            loop=loop, middlewares=middlewares, client_max_size=client_max_size
+        )
         # init session
         fernet_key = fernet.Fernet.generate_key()
         secret_key = base64.urlsafe_b64decode(fernet_key)
@@ -220,6 +223,7 @@ def redirect(urlpath):
 
 def middleware(f):
     return web.middleware(f)
+
 
 def WebSocket(**kw):
     return web.WebSocketResponse(**kw)

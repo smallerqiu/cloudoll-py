@@ -141,6 +141,8 @@ def get_key_args(**kw):
     for k, v in kw.items():
         if v is not None:
             keys.append("`%s`=?" % k)
+            if v == "null" or v == "NULL":
+                v = None
             args.append(v)
     return ",".join(keys), args
 
@@ -282,7 +284,7 @@ async def count(table, **kw):
     sql = "select count(*) as total from `%s` where %s" % (table, where)
     args = kw.get("params")
     rows = await query(sql, args)
-    if len(rows) > 0:
+    if rows and len(rows) > 0:
         return rows[0]["total"]
     else:
         return 0
@@ -305,7 +307,7 @@ async def sum(table, **kw):
     sql = "select sum(`%s`) as total from `%s` where %s" % (col, table, where)
     args = kw.get("params")
     rows = await query(sql, args)
-    if len(rows) > 0:
+    if rows and len(rows) > 0:
         return rows[0]["total"]
     else:
         return 0
