@@ -52,7 +52,7 @@ class HandleLog:
         self.__error_log_path = os.path.join(log_path, "%s-error.log" % now_time)
 
     def getLogger(self, __file):
-
+        print(__file)
         self.__logger = logging.getLogger(__file)  # 创建日志记录器
         self.__logger.setLevel(logging.DEBUG)  # 设置默认日志记录器记录级别
         return self.__logger
@@ -87,7 +87,7 @@ class HandleLog:
         console_handle.setFormatter(console_fmt)
         console_handle.setLevel(logging.DEBUG)
         logger.addHandler(console_handle)
-
+        
         log = getattr(logger, method, None)
         log(message)
 
@@ -99,29 +99,33 @@ class HandleLog:
         error_handler.close()
         console_handle.close()
 
+_handler = None
 
-handler = HandleLog()
-
+def _get_handle():
+    global _handler
+    handler = _handler if _handler else HandleLog()
+    _handler = handler
+    return handler
 
 def getLogger(name=None):
-    return handler.getLogger(name)
+    return _get_handle().getLogger(name)
 
 
 def debug(message):
-    handler.log("debug", message)
+    _get_handle().log("debug", message)
 
 
 def info(message):
-    handler.log("info", message)
+    _get_handle().log("info", message)
 
 
 def warning(message):
-    handler.log("warning", message)
+    _get_handle().log("warning", message)
 
 
 def error(message):
-    handler.log("error", message)
+    _get_handle().log("error", message)
 
 
 def critical(message):
-    handler.log("critical", message)
+    _get_handle().log("critical", message)

@@ -6,7 +6,7 @@ __author__ = "chuchur/chuchur.com"
 import requests, time
 from cloudoll import logging
 
-logging.getLogger()
+logging.getLogger(__file__)
 PROXIES = {
     "http": "http://127.0.0.1:7890",
     "https": "http://127.0.0.1:7890",
@@ -56,11 +56,16 @@ class Client(object):
                 trytimes = 0
                 head = result.headers
                 ctype = head["Content-Type"]
-                if "application/json" in ctype:
-                    return result.json()
-                elif "text/html" in ctype:
-                    return result.text
-                return result
+                if result.status_code==200:
+                    if "application/json" in ctype:
+                        return result.json()
+                    elif "text/html" in ctype:
+                        return result.text
+                    return result
+                else:
+                    logging.error("Network error ,try gain....")
+                    trytimes += 1
+                    time.sleep(2)
             except BaseException as e:
                 # logging.info(e)
                 logging.error("Network error ,try gain....")

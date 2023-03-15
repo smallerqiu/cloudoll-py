@@ -9,13 +9,13 @@ import functools, os, importlib
 from cloudoll import logging
 import pkgutil, sys, json, time, datetime, base64, uuid, decimal
 from setuptools import find_packages
-import numpy as np
+# import numpy as np
 from urllib import parse
 from cryptography import fernet
 from aiohttp_session import get_session, setup
 from aiohttp_session.cookie_storage import EncryptedCookieStorage
 
-logging.getLogger()
+logging.getLogger(__file__)
 
 
 class Handler(object):
@@ -159,16 +159,16 @@ server = Server()
 
 class JsonEncoder(json.JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.float):
-            return float(obj)
-        elif isinstance(obj, decimal.Decimal):
-            return str(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, bytes):
-            return str(obj, encoding="utf-8")
+        # if isinstance(obj, np.integer):
+            # return int(obj)
+        # elif isinstance(obj, np.float):
+            # return float(obj)
+        # elif isinstance(obj, decimal.Decimal):
+            # return str(obj)
+        # elif isinstance(obj, np.ndarray):
+            # return obj.tolist()
+        # elif isinstance(obj, bytes):
+            # return str(obj, encoding="utf-8")
         if (
             isinstance(obj, datetime.datetime)
             or isinstance(obj, time)
