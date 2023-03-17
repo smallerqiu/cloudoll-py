@@ -3,10 +3,11 @@
  
 __author__ = "chuchur/chuchur.com"
 
-import requests, time
+import requests
+import time
+
 from cloudoll import logging
 
-logging.getLogger(__file__)
 PROXIES = {
     "http": "http://127.0.0.1:7890",
     "https": "http://127.0.0.1:7890",

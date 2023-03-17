@@ -29,7 +29,6 @@ REQUIRED = [
     "jinja2",
     "pyjwt",
     "aiohttp_session[secure]",
-    "numpy",
     "fernet"
 ]
 

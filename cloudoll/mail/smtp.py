@@ -59,6 +59,8 @@ def _format_addr(s):
 class Client(object):
     def __init__(self, **config):
 
+        self._content = None
+        self._subject = None
         smtp_server = config.get("smtp_server")
         debug_level = config.get("debug_level", 1)
         port = config.get("port", 25)
@@ -143,7 +145,7 @@ class Client(object):
                 logging.error("无法匹配附件类型,可以尝试安装httpd服务")
             ## 这里如果拿不到type 需要安装httpd ,dnf install httpd
             [t, n] = mime_type.split("/")
-            filename = os.path.basename(filepath)  #'a.txt'
+            filename = os.path.basename(filepath)  # 'a.txt'
             # 设置附件的MIME和文件名
             mime = MIMEBase(t, n, filename=filename)
             # 加上头信息

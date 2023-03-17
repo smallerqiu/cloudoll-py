@@ -3,19 +3,22 @@
 
 __author__ = "chuchur/chuchur.com"
 
-from aiohttp import web
-from jinja2 import Environment, FileSystemLoader
-import functools, os, importlib
-from cloudoll import logging
-import pkgutil, sys, json, time, datetime, base64, uuid, decimal
-from setuptools import find_packages
-# import numpy as np
+import asyncio
+import base64
+import datetime
+import importlib
+import json
+import pkgutil
+import sys
 from urllib import parse
-from cryptography import fernet
+
+from aiohttp import web
 from aiohttp_session import get_session, setup
 from aiohttp_session.cookie_storage import EncryptedCookieStorage
-
-logging.getLogger(__file__)
+from cryptography import fernet
+from jinja2 import Environment, FileSystemLoader
+from setuptools import find_packages
+from cloudoll import logging
 
 
 class Handler(object):
@@ -30,7 +33,7 @@ class Handler(object):
         if content_type.startswith("application/json"):
             data = await request.json()
         elif content_type.startswith(
-            "application/x-www-form-urlencoded"
+                "application/x-www-form-urlencoded"
         ) or content_type.startswith("multipart/form-data"):
             data = await request.post()
         qs = request.query_string
@@ -46,43 +49,50 @@ class Handler(object):
         return await self.fn(request, data)
 
 
+def _get_modules(module="."):
+    modules = set()
+    s = find_packages(module)
+    for pkg in s:
+        # modules.add(pkg)
+        pkgpath = module + "/" + pkg.replace(".", "/")
+        if sys.version_info.major == 2 or (
+                sys.version_info.major == 3 and sys.version_info.minor < 6
+        ):
+            for _, name, ispkg in pkgutil.iter_modules([pkgpath]):
+                if not ispkg:
+                    modules.add("." + pkg + "." + name)
+        else:
+            for info in pkgutil.iter_modules([pkgpath]):
+                if not info.ispkg:
+                    modules.add("." + pkg + "." + info.name)
+    return modules
+
+
+def _reg_router(router):
+    modules = _get_modules(router)
+    for module in modules:
+        print(module,router)
+        importlib.import_module(module, router)
+
+
 class Server(object):
     def __init__(self):
+        self.__routes = None
+        self.env = None
+        self.loop = None
+        self.app = None
         self.__routes = web.RouteTableDef()
         self._routes = []
 
-    def _get_modules(self, module="."):
-        modules = set()
-        s = find_packages(module)
-        for pkg in s:
-            # modules.add(pkg)
-            pkgpath = module + "/" + pkg.replace(".", "/")
-            if sys.version_info.major == 2 or (
-                sys.version_info.major == 3 and sys.version_info.minor < 6
-            ):
-                for _, name, ispkg in pkgutil.iter_modules([pkgpath]):
-                    if not ispkg:
-                        modules.add("." + pkg + "." + name)
-            else:
-                for info in pkgutil.iter_modules([pkgpath]):
-                    if not info.ispkg:
-                        modules.add("." + pkg + "." + info.name)
-        return modules
-
-    def _reg_router(self, router):
-        modules = self._get_modules(router)
-        for module in modules:
-            importlib.import_module(module, router)
-
     def create(
-        self,
-        loop=None,
-        template=None,
-        static=None,
-        error_handler=None,
-        controllers=None,
-        middlewares: list = [],
-        client_max_size=None,
+            self,
+            loop=None,
+            template=None,
+            static=None,
+            error_handler=None,
+            controllers='.controllers',
+            middlewares: list = [],
+            client_max_size=None,
     ):
         """
         创建server
@@ -91,6 +101,7 @@ class Server(object):
         :params static 静态资源目录 or static=dict(prefix='/other',path='/home/...')
         :params middlewares 中间件
         """
+        self.loop = loop
         self.app = web.Application(
             loop=loop, middlewares=middlewares, client_max_size=client_max_size
         )
@@ -100,9 +111,8 @@ class Server(object):
         setup(self.app, EncryptedCookieStorage(secret_key))
 
         if controllers:
-            self._reg_router(controllers)
+            _reg_router(controllers)
         # middlewares.insert(0, self._default_middleware())
-        self.loop = loop
         if static:
             if type(static) == dict:
                 self.app.router.add_static(**static)
@@ -111,6 +121,8 @@ class Server(object):
             logging.warning("静态资源建议用nginx/apache 等代理")
         if template:
             self.env = Environment(loader=FileSystemLoader(template))
+
+        return self
 
     def run(self, **kw):
         """
@@ -128,6 +140,9 @@ class Server(object):
             kw.pop("port")
         if kw.get("host"):
             kw.pop("host")
+
+        if self.loop is None:
+            self.loop = asyncio.new_event_loop()
         return self.loop.create_server(
             self.app.make_handler(), host=host, port=port, **kw
         )
@@ -143,7 +158,7 @@ class Server(object):
                 return r["handler"]
         return None
 
-    def _actions(self, path, method, **kw):
+    def actions(self, path, method, **kw):
         def inner(handler):
             handler = Handler(handler)
             self._routes.append(
@@ -159,20 +174,9 @@ server = Server()
 
 class JsonEncoder(json.JSONEncoder):
     def default(self, obj):
-        # if isinstance(obj, np.integer):
-            # return int(obj)
-        # elif isinstance(obj, np.float):
-            # return float(obj)
-        # elif isinstance(obj, decimal.Decimal):
-            # return str(obj)
-        # elif isinstance(obj, np.ndarray):
-            # return obj.tolist()
-        # elif isinstance(obj, bytes):
-            # return str(obj, encoding="utf-8")
         if (
-            isinstance(obj, datetime.datetime)
-            or isinstance(obj, time)
-            or isinstance(obj, datetime.date)
+                isinstance(obj, datetime.datetime)
+                or isinstance(obj, datetime.date)
         ):
             return obj.__str__()
         else:
@@ -180,19 +184,19 @@ class JsonEncoder(json.JSONEncoder):
 
 
 def get(path, **kw):
-    return server._actions(path, "GET", **kw)
+    return server.actions(path, "GET", **kw)
 
 
 def post(path, **kw):
-    return server._actions(path, "POST", **kw)
+    return server.actions(path, "POST", **kw)
 
 
 def put(path, **kw):
-    return server._actions(path, "PUT", **kw)
+    return server.actions(path, "PUT", **kw)
 
 
 def delete(path, **kw):
-    return server._actions(path, "DELETE", **kw)
+    return server.actions(path, "DELETE", **kw)
 
 
 def all(path, **kw):
@@ -212,9 +216,9 @@ def view(template=None, **kw):
     body = server.env.get_template(template).render(
         **kw, timestamp=int(datetime.datetime.now().timestamp())
     )
-    view = web.Response(body=body)
-    view.content_type = "text/html;charset=utf-8"
-    return view
+    _view = web.Response(body=body)
+    _view.content_type = "text/html;charset=utf-8"
+    return _view
 
 
 def redirect(urlpath):

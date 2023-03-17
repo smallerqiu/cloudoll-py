@@ -1,0 +1,9 @@
+aiomysql~=0.1.1
+cloudoll~=0.1.6
+PyJWT~=2.6.0
+requests~=2.28.2
+aiohttp~=3.8.4
+Jinja2~=3.1.2
+setuptools~=58.0.4
+cryptography~=39.0.1
+colorlog~=6.7.0
