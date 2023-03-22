@@ -3,10 +3,10 @@
 
 __author__ = "chuchur/chuchur.com"
 
-import asyncio
 import base64
 import datetime
 import importlib
+import inspect
 import json
 import pkgutil
 import sys
@@ -18,35 +18,50 @@ from aiohttp_session.cookie_storage import EncryptedCookieStorage
 from cryptography import fernet
 from jinja2 import Environment, FileSystemLoader
 from setuptools import find_packages
+
 from cloudoll import logging
 
 
-class Handler(object):
+class _Handler(object):
     def __init__(self, fn):
         self.fn = fn
 
     async def __call__(self, request):
-        content_type = request.content_type
-        session = await get_session(request)
+        props = inspect.getfullargspec(self.fn)
 
-        data = dict()
-        if content_type.startswith("application/json"):
-            data = await request.json()
-        elif content_type.startswith(
-                "application/x-www-form-urlencoded"
-        ) or content_type.startswith("multipart/form-data"):
-            data = await request.post()
-        qs = request.query_string
-        if qs:
-            for k, v in parse.parse_qs(qs, True).items():
-                data[k] = v[0]
-        rt = request.match_info
-        route = dict()
-        for k, v in rt.items():
-            route[k] = v
-        request.route = route
-        request.session = session
-        return await self.fn(request, data)
+        if len(props.args) == 1:
+            await _set_session_route(request)
+            return await self.fn(request)
+        elif len(props.args) == 2:
+            await _set_session_route(request)
+            content_type = request.content_type
+            data = dict()
+            if content_type.startswith("application/json"):
+                data = await request.json()
+            elif content_type.startswith(
+                    "application/x-www-form-urlencoded"
+            ) or content_type.startswith("multipart/form-data"):
+                data = await request.post()
+
+            qs = request.query_string
+            if qs:
+                for k, v in parse.parse_qs(qs, True).items():
+                    data[k] = v[0]
+
+            return await self.fn(request, data)
+        else:
+            return await self.fn()
+
+
+async def _set_session_route(request):
+    route = dict()
+    # 动态路由
+    rt = request.match_info
+    for k, v in rt.items():
+        route[k] = v
+    request.route = route
+    session = await get_session(request)
+    request.session = session
 
 
 def _get_modules(module="."):
@@ -71,7 +86,7 @@ def _get_modules(module="."):
 def _reg_router(router):
     modules = _get_modules(router)
     for module in modules:
-        print(module,router)
+        # print(module, router)
         importlib.import_module(module, router)
 
 
@@ -90,8 +105,8 @@ class Server(object):
             template=None,
             static=None,
             error_handler=None,
-            controllers='.controllers',
-            middlewares: list = [],
+            controllers='controllers',
+            middlewares=None,
             client_max_size=None,
     ):
         """
@@ -101,6 +116,8 @@ class Server(object):
         :params static 静态资源目录 or static=dict(prefix='/other',path='/home/...')
         :params middlewares 中间件
         """
+        if middlewares is None:
+            middlewares = []
         self.loop = loop
         self.app = web.Application(
             loop=loop, middlewares=middlewares, client_max_size=client_max_size
@@ -120,7 +137,7 @@ class Server(object):
                 self.app.router.add_static("/static", path="static")
             logging.warning("静态资源建议用nginx/apache 等代理")
         if template:
-            self.env = Environment(loader=FileSystemLoader(template))
+            self.env = Environment(loader=FileSystemLoader(template), autoescape=True)
 
         return self
 
@@ -142,11 +159,12 @@ class Server(object):
             kw.pop("host")
 
         if self.loop is None:
-            self.loop = asyncio.new_event_loop()
-        return self.loop.create_server(
-            self.app.make_handler(), host=host, port=port, **kw
-        )
-        # web.run_app(self.app, host=host, port=port, loop=self.loop)
+            web.run_app(self.app, host=host, port=port, **kw)
+        else:
+            return self.loop.create_server(
+                self.app.make_handler(), host=host, port=port, **kw
+            )
+        #
 
     @property
     def routes(self):
@@ -160,7 +178,7 @@ class Server(object):
 
     def actions(self, path, method, **kw):
         def inner(handler):
-            handler = Handler(handler)
+            handler = _Handler(handler)
             self._routes.append(
                 dict(method=method, path=path, handler=handler, kw=dict(**kw))
             )

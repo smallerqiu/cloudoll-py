@@ -4,8 +4,14 @@
 # docs: https://open.dingtalk.com/document/group/message-types-and-data-format
 __author__ = "chuchur/chuchur.com"
 
+import base64
+import hashlib
+import hmac
+import logging
+import requests as http
+import time
+from urllib import parse
 
-import hashlib, hmac, time, base64, logging, requests as http, urllib, json
 
 class Client(object):
     def __init__(self, **kw):
@@ -30,7 +36,7 @@ class Client(object):
 
         # 对结果进行base64处理
         sign = base64.b64encode(hmac_code).decode("utf-8")
-        sign = urllib.parse.quote(sign)
+        sign = parse.quote(sign)
         return timestamp, sign
 
     def upload(self, type: str, filepath: str):
@@ -83,7 +89,7 @@ class Client(object):
                 logging.error(res["errmsg"])
                 return False
 
-    def sendtext(self, text: str):
+    def send_text(self, text: str):
         """
         发送文本消息
         :params text 消息内容
@@ -108,7 +114,7 @@ class Client(object):
             data["voice"]["duration"] = kw.get("duration")
         return self.send(data)
 
-    def sendmarkdown(self, title, text):
+    def send_markdown(self, title, text):
         """
         发送Markdown消息
         :params title 标题
@@ -118,14 +124,14 @@ class Client(object):
             data={"msgtype": "markdown", "markdown": {"title": title, "text": text}}
         )
 
-    def sendimage(self, media_id: str):
+    def send_image(self, media_id: str):
         """
         发送图片消息
         :params media_id 媒体ID
         """
         return self._send_media("image", media_id)
 
-    def sendvoice(self, media_id: str, duration: str):
+    def send_voice(self, media_id: str, duration: str):
         """
         发送语音消息
         :params media_id 媒体ID
@@ -133,14 +139,14 @@ class Client(object):
         """
         return self._send_media("voice", media_id, duration=duration)
 
-    def sendfile(self, media_id: str):
+    def send_file(self, media_id: str):
         """
         发送文件消息
         :params media_id 媒体ID
         """
         return self._send_media("file", media_id)
 
-    def sendlink(self, messageUrl, picUrl, title, text):
+    def send_link(self, messageUrl, picUrl, title, text):
         """
         发送链接消息
         :params messageUrl 链接地址
@@ -160,7 +166,7 @@ class Client(object):
             }
         )
 
-    def sendcard(self, **kw):
+    def send_card(self, **kw):
         """
         发送卡片消息
         :params title 标题
@@ -190,7 +196,7 @@ class Client(object):
             }
         )
 
-    def sendfreecard(self, links: list):
+    def send_freecard(self, links: list):
         """
         发送卡片消息
         :params links [{ title:'',messageURL:'',picURL:''}]

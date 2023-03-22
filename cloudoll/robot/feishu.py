@@ -53,7 +53,7 @@ class Client(object):
                 logging.info("发送失败！")
                 return True
 
-    def sendtext(self, text: str):
+    def send_text(self, text: str):
         """
         发送文本消息
         :params text 消息内容
@@ -65,7 +65,7 @@ class Client(object):
             }
         )
 
-    def sendcard(self, **kw):
+    def send_card(self, **kw):
         """
         发送卡片消息
         :params content 卡片内容,str

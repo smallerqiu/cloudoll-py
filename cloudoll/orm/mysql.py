@@ -324,7 +324,7 @@ async def exists(table, **kw):
     return counts > 0
 
 
-def get_col(field):
+def _get_col(field):
     fields = {
         "name": field["Field"],
         "column_type": None,
@@ -375,7 +375,7 @@ async def table2model(table):
     tb = "\nclass %s(Model):\n\n" % table.capitalize()
     tb += "\t__table__ = '%s'\n\n" % table
     for f in rows:
-        fields = get_col(f)
+        fields = _get_col(f)
         name = fields["name"]
         column_type = fields["column_type"]
         values = []
@@ -386,9 +386,9 @@ async def table2model(table):
         if fields["max_length"]:
             values.append("max_length='%s'" % fields["max_length"])
         if (
-            fields["default"]
-            and not fields["created_generated"]
-            and not fields["update_generated"]
+                fields["default"]
+                and not fields["created_generated"]
+                and not fields["update_generated"]
         ):
             values.append("default='%s'" % fields["default"])
         if fields["auto_increment"]:
@@ -437,19 +437,19 @@ async def tables2models(tables: list = None, savepath: str = None):
 
 class Field(object):
     def __init__(
-        self,
-        name,  # 列名
-        column_type,  # 类型
-        primary_key,  # 主键
-        default=None,  # 默认值
-        charset=None,  # 编码
-        max_length=None,  # 长度
-        auto_increment=False,  # 自增
-        not_null=False,  # 非空
-        created_generated=False,  # 创建时for datetime
-        update_generated=False,  # 更新时for datetime
-        unsigned=False,  # 无符号，没有负数
-        comment=None,  # 备注
+            self,
+            name,  # 列名
+            column_type,  # 类型
+            primary_key,  # 主键
+            default=None,  # 默认值
+            charset=None,  # 编码
+            max_length=None,  # 长度
+            auto_increment=False,  # 自增
+            not_null=False,  # 非空
+            created_generated=False,  # 创建时for datetime
+            update_generated=False,  # 更新时for datetime
+            unsigned=False,  # 无符号，没有负数
+            comment=None,  # 备注
     ):
         self.name = name
         self.column_type = column_type
@@ -471,14 +471,14 @@ class Field(object):
 
 class Models(object):
     def CharField(
-        self,
-        name=None,
-        primary_key=False,
-        default=None,
-        charset=None,
-        max_length=None,
-        not_null=False,
-        comment=None,
+            self,
+            name=None,
+            primary_key=False,
+            default=None,
+            charset=None,
+            max_length=None,
+            not_null=False,
+            comment=None,
     ):
         """
         varchar
@@ -498,7 +498,7 @@ class Models(object):
         )
 
     def BooleanField(
-        self, name=None, default=False, max_length=None, not_null=False, comment=None
+            self, name=None, default=False, max_length=None, not_null=False, comment=None
     ):
         return Field(
             name,
@@ -511,14 +511,14 @@ class Models(object):
         )
 
     def IntegerField(
-        self,
-        name=None,
-        primary_key=False,
-        default=None,
-        auto_increment=False,
-        not_null=False,
-        unsigned=False,
-        comment=None,
+            self,
+            name=None,
+            primary_key=False,
+            default=None,
+            auto_increment=False,
+            not_null=False,
+            unsigned=False,
+            comment=None,
     ):
         return Field(
             name,
@@ -532,14 +532,14 @@ class Models(object):
         )
 
     def BigIntegerField(
-        self,
-        name=None,
-        primary_key=False,
-        default=None,
-        auto_increment=False,
-        not_null=False,
-        unsigned=False,
-        comment=None,
+            self,
+            name=None,
+            primary_key=False,
+            default=None,
+            auto_increment=False,
+            not_null=False,
+            unsigned=False,
+            comment=None,
     ):
         return Field(
             name,
@@ -553,14 +553,14 @@ class Models(object):
         )
 
     def FloatField(
-        self,
-        name=None,
-        primary_key=False,
-        default=0.0,
-        not_null=False,
-        max_length=None,
-        unsigned=False,
-        comment=None,
+            self,
+            name=None,
+            primary_key=False,
+            default=0.0,
+            not_null=False,
+            max_length=None,
+            unsigned=False,
+            comment=None,
     ):
         return Field(
             name,
@@ -574,14 +574,14 @@ class Models(object):
         )
 
     def DecimalField(
-        self,
-        name=None,
-        primary_key=False,
-        default=0.0,
-        not_null=False,
-        max_length="10,2",
-        unsigned=False,
-        comment=None,
+            self,
+            name=None,
+            primary_key=False,
+            default=0.0,
+            not_null=False,
+            max_length="10,2",
+            unsigned=False,
+            comment=None,
     ):
         return Field(
             name,
@@ -594,14 +594,14 @@ class Models(object):
         )
 
     def TextField(
-        self,
-        name=None,
-        primary_key=False,
-        default=None,
-        charset=None,
-        max_length=255,
-        not_null=False,
-        comment=None,
+            self,
+            name=None,
+            primary_key=False,
+            default=None,
+            charset=None,
+            max_length=255,
+            not_null=False,
+            comment=None,
     ):
         return Field(
             name,
@@ -615,14 +615,14 @@ class Models(object):
         )
 
     def LongTextField(
-        self,
-        name=None,
-        primary_key=False,
-        default=None,
-        charset=None,
-        max_length=500,
-        not_null=False,
-        comment=None,
+            self,
+            name=None,
+            primary_key=False,
+            default=None,
+            charset=None,
+            max_length=500,
+            not_null=False,
+            comment=None,
     ):
         return Field(
             name,
@@ -636,14 +636,14 @@ class Models(object):
         )
 
     def MediumtextField(
-        self,
-        name=None,
-        primary_key=False,
-        default=None,
-        charset=None,
-        max_length=500,
-        not_null=False,
-        comment=None,
+            self,
+            name=None,
+            primary_key=False,
+            default=None,
+            charset=None,
+            max_length=500,
+            not_null=False,
+            comment=None,
     ):
         return Field(
             name,
@@ -656,14 +656,14 @@ class Models(object):
         )
 
     def DatetimeField(
-        self,
-        name=None,
-        default=None,
-        max_length=6,
-        not_null=False,
-        created_generated=False,
-        update_generated=False,
-        comment=None,
+            self,
+            name=None,
+            default=None,
+            max_length=6,
+            not_null=False,
+            created_generated=False,
+            update_generated=False,
+            comment=None,
     ):
         return Field(
             name,
@@ -678,14 +678,14 @@ class Models(object):
         )
 
     def DateField(
-        self,
-        name=None,
-        default=None,
-        max_length=6,
-        not_null=False,
-        created_generated=False,
-        update_generated=False,
-        comment=None,
+            self,
+            name=None,
+            default=None,
+            max_length=6,
+            not_null=False,
+            created_generated=False,
+            update_generated=False,
+            comment=None,
     ):
         return Field(
             name,
@@ -700,14 +700,14 @@ class Models(object):
         )
 
     def TimestampField(
-        self,
-        name=None,
-        default=None,
-        max_length=6,
-        not_null=False,
-        created_generated=False,
-        update_generated=False,
-        comment=None,
+            self,
+            name=None,
+            default=None,
+            max_length=6,
+            not_null=False,
+            created_generated=False,
+            update_generated=False,
+            comment=None,
     ):
         return Field(
             name,
@@ -722,7 +722,7 @@ class Models(object):
         )
 
     def JsonField(
-        self, name=None, default=None, charset=None, not_null=False, comment=None
+            self, name=None, default=None, charset=None, not_null=False, comment=None
     ):
         return Field(
             name,
@@ -790,16 +790,16 @@ class Model(dict, metaclass=ModelMetaclass):
         try:
             return self[key]
         except KeyError:
-            # raise AttributeError(r"'Model' object has no attribute '%s'" % key)
-            return None
+            raise AttributeError(r"'Model' object has no attribute '%s'" % key)
+            # return None
 
     def __setattr__(self, key, value):
         self[key] = value
 
-    def getValue(self, key):
+    def get_value(self, key):
         return getattr(self, key, None)
 
-    def getDefault(self, key):
+    def get_default(self, key):
         value = getattr(self, key, None)
         # if value is None:
         #     field = self.__mappings__[key]
@@ -809,15 +809,34 @@ class Model(dict, metaclass=ModelMetaclass):
         #         setattr(self, key, value)
         return value
 
+    def select(self, **kwargs):
+
+        pass
+
+    def where(self):
+        pass
+
+    def order_by(self):
+        pass
+
+    def group_by(self):
+        pass
+
+    def first(self):
+        pass
+
+    def last(self):
+        pass
+
     async def update(self):
         """
         主键更新数据
         """
         data = dict()
         for f in self.__fields__:
-            data[f] = self.getDefault(f)
+            data[f] = self.get_default(f)
         pk = self.__primary_key__
-        data[pk] = self.getDefault(pk)
+        data[pk] = self.get_default(pk)
         table = self.__table__
         return await update(table, pk, **data)
 
@@ -826,7 +845,7 @@ class Model(dict, metaclass=ModelMetaclass):
         通过主键删除数据
         """
         table = self.__table__
-        pkv = self.getDefault(self.__primary_key__)
+        pkv = self.get_default(self.__primary_key__)
         return await delete(table, where="%s=?" % self.__primary_key__, params=[pkv])
 
     @classmethod
@@ -855,10 +874,10 @@ class Model(dict, metaclass=ModelMetaclass):
         """
         data = dict()
         for f in self.__fields__:
-            data[f] = self.getDefault(f)
+            data[f] = self.get_default(f)
         table = self.__table__
         pk = self.__primary_key__
-        data[pk] = self.getDefault(pk)
+        data[pk] = self.get_default(pk)
         return await save(table, pk, **data)
 
     async def find(self):
@@ -868,7 +887,7 @@ class Model(dict, metaclass=ModelMetaclass):
         """
         table = self.__table__
         pk = self.__primary_key__
-        pkv = self.getDefault(pk)
+        pkv = self.get_default(pk)
         res = await find(table, where="%s=?" % pk, params=[pkv])
         if not res:
             res = dict()
@@ -900,7 +919,7 @@ class Model(dict, metaclass=ModelMetaclass):
         where = []
         params = []
         for f in keys:
-            v = self.getDefault(f)
+            v = self.get_default(f)
             if v:
                 where.append("%s=?" % f)
                 params.append(v)
