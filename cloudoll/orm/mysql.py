@@ -61,7 +61,7 @@ async def query(sql, args=None, exec_type="select", autocommit=True):
     if not _pool:
         raise ValueError("请定义SQL Pool")
     # if _debug:
-    # logging.debug("SQL: %s \n params:%s" % (sql, args))
+    logging.info("SQL: %s \n params:%s" % (sql, args))
     conn, cur = await _get_cursor()
 
     if not autocommit:
@@ -440,8 +440,8 @@ class Field(object):
             self,
             name,  # 列名
             column_type,  # 类型
-            primary_key,  # 主键
             default=None,  # 默认值
+            primary_key=False,  # 主键
             charset=None,  # 编码
             max_length=None,  # 长度
             auto_increment=False,  # 自增
@@ -467,272 +467,89 @@ class Field(object):
 
     def __str__(self):
         return "<%s, %s:%s>" % (self.__class__.__name__, self.column_type, self.name)
+        # return self.name
+
+    def desc(self):
+        return self.name + 'desc'
+
+    def asc(self):
+        return self.name + 'asc'
 
 
 class Models(object):
-    def CharField(
-            self,
-            name=None,
-            primary_key=False,
-            default=None,
-            charset=None,
-            max_length=None,
-            not_null=False,
-            comment=None,
-    ):
-        """
-        varchar
-        :params max_length 长度
-        :params not_null 非空
-        :params comment 备注
-        """
-        return Field(
-            name,
-            "varchar",
-            primary_key,
-            default,
-            charset=charset,
-            max_length=max_length,
-            not_null=not_null,
-            comment=comment,
-        )
+    class CharField(Field):
+        def __init__(self, name=None, primary_key=False, default=None, charset=None, max_length=None, not_null=False,
+                     comment=None, ):
+            super().__init__(name, "varchar", default, primary_key, charset=charset, max_length=max_length,
+                             not_null=not_null, comment=comment, )
 
-    def BooleanField(
-            self, name=None, default=False, max_length=None, not_null=False, comment=None
-    ):
-        return Field(
-            name,
-            "boolean",
-            None,
-            default,
-            max_length=max_length,
-            not_null=not_null,
-            comment=comment,
-        )
+    class BooleanField(Field):
+        def __init__(self, name=None, default=False, not_null=False, comment=None):
+            super().__init__(name, "boolean", default, not_null=not_null, comment=comment, )
 
-    def IntegerField(
-            self,
-            name=None,
-            primary_key=False,
-            default=None,
-            auto_increment=False,
-            not_null=False,
-            unsigned=False,
-            comment=None,
-    ):
-        return Field(
-            name,
-            "int",
-            primary_key,
-            default,
-            auto_increment=auto_increment,
-            not_null=not_null,
-            unsigned=unsigned,
-            comment=comment,
-        )
+    class IntegerField(Field):
+        def __init__(self, name=None, primary_key=False, default=None, auto_increment=False,
+                     not_null=False, unsigned=False, comment=None, ):
+            super().__init__(name, "int", default, primary_key, auto_increment=auto_increment, not_null=not_null,
+                             unsigned=unsigned, comment=comment, )
 
-    def BigIntegerField(
-            self,
-            name=None,
-            primary_key=False,
-            default=None,
-            auto_increment=False,
-            not_null=False,
-            unsigned=False,
-            comment=None,
-    ):
-        return Field(
-            name,
-            "bigint",
-            primary_key,
-            default,
-            auto_increment=auto_increment,
-            not_null=not_null,
-            unsigned=unsigned,
-            comment=comment,
-        )
+    class BigIntegerField(Field):
+        def __init__(self, name=None, primary_key=False, default=None, auto_increment=False,
+                     not_null=False, unsigned=False, comment=None, ):
+            super().__init__(name, "bigint", default, primary_key, auto_increment=auto_increment, not_null=not_null,
+                             unsigned=unsigned, comment=comment, )
 
-    def FloatField(
-            self,
-            name=None,
-            primary_key=False,
-            default=0.0,
-            not_null=False,
-            max_length=None,
-            unsigned=False,
-            comment=None,
-    ):
-        return Field(
-            name,
-            "double",
-            primary_key,
-            default,
-            not_null=not_null,
-            max_length=max_length,
-            unsigned=unsigned,
-            comment=comment,
-        )
+    class FloatField(Field):
+        def __init__(self, name=None, default=None, not_null=False, max_length=None, unsigned=False,
+                     comment=None, ):
+            super().__init__(name, "double", default, not_null=not_null, max_length=max_length,
+                             unsigned=unsigned, comment=comment, )
 
-    def DecimalField(
-            self,
-            name=None,
-            primary_key=False,
-            default=0.0,
-            not_null=False,
-            max_length="10,2",
-            unsigned=False,
-            comment=None,
-    ):
-        return Field(
-            name,
-            "decimal",
-            primary_key,
-            default,
-            not_null=not_null,
-            unsigned=unsigned,
-            comment=comment,
-        )
+    class DecimalField(Field):
+        def __init__(self, name=None, default=0.0, not_null=False, max_length="10,2", unsigned=False,
+                     comment=None, ):
+            super().__init__(name, "decimal", default, not_null=not_null, unsigned=unsigned,
+                             max_length=max_length, comment=comment, )
 
-    def TextField(
-            self,
-            name=None,
-            primary_key=False,
-            default=None,
-            charset=None,
-            max_length=255,
-            not_null=False,
-            comment=None,
-    ):
-        return Field(
-            name,
-            "text",
-            primary_key,
-            default,
-            charset=charset,
-            max_length=max_length,
-            not_null=not_null,
-            comment=comment,
-        )
+    class TextField(Field):
+        def __init__(self, name=None, default=None, charset=None, max_length=255, not_null=False,
+                     comment=None, ):
+            super().__init__(name, "text", default, charset=charset, max_length=max_length,
+                             not_null=not_null, comment=comment, )
 
-    def LongTextField(
-            self,
-            name=None,
-            primary_key=False,
-            default=None,
-            charset=None,
-            max_length=500,
-            not_null=False,
-            comment=None,
-    ):
-        return Field(
-            name,
-            "longtext",
-            primary_key,
-            default,
-            charset=charset,
-            max_length=max_length,
-            not_null=not_null,
-            comment=comment,
-        )
+    class LongTextField(Field):
+        def __init__(self, name=None, default=None, charset=None, max_length=500, not_null=False,
+                     comment=None, ):
+            super().__init__(name, "longtext", default, charset=charset, max_length=max_length,
+                             not_null=not_null, comment=comment, )
 
-    def MediumtextField(
-            self,
-            name=None,
-            primary_key=False,
-            default=None,
-            charset=None,
-            max_length=500,
-            not_null=False,
-            comment=None,
-    ):
-        return Field(
-            name,
-            "mediumtext",
-            primary_key,
-            default,
-            charset=charset,
-            not_null=not_null,
-            comment=comment,
-        )
+    class MediumtextField(Field):
+        def __init__(self, name=None, default=None, charset=None, max_length=500, not_null=False,
+                     comment=None, ):
+            super().__init__(name, "mediumtext", default, charset=charset, max_length=max_length, not_null=not_null,
+                             comment=comment, )
 
-    def DatetimeField(
-            self,
-            name=None,
-            default=None,
-            max_length=6,
-            not_null=False,
-            created_generated=False,
-            update_generated=False,
-            comment=None,
-    ):
-        return Field(
-            name,
-            "datetime",
-            False,
-            default,
-            max_length,
-            not_null=not_null,
-            created_generated=created_generated,
-            update_generated=update_generated,
-            comment=comment,
-        )
+    class DatetimeField(Field):
+        def __init__(self, name=None, default=None, max_length=6, not_null=False, created_generated=False,
+                     update_generated=False, comment=None, ):
+            super().__init__(name, "datetime", default, max_length=max_length, not_null=not_null,
+                             created_generated=created_generated, update_generated=update_generated, comment=comment, )
 
-    def DateField(
-            self,
-            name=None,
-            default=None,
-            max_length=6,
-            not_null=False,
-            created_generated=False,
-            update_generated=False,
-            comment=None,
-    ):
-        return Field(
-            name,
-            "date",
-            False,
-            default,
-            max_length,
-            not_null=not_null,
-            created_generated=created_generated,
-            update_generated=update_generated,
-            comment=comment,
-        )
+    class DateField(Field):
+        def __init__(self, name=None, default=None, max_length=6, not_null=False, created_generated=False,
+                     update_generated=False, comment=None, ):
+            super().__init__(name, "date", False, default, max_length, not_null=not_null,
+                             created_generated=created_generated, update_generated=update_generated, comment=comment, )
 
-    def TimestampField(
-            self,
-            name=None,
-            default=None,
-            max_length=6,
-            not_null=False,
-            created_generated=False,
-            update_generated=False,
-            comment=None,
-    ):
-        return Field(
-            name,
-            "timestamp",
-            False,
-            default,
-            max_length,
-            not_null=not_null,
-            created_generated=created_generated,
-            update_generated=update_generated,
-            comment=comment,
-        )
+    class TimestampField(Field):
+        def __init__(self, name=None, default=None, max_length=6, not_null=False, created_generated=False,
+                     update_generated=False, comment=None, ):
+            super().__init__(name, "timestamp", default, False, max_length, not_null=not_null,
+                             created_generated=created_generated, update_generated=update_generated, comment=comment, )
 
-    def JsonField(
-            self, name=None, default=None, charset=None, not_null=False, comment=None
-    ):
-        return Field(
-            name,
-            "json",
-            False,
-            default,
-            charset=charset,
-            not_null=not_null,
-            comment=comment,
-        )
+    class JsonField(Field):
+        def __init__(self, name=None, default=None, charset=None, not_null=False, comment=None):
+            super().__init__(name, "json", default, charset=charset, not_null=not_null, comment=comment, )
 
 
 models = Models()
@@ -754,6 +571,7 @@ class ModelMetaclass(type):
                 # if _debug:
                 # logging.debug("Found mapping:%s, %s" % (k, v))
                 mappings[k] = v
+                attrs[k] = k
                 if v.primary_key:
                     # logging.info("主键" + k)
                     if primary_key:
@@ -766,8 +584,8 @@ class ModelMetaclass(type):
         if not primary_key:
             logging.warning("%s表缺少主键" % table_name)
 
-        for k in mappings.keys():
-            attrs.pop(k)
+        # for k in mappings.keys():
+        #     attrs.pop(k)
 
         # escaped_fields = list(map(lambda f: "`%s`" % f, fields))
         attrs["__mappings__"] = mappings
@@ -780,11 +598,13 @@ class ModelMetaclass(type):
 
 class Model(dict, metaclass=ModelMetaclass):
     def __init__(self, **kw):
+        self.__filters__ = None
+        self.__cols__ = None
         super(Model, self).__init__(**kw)
 
-    def __call__(self, **kw):
-        super(Model, self).__init__(**kw)
-        return self
+    # def __call__(self, **kw):
+    #     super(Model, self).__init__(**kw)
+    #     return self
 
     def __getattr__(self, key):
         try:
@@ -809,24 +629,45 @@ class Model(dict, metaclass=ModelMetaclass):
         #         setattr(self, key, value)
         return value
 
-    def select(self, **kwargs):
+    @classmethod
+    def select(cls, *args):
+        cols = []
+        for a in args:
+            cols.append(a)
+        cls.__cols__ = cols
+        return cls
 
-        pass
+    @classmethod
+    def filter(cls, *args):
+        filters = []
+        for x in args:
+            # print(x)
+            filters.append(x)
+        # self.__filters__ = filters
+        return cls
 
-    def where(self):
-        pass
+    @classmethod
+    def order_by(cls):
+        return cls
 
-    def order_by(self):
-        pass
+    @classmethod
+    def group_by(cls):
+        return cls
 
-    def group_by(self):
-        pass
+    @classmethod
+    def one(cls):
+        return cls
 
-    def first(self):
-        pass
+    @classmethod
+    def limit(cls):
+        return cls
 
-    def last(self):
-        pass
+    @classmethod
+    def offset(cls):
+        return cls
+
+    def all(self):
+        return self
 
     async def update(self):
         """
