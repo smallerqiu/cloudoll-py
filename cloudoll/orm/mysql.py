@@ -19,6 +19,9 @@ await mysql.connect(loop=None,**MYSQL)
 """
 __author__ = "chuchur/chuchur.com"
 
+import operator
+from typing import Generic, TypeVar, Union
+
 import aiomysql, asyncio, re, enum
 import cloudoll.logging as logging
 
@@ -435,7 +438,50 @@ async def tables2models(tables: list = None, savepath: str = None):
         return ms
 
 
-class Field(object):
+class Operator:
+    def __init__(self, operators, left, right):
+        self.operators = operators
+        self._value = right
+        self._key = left
+        self._operator_map = {
+            '==': operator.eq,
+            '<': operator.lt,
+            '<=': operator.le,
+            '>': operator.gt,
+            '>=': operator.ge
+        }
+
+    @property
+    def key(self):
+        return self._key
+
+    @property
+    def value(self):
+        return self._value
+
+    @property
+    def operator(self):
+        return self._operator_map[self.operators]
+
+
+class FieldOperator:
+    def __eq__(self, other):
+        return Operator('==', self.name, other)
+
+    def __lt__(self, other):
+        return Operator('<', self.name, other)
+
+    def __le__(self, other):
+        return Operator('<=', self.name, other)
+
+    def __gt__(self, other):
+        return Operator('>', self.name, other)
+
+    def __ge__(self, other):
+        return Operator('>=', self.name, other)
+
+
+class Field(FieldOperator):
     def __init__(
             self,
             name,  # 列名
@@ -571,7 +617,7 @@ class ModelMetaclass(type):
                 # if _debug:
                 # logging.debug("Found mapping:%s, %s" % (k, v))
                 mappings[k] = v
-                attrs[k] = k
+                v.name = k
                 if v.primary_key:
                     # logging.info("主键" + k)
                     if primary_key:
@@ -585,7 +631,7 @@ class ModelMetaclass(type):
             logging.warning("%s表缺少主键" % table_name)
 
         # for k in mappings.keys():
-        #     attrs.pop(k)
+        # attrs.pop(k)
 
         # escaped_fields = list(map(lambda f: "`%s`" % f, fields))
         attrs["__mappings__"] = mappings
@@ -598,13 +644,14 @@ class ModelMetaclass(type):
 
 class Model(dict, metaclass=ModelMetaclass):
     def __init__(self, **kw):
-        self.__filters__ = None
+        self.__where__ = None
+        self.__params__ = None
         self.__cols__ = None
         super(Model, self).__init__(**kw)
 
-    # def __call__(self, **kw):
-    #     super(Model, self).__init__(**kw)
-    #     return self
+    def __call__(self, **kw):
+        super(Model, self).__init__(**kw)
+        return self
 
     def __getattr__(self, key):
         try:
@@ -633,17 +680,21 @@ class Model(dict, metaclass=ModelMetaclass):
     def select(cls, *args):
         cols = []
         for a in args:
-            cols.append(a)
+            if isinstance(a, Field):
+                cols.append(a.name)
         cls.__cols__ = cols
         return cls
 
     @classmethod
-    def filter(cls, *args):
-        filters = []
+    def where(cls, *args):
+        where = []
+        params = []
         for x in args:
-            # print(x)
-            filters.append(x)
-        # self.__filters__ = filters
+            if isinstance(x, Operator):
+                where.append(f"{x.key}{x.operators}?")
+                params.append(x.value)
+        cls.__where__ = where
+        cls.__params__ = params
         return cls
 
     @classmethod
@@ -655,7 +706,7 @@ class Model(dict, metaclass=ModelMetaclass):
         return cls
 
     @classmethod
-    def one(cls):
+    async def one(cls):
         return cls
 
     @classmethod
@@ -668,6 +719,9 @@ class Model(dict, metaclass=ModelMetaclass):
 
     def all(self):
         return self
+
+    def _cacl_sql(self):
+        pass
 
     async def update(self):
         """

@@ -15,6 +15,9 @@ class Student(Base):
     score = Column(Integer, default=60)  # 默认60
 
 
+print(Student.age);
+
+
 # 创建引擎 相当于连接
 engine = create_engine('mysql+pymysql://test:123456@localhost:3306/testdb')
 DBSession = sessionmaker(engine)
