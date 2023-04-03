@@ -26,6 +26,13 @@ import aiomysql, asyncio, re, enum
 import cloudoll.logging as logging
 
 
+class _ACTIONS(enum):
+    select = 0
+    delete = 1
+    update = 1
+    insert = 2
+
+
 async def connect(loop=None, **kw):
     config = kw.get("db")
     global _pool
@@ -99,43 +106,6 @@ async def query(sql, args=None, exec_type="select", autocommit=True):
         # _pool.release(conn)
 
     return result
-
-
-async def findAll(table, **kw):
-    """
-    批量查找
-    :params table 表名
-    :params cols 要查询的字段 默认*所有
-    :params limit 查询的数量,默认 5
-    :params offset 偏移量(page-1)*limit
-    :params where 查询条件 eg: where='name=? and age=?'
-    :params params 防注入对应where eg: ['马云',30]
-    :params orderBy 排序 eg: orderBy='id desc'
-    """
-    cols = kw.get("cols", "*")
-    offset = kw.get("offset", 0)
-    limit = kw.get("limit", 5)
-    where = kw.get("where", "1=1")
-    if not where:
-        where = "1=1"
-    orderBy = kw.get("orderBy", "")
-    args = kw.get("params")
-    if orderBy != "":
-        orderBy = "order by %s" % orderBy
-
-    if cols != "*":
-        cols = ",".join("`%s`" % f for f in cols)
-
-    sql = "select %s from `%s` where %s %s limit %s offset %s" % (
-        cols,
-        table,
-        where,
-        orderBy,
-        limit,
-        offset,
-    )
-
-    return await query(sql, args)
 
 
 def get_key_args(**kw):
@@ -515,11 +485,13 @@ class Field(FieldOperator):
         return "<%s, %s:%s>" % (self.__class__.__name__, self.column_type, self.name)
         # return self.name
 
+    @property
     def desc(self):
-        return self.name + 'desc'
+        return f'{self.name} desc'
 
+    @property
     def asc(self):
-        return self.name + 'asc'
+        return f'{self.name} asc'
 
 
 class Models(object):
@@ -639,18 +611,18 @@ class ModelMetaclass(type):
         attrs["__primary_key__"] = primary_key
         attrs["__fields__"] = fields
 
+        attrs["__where__"] = None
+        attrs["__params__"] = None
+        attrs["__cols__"] = None
+        attrs["__order_by__"] = None
+        attrs["__group_by__"] = None
+        attrs["__limit__"] = None
+        attrs["__offset__"] = None
         return type.__new__(self, name, bases, attrs)
 
 
 class Model(dict, metaclass=ModelMetaclass):
     def __init__(self, **kw):
-        self.__where__ = None
-        self.__params__ = None
-        self.__cols__ = None
-        self.__order_by__ = None
-        self.__group_by__ = None
-        self.__limit__ = None
-        self.__offset__ = None
         super(Model, self).__init__(**kw)
 
     def __call__(self, **kw):
@@ -690,17 +662,17 @@ class Model(dict, metaclass=ModelMetaclass):
         offset = self.__offset__
         cols = ",".join("`%s`" % f for f in cols) if cols is not None else '*'
 
-        sql = "select %s from `%s`" % (cols, table)
-        if where:
-            sql += where
+        sql = f"select {cols} from `{table}`"
+        if where is not None:
+            sql += f" where {' and '.join(f for f in where)}"
         if group_by:
-            sql += group_by
-        if group_by:
-            sql += group_by
-        if limit:
-            sql += limit
-        if offset:
-            sql += offset
+            sql += f' group by {",".join(f for f in group_by)}'
+        if order_by is not None:
+            sql += f' order by {",".join(f for f in order_by)}'
+        if limit is not None:
+            sql += f" limit {limit}"
+        if offset is not None:
+            sql += f"offset {offset}"
         return sql
 
     @classmethod
@@ -709,7 +681,7 @@ class Model(dict, metaclass=ModelMetaclass):
         for a in args:
             if isinstance(a, Field):
                 cols.append(a.name)
-        cls.__cols__ = cols if len(cols) > 0 else None
+        cls.__cols__ = cols
         return cls
 
     @classmethod
@@ -725,24 +697,38 @@ class Model(dict, metaclass=ModelMetaclass):
         return cls
 
     @classmethod
-    def order_by(cls):
+    def order_by(cls, *args):
+        by = []
+        for f in args:
+            by.append(f)
+        cls.__order_by__ = by
         return cls
 
     @classmethod
-    def group_by(cls):
+    def group_by(cls, *args):
+        by = []
+        for f in args:
+            by.append(f.name)
+        cls.__group_by__ = by
         return cls
 
     @classmethod
     async def one(cls):
         sql = cls._build_sql(cls)
+        args = cls.__params__
+        print(sql, args)
+        return None
+        rs = await query(sql, args)
+        return cls(rs) if rs is not None else None
+
+    @classmethod
+    def limit(cls, limit: int):
+        cls.__limit__ = limit
         return cls
 
     @classmethod
-    def limit(cls):
-        return cls
-
-    @classmethod
-    def offset(cls):
+    def offset(cls, offset: int):
+        cls.__offset__ = offset
         return cls
 
     def all(self):
@@ -765,8 +751,13 @@ class Model(dict, metaclass=ModelMetaclass):
         通过主键删除数据
         """
         table = self.__table__
-        pkv = self.get_default(self.__primary_key__)
-        return await delete(table, where="%s=?" % self.__primary_key__, params=[pkv])
+        where = self.__where__
+        args = self.__params__
+        sql = f'delete from `{table}`'
+        if where is not None:
+            sql += f' where {" and ".join(f for f in where)}'
+
+        return await query(sql, args, _ACTIONS.delete)
 
     @classmethod
     async def updateAll(self, **kw):
@@ -799,58 +790,6 @@ class Model(dict, metaclass=ModelMetaclass):
         pk = self.__primary_key__
         data[pk] = self.get_default(pk)
         return await save(table, pk, **data)
-
-    async def find(self):
-        """
-        通过主键值查找数据
-        :params pkv primary_key_value 主键值
-        """
-        table = self.__table__
-        pk = self.__primary_key__
-        pkv = self.get_default(pk)
-        res = await find(table, where="%s=?" % pk, params=[pkv])
-        if not res:
-            res = dict()
-        return self(**res)
-
-    @classmethod
-    async def findAll(self, **kw):
-        """
-        批量查找
-        :params cols 要查询的字段['id'] 默认*所有
-        :params limit 查询的数量，默认5
-        :params offset 偏移量(page-1)*limit
-        :params where 查询条件 eg: where='name=? and age=?'
-        :params params 防注入对应where eg: ['马云',30]
-        :params orderBy 排序 eg: orderBy='id desc'
-        """
-        table = self.__table__
-        return await findAll(table, **kw)
-
-    async def findBy(self):
-        """
-        批量查找
-        :params key 要查询的字段
-        :params value 字段对应的值
-        """
-        table = self.__table__
-        keys = self.__fields__
-        keys.append(self.__primary_key__)
-        where = []
-        params = []
-        for f in keys:
-            v = self.get_default(f)
-            if v:
-                where.append("%s=?" % f)
-                params.append(v)
-        if len(where) > 0:
-            where = " and ".join(where)
-        else:
-            where = "1=1"
-        res = await find(table, where=where, params=params)
-        if not res:
-            res = dict()
-        return self(**res)
 
     @classmethod
     async def count(self, **kw):
