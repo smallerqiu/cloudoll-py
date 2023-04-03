@@ -61,6 +61,7 @@ async def query(sql, args=None, exec_type="select", autocommit=True):
     :params args 防注入tuple类型
     :params exec_type sql类型 select|insert|update|delete
     """
+    result = None
     if not _pool:
         raise ValueError("请定义SQL Pool")
     # if _debug:
@@ -70,7 +71,6 @@ async def query(sql, args=None, exec_type="select", autocommit=True):
     if not autocommit:
         await conn.begin()
     try:
-        result = None
         # await conn.ping()
 
         sql = sql.replace("?", "%s")
@@ -647,6 +647,10 @@ class Model(dict, metaclass=ModelMetaclass):
         self.__where__ = None
         self.__params__ = None
         self.__cols__ = None
+        self.__order_by__ = None
+        self.__group_by__ = None
+        self.__limit__ = None
+        self.__offset__ = None
         super(Model, self).__init__(**kw)
 
     def __call__(self, **kw):
@@ -676,13 +680,36 @@ class Model(dict, metaclass=ModelMetaclass):
         #         setattr(self, key, value)
         return value
 
+    def _build_sql(self):
+        table = self.__table__
+        cols = self.__cols__
+        where = self.__where__
+        order_by = self.__order_by__
+        group_by = self.__group_by__
+        limit = self.__limit__
+        offset = self.__offset__
+        cols = ",".join("`%s`" % f for f in cols) if cols is not None else '*'
+
+        sql = "select %s from `%s`" % (cols, table)
+        if where:
+            sql += where
+        if group_by:
+            sql += group_by
+        if group_by:
+            sql += group_by
+        if limit:
+            sql += limit
+        if offset:
+            sql += offset
+        return sql
+
     @classmethod
     def select(cls, *args):
         cols = []
         for a in args:
             if isinstance(a, Field):
                 cols.append(a.name)
-        cls.__cols__ = cols
+        cls.__cols__ = cols if len(cols) > 0 else None
         return cls
 
     @classmethod
@@ -707,6 +734,7 @@ class Model(dict, metaclass=ModelMetaclass):
 
     @classmethod
     async def one(cls):
+        sql = cls._build_sql(cls)
         return cls
 
     @classmethod
@@ -719,9 +747,6 @@ class Model(dict, metaclass=ModelMetaclass):
 
     def all(self):
         return self
-
-    def _cacl_sql(self):
-        pass
 
     async def update(self):
         """
