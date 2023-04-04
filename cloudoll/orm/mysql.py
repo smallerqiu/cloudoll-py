@@ -61,7 +61,7 @@ async def _get_cursor():
     return conn, cur
 
 
-async def query(sql, args=None, exec_type="select", autocommit=True):
+async def query(sql, args=None, exec_type=_ACTIONS.select, autocommit=True):
     """
     自定义sql
     :params sql 要执行的sql
@@ -83,11 +83,11 @@ async def query(sql, args=None, exec_type="select", autocommit=True):
         sql = sql.replace("?", "%s")
         await cur.execute(sql, args)
 
-        if exec_type == "select":
+        if exec_type == _ACTIONS.select:
             result = await cur.fetchall()
         elif exec_type in ["delete", "update"]:
             result = cur.rowcount > 0
-        elif exec_type == "insert":
+        elif exec_type == _ACTIONS.insert:
             result = {"id": cur.lastrowid} if cur.rowcount > 0 else {}
 
         # await cur.close()
@@ -756,30 +756,21 @@ class Model(dict, metaclass=ModelMetaclass):
         sql = f'delete from `{table}`'
         if where is not None:
             sql += f' where {" and ".join(f for f in where)}'
-
+        else:
+            raise "缺少where"
         return await query(sql, args, _ACTIONS.delete)
 
-    @classmethod
-    async def updateAll(self, **kw):
-        """
-        批量更新数据
-        :params where 更新条件'a=?'
-        :params params 防注入:[]
-        """
+    async def insert(self):
         table = self.__table__
-        return await updateAll(table, **kw)
+        data = dict()
+        for f in self.__fields__:
+            data[f] = self.get_default(f)
+        keys, args = get_key_args(**data)
+        sql = f"insert into `{table}` set {keys}"
+        return await query(sql, args, exec_type=_ACTIONS.insert)
 
-    @classmethod
-    async def deleteAll(self, **kw):
-        """
-        批量删除数据
-        :params where 条件 'a=?'
-        :params params 防注入:[]
-        """
-        table = self.__table__
-        return await delete(table, **kw)
 
-    async def save(self):
+    async def update(self):
         """
         主键保存数据
         """
