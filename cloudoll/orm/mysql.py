@@ -26,7 +26,7 @@ import aiomysql, asyncio, re, enum
 import cloudoll.logging as logging
 
 
-class _ACTIONS(enum):
+class _ACTIONS(enum.Enum):
     select = 0
     delete = 1
     update = 1
@@ -79,16 +79,17 @@ async def query(sql, args=None, exec_type=_ACTIONS.select, autocommit=True):
         await conn.begin()
     try:
         # await conn.ping()
-
+        print(sql, args)
+        sql = sql.replace("%", "%%")
         sql = sql.replace("?", "%s")
         await cur.execute(sql, args)
 
         if exec_type == _ACTIONS.select:
             result = await cur.fetchall()
-        elif exec_type in ["delete", "update"]:
-            result = cur.rowcount > 0
+        elif exec_type == _ACTIONS.delete:
+            result = cur.rowcount
         elif exec_type == _ACTIONS.insert:
-            result = {"id": cur.lastrowid} if cur.rowcount > 0 else {}
+            result = cur.lastrowid if cur.rowcount > 0 else None
 
         # await cur.close()
 
@@ -108,7 +109,7 @@ async def query(sql, args=None, exec_type=_ACTIONS.select, autocommit=True):
     return result
 
 
-def get_key_args(**kw):
+def _get_key_args(**kw):
     keys = []
     args = []
     for k, v in kw.items():
@@ -126,7 +127,7 @@ async def insert(table, **kw):
     :params table 表名
     :params args key=value
     """
-    keys, args = get_key_args(**kw)
+    keys, args = _get_key_args(**kw)
     sql = "insert into `%s` set %s" % (table, keys)
     return await query(sql, args, exec_type="insert")
 
@@ -142,7 +143,7 @@ async def update(table, pk="id", **kw):
         raise KeyError("缺少主键,默认主键为id")
     pkv = kw.get(pk)
     kw.pop(pk)
-    keys, args = get_key_args(**kw)
+    keys, args = _get_key_args(**kw)
     sql = "update `%s` set %s where %s=?" % (table, keys, pk)
     args.append(pkv)
     return await query(sql, args, exec_type="update")
@@ -176,7 +177,7 @@ async def updateAll(table, **kw):
     if not where or not params:
         raise KeyError("批量修改必须传值 { where: 'a=?', params:[2] }。")
 
-    keys, args = get_key_args(**kw)
+    keys, args = _get_key_args(**kw)
     sql = "update `%s` set %s where %s" % (table, keys, where)
     if params:
         # if args:
@@ -493,6 +494,13 @@ class Field(FieldOperator):
     def asc(self):
         return f'{self.name} asc'
 
+    def like(self, args):
+        return f"{self.name} like '{args}'"
+
+    def in_(self, args):
+        return f"{self.name} in {args}"
+        pass
+
 
 class Models(object):
     class CharField(Field):
@@ -642,15 +650,15 @@ class Model(dict, metaclass=ModelMetaclass):
     def get_value(self, key):
         return getattr(self, key, None)
 
-    def get_default(self, key):
-        value = getattr(self, key, None)
-        # if value is None:
-        #     field = self.__mappings__[key]
-        #     if field.default:
-        #         value = field.default() if callable(
-        #             field.default) else field.default
-        #         setattr(self, key, value)
-        return value
+    # def get_default(self, key):
+    #     value = getattr(self, key, None)
+    # if value is None:
+    #     field = self.__mappings__[key]
+    #     if field.default:
+    #         value = field.default() if callable(
+    #             field.default) else field.default
+    #         setattr(self, key, value)
+    # return value
 
     def _build_sql(self):
         table = self.__table__
@@ -685,13 +693,15 @@ class Model(dict, metaclass=ModelMetaclass):
         return cls
 
     @classmethod
-    def where(cls, *args):
+    def where(cls, *args, **kwargs):
         where = []
         params = []
         for x in args:
             if isinstance(x, Operator):
                 where.append(f"{x.key}{x.operators}?")
                 params.append(x.value)
+            else:
+                where.append(x)
         cls.__where__ = where
         cls.__params__ = params
         return cls
@@ -714,12 +724,9 @@ class Model(dict, metaclass=ModelMetaclass):
 
     @classmethod
     async def one(cls):
-        sql = cls._build_sql(cls)
-        args = cls.__params__
-        print(sql, args)
-        return None
-        rs = await query(sql, args)
-        return cls(rs) if rs is not None else None
+        cls.__limit__ = 1
+        rs = await cls.all()
+        return cls(**rs[0]) if rs is not None else None
 
     @classmethod
     def limit(cls, limit: int):
@@ -731,8 +738,12 @@ class Model(dict, metaclass=ModelMetaclass):
         cls.__offset__ = offset
         return cls
 
-    def all(self):
-        return self
+    @classmethod
+    async def all(cls):
+        sql = cls._build_sql(cls)
+        args = cls.__params__
+        rs = await query(sql, args)
+        return rs
 
     async def update(self):
         """
@@ -740,9 +751,9 @@ class Model(dict, metaclass=ModelMetaclass):
         """
         data = dict()
         for f in self.__fields__:
-            data[f] = self.get_default(f)
+            data[f] = self.get_value(f)
         pk = self.__primary_key__
-        data[pk] = self.get_default(pk)
+        data[pk] = self.get_value(pk)
         table = self.__table__
         return await update(table, pk, **data)
 
@@ -760,15 +771,19 @@ class Model(dict, metaclass=ModelMetaclass):
             raise "缺少where"
         return await query(sql, args, _ACTIONS.delete)
 
-    async def insert(self):
-        table = self.__table__
+    @classmethod
+    async def insert(cls):
+        table = cls.__table__
         data = dict()
-        for f in self.__fields__:
-            data[f] = self.get_default(f)
-        keys, args = get_key_args(**data)
+        for f in cls.__fields__:
+            data[f] = cls.get_value(f)
+        keys, args = _get_key_args(**data)
         sql = f"insert into `{table}` set {keys}"
-        return await query(sql, args, exec_type=_ACTIONS.insert)
-
+        rs = await query(sql, args, exec_type=_ACTIONS.insert)
+        pk = cls.__primary_key__
+        if rs is not None:
+            cls[pk] = rs
+        return rs
 
     async def update(self):
         """
