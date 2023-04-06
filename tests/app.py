@@ -10,7 +10,7 @@ MYSQL = {
         "host": "127.0.0.1",
         "port": 3306,
         "user": "root",
-        "password": "123456",
+        "password": "qiuzhiwu",
         "db": "blog",
         "charset": "utf8mb4"
     }
@@ -22,14 +22,16 @@ MYSQL = {
 async def test():
     await mysql.connect(loop=None, **MYSQL)
 
-    s = await Users.select(Users.test, Users.name, Users.email) \
-        .where(Users.test > 10, Users.name.like('%c%')) \
-        .order_by(Users.test.desc, Users.name.asc) \
-        .group_by(Users.test) \
-        .one()
+    # s = await Users.select(Users.test, Users.name, Users.email) \
+    #     .where(Users.test > 10, Users.name.like('%c%')) \
+    #     .order_by(Users.test.desc, Users.name.asc) \
+    #     .group_by(Users.test) \
+    #     .one()
     # print(s)
-
-    # await Users().insert()
+    s = Users(name="1", email="2")
+    # s.name = 2
+    await s.insert()
+    print(s)
 
 
 if __name__ == "__main__":

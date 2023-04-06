@@ -436,6 +436,9 @@ class Operator:
 
 
 class FieldOperator:
+    # def __init__(self, **kwargs):
+    #     pass
+
     def __eq__(self, other):
         return Operator('==', self.name, other)
 
@@ -467,7 +470,9 @@ class Field(FieldOperator):
             update_generated=False,  # 更新时for datetime
             unsigned=False,  # 无符号，没有负数
             comment=None,  # 备注
+            # **kwargs
     ):
+        # super().__init__(**kwargs)
         self.name = name
         self.column_type = column_type
         self.primary_key = primary_key
@@ -485,6 +490,12 @@ class Field(FieldOperator):
     def __str__(self):
         return "<%s, %s:%s>" % (self.__class__.__name__, self.column_type, self.name)
         # return self.name
+
+    def _set_value(self, value):
+        self._value = value
+
+    def _get_value(self):
+        return self._value
 
     @property
     def desc(self):
@@ -611,7 +622,7 @@ class ModelMetaclass(type):
             logging.warning("%s表缺少主键" % table_name)
 
         # for k in mappings.keys():
-        # attrs.pop(k)
+        #     attrs.pop(k)
 
         # escaped_fields = list(map(lambda f: "`%s`" % f, fields))
         attrs["__mappings__"] = mappings
@@ -631,7 +642,12 @@ class ModelMetaclass(type):
 
 class Model(dict, metaclass=ModelMetaclass):
     def __init__(self, **kw):
+
         super(Model, self).__init__(**kw)
+
+        for k, v in kw.items():
+            if (isinstance(self[k], Field)):
+                self[k]._set_value(v)
 
     def __call__(self, **kw):
         super(Model, self).__init__(**kw)
@@ -639,7 +655,9 @@ class Model(dict, metaclass=ModelMetaclass):
 
     def __getattr__(self, key):
         try:
-            return self[key]
+            # return self[key]
+            if (isinstance(self[key], Field)):
+                self[k]._get_value(v)
         except KeyError:
             raise AttributeError(r"'Model' object has no attribute '%s'" % key)
             # return None
@@ -650,7 +668,10 @@ class Model(dict, metaclass=ModelMetaclass):
     def get_value(self, key):
         return getattr(self, key, None)
 
-    # def get_default(self, key):
+    def get_default(self, key):
+        return getattr(self, key, None)
+        # return self.__mappings__[key]
+
     #     value = getattr(self, key, None)
     # if value is None:
     #     field = self.__mappings__[key]
@@ -726,7 +747,7 @@ class Model(dict, metaclass=ModelMetaclass):
     async def one(cls):
         cls.__limit__ = 1
         rs = await cls.all()
-        return cls(**rs[0]) if rs is not None else None
+        return cls(**rs[0]) if rs else None
 
     @classmethod
     def limit(cls, limit: int):
@@ -776,7 +797,7 @@ class Model(dict, metaclass=ModelMetaclass):
         table = cls.__table__
         data = dict()
         for f in cls.__fields__:
-            data[f] = cls.get_value(f)
+            data[f] = cls.get_value(cls, f)
         keys, args = _get_key_args(**data)
         sql = f"insert into `{table}` set {keys}"
         rs = await query(sql, args, exec_type=_ACTIONS.insert)
