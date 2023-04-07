@@ -121,17 +121,6 @@ def _get_key_args(**kw):
     return ",".join(keys), args
 
 
-async def insert(table, **kw):
-    """
-    插入数据
-    :params table 表名
-    :params args key=value
-    """
-    keys, args = _get_key_args(**kw)
-    sql = "insert into `%s` set %s" % (table, keys)
-    return await query(sql, args, exec_type="insert")
-
-
 async def update(table, pk="id", **kw):
     """
     主键更新数据
@@ -436,8 +425,8 @@ class Operator:
 
 
 class FieldOperator:
-    # def __init__(self, **kwargs):
-    #     pass
+    def __init__(self):
+        self.name = None
 
     def __eq__(self, other):
         return Operator('==', self.name, other)
@@ -470,9 +459,10 @@ class Field(FieldOperator):
             update_generated=False,  # 更新时for datetime
             unsigned=False,  # 无符号，没有负数
             comment=None,  # 备注
-            # **kwargs
+            **kwargs
     ):
-        # super().__init__(**kwargs)
+        super().__init__()
+        self.value = None
         self.name = name
         self.column_type = column_type
         self.primary_key = primary_key
@@ -488,14 +478,15 @@ class Field(FieldOperator):
         self.unsigned = unsigned
 
     def __str__(self):
-        return "<%s, %s:%s>" % (self.__class__.__name__, self.column_type, self.name)
+        return str(self.value)
+        # "<%s, %s:%s>" % (self.__class__.__name__, self.column_type, self.name)
         # return self.name
 
-    def _set_value(self, value):
-        self._value = value
+    def set_value(self, value):
+        self.value = value
 
-    def _get_value(self):
-        return self._value
+    def get_value(self):
+        return self.value
 
     @property
     def desc(self):
@@ -593,9 +584,9 @@ models = Models()
 
 
 class ModelMetaclass(type):
-    def __new__(self, name, bases, attrs):
+    def __new__(mcs, name, bases, attrs):
         if name == "Model":
-            return type.__new__(self, name, bases, attrs)
+            return type.__new__(mcs, name, bases, attrs)
         # if _debug:
         # logging.debug("Found model:%s" % name)
         # 表名
@@ -637,17 +628,19 @@ class ModelMetaclass(type):
         attrs["__group_by__"] = None
         attrs["__limit__"] = None
         attrs["__offset__"] = None
-        return type.__new__(self, name, bases, attrs)
+        return type.__new__(mcs, name, bases, attrs)
 
 
-class Model(dict, metaclass=ModelMetaclass):
+class Model(metaclass=ModelMetaclass):
     def __init__(self, **kw):
 
-        super(Model, self).__init__(**kw)
+        # super(Model, self).__init__(**kw)
 
         for k, v in kw.items():
-            if (isinstance(self[k], Field)):
-                self[k]._set_value(v)
+            f = getattr(self, k, None)
+            if isinstance(f, Field):
+                self.set_value(k, v)
+        # pass
 
     def __call__(self, **kw):
         super(Model, self).__init__(**kw)
@@ -655,22 +648,26 @@ class Model(dict, metaclass=ModelMetaclass):
 
     def __getattr__(self, key):
         try:
-            # return self[key]
-            if (isinstance(self[key], Field)):
-                self[k]._get_value(v)
+            return self[key]
         except KeyError:
             raise AttributeError(r"'Model' object has no attribute '%s'" % key)
             # return None
 
     def __setattr__(self, key, value):
-        self[key] = value
+        # getattr(self, key, None).set_value(value)
+        # self[key] = value
+        self.set_value(key, value)
 
     def get_value(self, key):
-        return getattr(self, key, None)
+        return getattr(self, key, None).get_value()
 
-    def get_default(self, key):
-        return getattr(self, key, None)
-        # return self.__mappings__[key]
+    def set_value(self, key, value):
+        return getattr(self, key, None).set_value(value)
+
+    def get_primary(self):
+        pk = self.__primary_key__
+        pkv = self.get_value(pk)
+        return pk, pkv
 
     #     value = getattr(self, key, None)
     # if value is None:
@@ -768,15 +765,23 @@ class Model(dict, metaclass=ModelMetaclass):
 
     async def update(self):
         """
-        主键更新数据
+        更新数据
         """
         data = dict()
+        table = self.__table__
+        where = self.__where__
+        pk = self.__primary_key__
+
         for f in self.__fields__:
             data[f] = self.get_value(f)
-        pk = self.__primary_key__
-        data[pk] = self.get_value(pk)
-        table = self.__table__
-        return await update(table, pk, **data)
+
+        keys, args = _get_key_args(**data)
+
+        sql = f"update `{table}` set %s where %s=?" % (table, keys, pk)
+        # args.append(pkv)
+
+        await query(sql, args, exec_type=_ACTIONS.update)
+        return 1
 
     async def delete(self):
         """
@@ -786,8 +791,13 @@ class Model(dict, metaclass=ModelMetaclass):
         where = self.__where__
         args = self.__params__
         sql = f'delete from `{table}`'
+
+        pk, pkv = self.get_value(self.__primary_key__)
         if where is not None:
             sql += f' where {" and ".join(f for f in where)}'
+        elif pkv is not None:
+            sql += f' where `{pk}`=?'
+            args = [pkv]
         else:
             raise "缺少where"
         return await query(sql, args, _ACTIONS.delete)
@@ -803,20 +813,8 @@ class Model(dict, metaclass=ModelMetaclass):
         rs = await query(sql, args, exec_type=_ACTIONS.insert)
         pk = cls.__primary_key__
         if rs is not None:
-            cls[pk] = rs
+            cls.set_value(cls, pk, rs)
         return rs
-
-    async def update(self):
-        """
-        主键保存数据
-        """
-        data = dict()
-        for f in self.__fields__:
-            data[f] = self.get_default(f)
-        table = self.__table__
-        pk = self.__primary_key__
-        data[pk] = self.get_default(pk)
-        return await save(table, pk, **data)
 
     @classmethod
     async def count(self, **kw):
