@@ -461,8 +461,8 @@ class Field(FieldOperator):
             comment=None,  # 备注
             **kwargs
     ):
-        super().__init__()
-        self.value = None
+        # super().__init__()
+        self._value = None
         self.name = name
         self.column_type = column_type
         self.primary_key = primary_key
@@ -478,15 +478,18 @@ class Field(FieldOperator):
         self.unsigned = unsigned
 
     def __str__(self):
-        return str(self.value)
+        return str(self._value)
         # "<%s, %s:%s>" % (self.__class__.__name__, self.column_type, self.name)
         # return self.name
 
+    # def __getattr__(self, item):
+    #     return self[item]
+
     def set_value(self, value):
-        self.value = value
+        self._value = value
 
     def get_value(self):
-        return self.value
+        return self._value
 
     @property
     def desc(self):
@@ -630,16 +633,26 @@ class ModelMetaclass(type):
         attrs["__offset__"] = None
         return type.__new__(mcs, name, bases, attrs)
 
+    # def __getattr__(self, key):
+    # print(self.__origin__)
+    # return type.__getattribute__(self, key)
+    # return self
 
-class Model(metaclass=ModelMetaclass):
+    # def __call__(self, *args, **kwargs):
+    #     print(1)
+    #     return type.__call__(self, *args, **kwargs)
+
+
+class Model(dict, metaclass=ModelMetaclass):
     def __init__(self, **kw):
-
-        # super(Model, self).__init__(**kw)
 
         for k, v in kw.items():
             f = getattr(self, k, None)
             if isinstance(f, Field):
                 self.set_value(k, v)
+
+        super(Model, self).__init__(**kw)
+
         # pass
 
     def __call__(self, **kw):
@@ -649,6 +662,7 @@ class Model(metaclass=ModelMetaclass):
     def __getattr__(self, key):
         try:
             return self[key]
+        #         # return self.get_value(self, key)
         except KeyError:
             raise AttributeError(r"'Model' object has no attribute '%s'" % key)
             # return None
@@ -666,7 +680,7 @@ class Model(metaclass=ModelMetaclass):
 
     def get_primary(self):
         pk = self.__primary_key__
-        pkv = self.get_value(pk)
+        pkv = self.get_value(self, pk)
         return pk, pkv
 
     #     value = getattr(self, key, None)
@@ -707,7 +721,7 @@ class Model(metaclass=ModelMetaclass):
         for a in args:
             if isinstance(a, Field):
                 cols.append(a.name)
-        cls.__cols__ = cols
+        cls.__cols__ = cols if len(cols) else None
         return cls
 
     @classmethod
@@ -716,12 +730,12 @@ class Model(metaclass=ModelMetaclass):
         params = []
         for x in args:
             if isinstance(x, Operator):
-                where.append(f"{x.key}{x.operators}?")
-                params.append(x.value)
+                where.append(f"{x.key}{x.operators.replace('==', '=')}?")
+                params.append(f"{x.value}")
             else:
                 where.append(x)
-        cls.__where__ = where
-        cls.__params__ = params
+        cls.__where__ = where if len(where) else None
+        cls.__params__ = params if len(params) else None
         return cls
 
     @classmethod
@@ -729,7 +743,7 @@ class Model(metaclass=ModelMetaclass):
         by = []
         for f in args:
             by.append(f)
-        cls.__order_by__ = by
+        cls.__order_by__ = by if len(by) else None
         return cls
 
     @classmethod
@@ -737,7 +751,7 @@ class Model(metaclass=ModelMetaclass):
         by = []
         for f in args:
             by.append(f.name)
-        cls.__group_by__ = by
+        cls.__group_by__ = by if len(by) else None
         return cls
 
     @classmethod
@@ -783,16 +797,17 @@ class Model(metaclass=ModelMetaclass):
         await query(sql, args, exec_type=_ACTIONS.update)
         return 1
 
-    async def delete(self):
+    @classmethod
+    async def delete(cls):
         """
         通过主键删除数据
         """
-        table = self.__table__
-        where = self.__where__
-        args = self.__params__
+        table = cls.__table__
+        where = cls.__where__
+        args = cls.__params__
         sql = f'delete from `{table}`'
 
-        pk, pkv = self.get_value(self.__primary_key__)
+        pk, pkv = cls.get_primary(cls)
         if where is not None:
             sql += f' where {" and ".join(f for f in where)}'
         elif pkv is not None:
@@ -803,11 +818,15 @@ class Model(metaclass=ModelMetaclass):
         return await query(sql, args, _ACTIONS.delete)
 
     @classmethod
-    async def insert(cls):
+    async def insert(cls, *args):
         table = cls.__table__
         data = dict()
         for f in cls.__fields__:
             data[f] = cls.get_value(cls, f)
+        if args:
+            for item in args:
+                for k in item:
+                    data[k] = item[k]
         keys, args = _get_key_args(**data)
         sql = f"insert into `{table}` set {keys}"
         rs = await query(sql, args, exec_type=_ACTIONS.insert)
