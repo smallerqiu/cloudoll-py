@@ -39,27 +39,19 @@ async def test():
     # await Users.insert({"name": 1, "sex": 4})
 
     # delete
+    # await Users.select().where(Users.test==9).delete()
     # await Users.where(Users.name.like('%1%')).delete()
     # await Users.where(Users.name == 1, Users.sex == 2).delete()
     # await Users(test=5).delete()
 
     # update
-    u = Users(test=6)
-    # s = Users(name="1", email="2")
-    # s.name = datetime.datetime.now()
-    a = Users(name=1)
-    # b = Users()
-    print(a.name)
-    print(Users().name)
-    # print(Users()['name'])
-    print(a['name'])
-    # print(c)
-    # print(a.name)
-    # print(Users.name)
-    # print(a['name'])
-    # await s.insert()
-    # print(s.test, s.name, s.email)
-    print(1)
+    # 1
+    # user = await Users.where(Users.name == 1).one()
+    # user.name = 5
+    # user.sex = "abc"
+    # await user.update()
+    # 2
+    # await Users.where(Users.name == 5, Users.sex == 'test').update({"sex": "fdsfdsfdsa"})
 
 
 if __name__ == "__main__":
