@@ -4,23 +4,20 @@
 from cloudoll.orm import mysql
 
 MYSQL = {
-    "debug": False,
-    "db": {
-        "host": "127.0.0.1",
-        "port": 3306,
-        "user": "root",
-        "password": "abcdefg",
-        "db": "test",
-        "charset":"utf8mb4"
-    }
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "root",
+    "password": "abcdefg",
+    "db": "test",
+    "charset":"utf8mb4",
+    "pool_size":5
 }
 
-await mysql.connect(loop=None,**MYSQL)
+await mysql.create_engine(loop=None,**MYSQL)
 """
 __author__ = "chuchur/chuchur.com"
 
 import operator
-from typing import Generic, TypeVar, Union
 
 import aiomysql, asyncio, re, enum
 import cloudoll.logging as logging
@@ -33,23 +30,20 @@ class _ACTIONS(enum.Enum):
     insert = 2
 
 
-async def connect(loop=None, **kw):
-    config = kw.get("db")
+async def create_engine(loop=None, **kw):
     global _pool
-    global _debug
-    _debug = kw.get("debug", False) or False
     if not loop:
         loop = asyncio.get_event_loop()
     _pool = await aiomysql.create_pool(
-        host=config.get("host", "localhost"),
-        port=config.get("port", 3306),
-        user=config["user"],
-        password=config["password"],
-        db=config["db"],
-        charset=config.get("charset", "utf8"),
-        autocommit=config.get("autocommit", True),
-        maxsize=config.get("maxsize", 10),
-        minsize=config.get("minsize", 1),
+        host=kw.get("host", "localhost"),
+        port=kw.get("port", 3306),
+        user=kw["user"],
+        password=kw["password"],
+        db=kw["db"],
+        charset=kw.get("charset", "utf8"),
+        autocommit=kw.get("autocommit", True),
+        maxsize=kw.get("maxsize", 10),
+        minsize=kw.get("pool_size", 5),
         cursorclass=aiomysql.DictCursor,
         loop=loop,
     )
@@ -121,29 +115,6 @@ def _get_key_args(**kw):
     return ",".join(keys), args
 
 
-async def sum(table, **kw):
-    """
-    累计数据
-    :params table 表名
-    :params col 统计字段
-    :params where 条件
-    :params params 防注入
-    """
-    where = kw.get("where", "1=1")
-    if not where:
-        where = "1=1"
-    col = kw.get("col", None)
-    if not col:
-        raise KeyError("缺少col")
-    sql = "select sum(`%s`) as total from `%s` where %s" % (col, table, where)
-    args = kw.get("params")
-    rows = await query(sql, args)
-    if rows and len(rows) > 0:
-        return rows[0]["total"]
-    else:
-        return 0
-
-
 def _get_col(field):
     fields = {
         "name": field["Field"],
@@ -169,7 +140,34 @@ def _get_col(field):
     return fields
 
 
-class ColTypes(enum.Enum):
+def _get_col_sql(field):
+    sql = f"`{field.name}` {field.column_type}"
+
+    if field.max_length:
+        sql += f"({field.max_length})"
+    if field.charset:
+        # _ci 不区分大小写 _cs Yes
+        cs = field.charset.split('_')[0]
+        sql += f" CHARACTER SET {cs} COLLATE {field.charset}"
+    if field.primary_key:
+        sql += " PRIMARY KEY"
+    if field.auto_increment:
+        sql += " AUTO_INCREMENT"
+    if field.not_null:
+        sql += " NOT NULL"
+    elif field.default:
+        sql += f" DEFAULT {field.default}"
+    else:
+        sql += " DEFAULT NULL"
+    if field.update_generated:
+        sql += " ON UPDATE CURRENT_TIMESTAMP"
+    if field.comment:
+        sql += f" COMMENT '{field.comment}'"
+
+    return sql
+
+
+class _ColTypes(enum.Enum):
     varchar = "Char"
     tinyint = "Boolean"
     int = "Integer"
@@ -185,7 +183,7 @@ class ColTypes(enum.Enum):
     timestamp = "Timestamp"
 
 
-async def table2model(table):
+async def create_model(table):
     """
     Table转 Model
     :params table 表名
@@ -226,14 +224,14 @@ async def table2model(table):
             values.append("unsigned=True")
         tb += "\t%s = models.%sField(%s)\n" % (
             name,
-            ColTypes[column_type].value,
+            _ColTypes[column_type].value,
             ",".join(values),
         )
     tb += "\n"
     return tb
 
 
-async def tables2models(tables: list = None, savepath: str = None):
+async def create_models(savepath: str = None, tables: list = None):
     """
     Table转Models
     :params tables 要输出的表 ['user',...],不传取所有
@@ -247,7 +245,7 @@ async def tables2models(tables: list = None, savepath: str = None):
         tbs = [list(c.values())[0] for c in result]
     ms = "from cloudoll.orm.mysql import models, Model\n\n"
     for t in tbs:
-        ms += await table2model(t)
+        ms += await create_model(t)
     if savepath:
         with open(savepath, "a", encoding="utf-8") as f:
             f.write(ms)
@@ -255,9 +253,32 @@ async def tables2models(tables: list = None, savepath: str = None):
         return ms
 
 
+async def create_table(table):
+    tb = table.__table__
+    sql = f"DROP TABLE IF EXISTS `{tb}`;\n"
+    sql += f"CREATE TABLE `{tb}` (\n"
+
+    labels = [attr for attr in dir(table) if not callable(getattr(table, attr)) and not attr.startswith("__")]
+    sqls = []
+    for f in labels:
+        lb = getattr(table, f)
+        row = _get_col_sql(lb)
+        sqls.append(row)
+    sql += ",\n".join(sqls)
+    sql += ") ENGINE=InnoDB;"
+
+    await query(sql, None, _ACTIONS.delete)
+    logging.info(f"create table {tb} ok")
+
+
+async def create_tables():
+    s = Model
+    pass
+
+
 class Operator:
     def __init__(self, operators, left, right):
-        self.operators = operators
+        self._operators = operators
         self._value = right
         self._key = left
         self._operator_map = {
@@ -278,8 +299,12 @@ class Operator:
         return self._value
 
     @property
+    def operators(self):
+        return self._operators.replace('==', '=')
+
+    @property
     def operator(self):
-        return self._operator_map[self.operators]
+        return self._operator_map[self._operators]
 
 
 class FieldOperator:
@@ -360,8 +385,14 @@ class Field(FieldOperator):
     def like(self, args):
         return f"{self.name} like '{args}'"
 
+    def not_like(self, args):
+        return f"{self.name} not like '{args}'"
+
     def In(self, args):
         return f"{self.name} in {args}"
+
+    def not_in(self, args):
+        return f"{self.name} not in {args}"
 
     @property
     def count(self):
@@ -384,10 +415,10 @@ class Field(FieldOperator):
         return f"{self.name} is not in {args}"
 
     def between(self, *args):
-        return f"{self.name} between {args}"
+        return f"{self.name} between {args[0]} and {args[1]}"
 
-    def contains(self, args):
-        return f"{self.name} contains {args}"
+    def not_between(self, *args):
+        return f"{self.name} not between {args[0]} and {args[1]}"
 
 
 class Models(object):
@@ -426,39 +457,39 @@ class Models(object):
                              max_length=max_length, comment=comment, )
 
     class TextField(Field):
-        def __init__(self, name=None, default=None, charset=None, max_length=255, not_null=False,
+        def __init__(self, name=None, default=None, charset=None, max_length=None, not_null=False,
                      comment=None, ):
             super().__init__(name, "text", default, charset=charset, max_length=max_length,
                              not_null=not_null, comment=comment, )
 
     class LongTextField(Field):
-        def __init__(self, name=None, default=None, charset=None, max_length=500, not_null=False,
+        def __init__(self, name=None, default=None, charset=None, max_length=None, not_null=False,
                      comment=None, ):
             super().__init__(name, "longtext", default, charset=charset, max_length=max_length,
                              not_null=not_null, comment=comment, )
 
     class MediumtextField(Field):
-        def __init__(self, name=None, default=None, charset=None, max_length=500, not_null=False,
+        def __init__(self, name=None, default=None, charset=None, max_length=None, not_null=False,
                      comment=None, ):
             super().__init__(name, "mediumtext", default, charset=charset, max_length=max_length, not_null=not_null,
                              comment=comment, )
 
     class DatetimeField(Field):
-        def __init__(self, name=None, default=None, max_length=6, not_null=False, created_generated=False,
+        def __init__(self, name=None, default=None, max_length=None, not_null=False, created_generated=False,
                      update_generated=False, comment=None, ):
             super().__init__(name, "datetime", default, max_length=max_length, not_null=not_null,
                              created_generated=created_generated, update_generated=update_generated, comment=comment, )
 
     class DateField(Field):
-        def __init__(self, name=None, default=None, max_length=6, not_null=False, created_generated=False,
+        def __init__(self, name=None, default=None, max_length=None, not_null=False, created_generated=False,
                      update_generated=False, comment=None, ):
-            super().__init__(name, "date", False, default, max_length, not_null=not_null,
+            super().__init__(name, "date", default, max_length=max_length, not_null=not_null,
                              created_generated=created_generated, update_generated=update_generated, comment=comment, )
 
     class TimestampField(Field):
-        def __init__(self, name=None, default=None, max_length=6, not_null=False, created_generated=False,
+        def __init__(self, name=None, default=None, max_length=None, not_null=False, created_generated=False,
                      update_generated=False, comment=None, ):
-            super().__init__(name, "timestamp", default, False, max_length, not_null=not_null,
+            super().__init__(name, "timestamp", default, False, max_length=max_length, not_null=not_null,
                              created_generated=created_generated, update_generated=update_generated, comment=comment, )
 
     class JsonField(Field):
@@ -470,10 +501,12 @@ models = Models()
 
 
 class ModelMetaclass(type):
+    # def __init__(self, **kw):
+    #     pass
+
     def __new__(mcs, name, bases, attrs):
         if name == "Model":
             return type.__new__(mcs, name, bases, attrs)
-        # if _debug:
         # logging.debug("Found model:%s" % name)
         # 表名
         table_name = attrs.get("__table__", None) or name
@@ -506,6 +539,7 @@ class ModelMetaclass(type):
         attrs["__table__"] = table_name
         attrs["__primary_key__"] = primary_key
         attrs["__fields__"] = fields
+        attrs["__join__"] = None
 
         attrs["__where__"] = None
         attrs["__having__"] = None
@@ -526,9 +560,7 @@ class Model(dict, metaclass=ModelMetaclass):
             if isinstance(f, Field):
                 self.set_value(k, v)
 
-        super(Model, self).__init__(**kw)
-
-        # pass
+        super(Model, self).__init__(self, **kw)
 
     def __call__(self, **kw):
         super(Model, self).__init__(**kw)
@@ -571,14 +603,25 @@ class Model(dict, metaclass=ModelMetaclass):
         table = self.__table__
         cols = self.__cols__
         where = self.__where__
+        joins = self.__join__
         having = self.__having__
         order_by = self.__order_by__
         group_by = self.__group_by__
         limit = self.__limit__
         offset = self.__offset__
-        cols = ",".join("`%s`" % f for f in cols) if cols is not None else '*'
+
+        if cols is not None:
+            _cols = []
+            for c in cols:
+                name = c.full_name if joins is not None else c.name
+                _cols.append(name)
+            cols = ",".join(_cols)
+        else:
+            cols = '*'
 
         sql = f"select {cols} from `{table}`"
+        if joins is not None:
+            sql += joins
         if where is not None:
             sql += f" where {' and '.join(f for f in where)}"
         if group_by:
@@ -599,22 +642,31 @@ class Model(dict, metaclass=ModelMetaclass):
         cols = []
         for a in args:
             if isinstance(a, Field):
-                cols.append(a.name)
+                a.full_name = f"{cls.__table__}.{a.name}"
+                cols.append(a)
         cls.__cols__ = cols if len(cols) else None
         return cls
 
     @classmethod
     def join(cls, *args):
-
-        pass
+        (t, f) = args
+        tb = getattr(t, '__table__', None)
+        n = getattr(f.value, 'name', None)
+        join = f" join {tb} on {cls.__table__}.{f.key}{f.operators}{tb}.{n} "
+        if cls.__join__ is None:
+            cls.__join__ = join
+        else:
+            cls.__join__ += join
+        return cls
 
     @classmethod
     def where(cls, *args):
         where = []
         params = []
+        tb = f"{cls.__table__}." if cls.__join__ is not None else ""
         for x in args:
             if isinstance(x, Operator):
-                where.append(f"{x.key}{x.operators.replace('==', '=')}?")
+                where.append(f"{tb}{x.key}{x.operators}?")
                 params.append(f"{x.value}")
             else:
                 where.append(x)
