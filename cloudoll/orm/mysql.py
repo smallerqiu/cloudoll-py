@@ -23,11 +23,14 @@ import aiomysql, asyncio, re, enum
 import cloudoll.logging as logging
 
 
-class _ACTIONS(enum.Enum):
+class ACTIONS(enum.Enum):
     select = 0
     delete = 1
     update = 1
     insert = 2
+
+
+__MODELS__ = []
 
 
 async def create_engine(loop=None, **kw):
@@ -55,7 +58,7 @@ async def _get_cursor():
     return conn, cur
 
 
-async def query(sql, args=None, exec_type=_ACTIONS.select, autocommit=True):
+async def query(sql, args=None, exec_type=ACTIONS.select, autocommit=True):
     """
     自定义sql
     :params sql 要执行的sql
@@ -78,11 +81,11 @@ async def query(sql, args=None, exec_type=_ACTIONS.select, autocommit=True):
         sql = sql.replace("?", "%s")
         await cur.execute(sql, args)
 
-        if exec_type == _ACTIONS.select:
+        if exec_type == ACTIONS.select:
             result = await cur.fetchall()
-        elif exec_type == _ACTIONS.delete:
+        elif exec_type == ACTIONS.delete:
             result = cur.rowcount
-        elif exec_type == _ACTIONS.insert:
+        elif exec_type == ACTIONS.insert:
             result = cur.lastrowid if cur.rowcount > 0 else None
 
         # await cur.close()
@@ -124,7 +127,7 @@ def _get_col(field):
         "charset": field["Collation"],
         "max_length": None,
         "auto_increment": field["Extra"] == "auto_increment",
-        "not_null": field["Null"] == "NO",
+        "NOT_NULL": field["Null"] == "NO",
         "created_generated": "DEFAULT_GENERATED on" in field["Extra"],
         "update_generated": "on update CURRENT_TIMESTAMP" == field["Extra"],
         "comment": field["Comment"],
@@ -153,10 +156,10 @@ def _get_col_sql(field):
         sql += " PRIMARY KEY"
     if field.auto_increment:
         sql += " AUTO_INCREMENT"
-    if field.not_null:
+    if field.NOT_NULL:
         sql += " NOT NULL"
     elif field.default:
-        sql += f" DEFAULT {field.default}"
+        sql += f" DEFAULT '{field.default}'"
     else:
         sql += " DEFAULT NULL"
     if field.update_generated:
@@ -212,7 +215,7 @@ async def create_model(table):
         if fields["auto_increment"]:
             values.append("auto_increment=True")
         if fields["not_null"]:
-            values.append("not_null=True")
+            values.append("NOT_NULL=True")
         if fields["created_generated"]:
             values.append("created_generated=True")
         if fields["update_generated"]:
@@ -267,13 +270,13 @@ async def create_table(table):
     sql += ",\n".join(sqls)
     sql += ") ENGINE=InnoDB;"
 
-    await query(sql, None, _ACTIONS.delete)
-    logging.info(f"create table {tb} ok")
+    logging.info(f"create table {tb} ...")
+    await query(sql, None, ACTIONS.delete)
 
 
 async def create_tables():
-    s = Model
-    pass
+    for model in __MODELS__:
+        await create_table(model)
 
 
 class Operator:
@@ -314,6 +317,9 @@ class FieldOperator:
     def __eq__(self, other):
         return Operator('==', self.name, other)
 
+    def __ne__(self, other):
+        return Operator('!=', self.name, other)
+
     def __lt__(self, other):
         return Operator('<', self.name, other)
 
@@ -337,7 +343,7 @@ class Field(FieldOperator):
             charset=None,  # 编码
             max_length=None,  # 长度
             auto_increment=False,  # 自增
-            not_null=False,  # 非空
+            NOT_NULL=False,  # 非空
             created_generated=False,  # 创建时for datetime
             update_generated=False,  # 更新时for datetime
             unsigned=False,  # 无符号，没有负数
@@ -345,6 +351,7 @@ class Field(FieldOperator):
             **kwargs
     ):
         super().__init__()
+        self.full_name = None
         self._value = None
         self.name = name
         self.column_type = column_type
@@ -353,10 +360,9 @@ class Field(FieldOperator):
         self.default = default
         self.max_length = max_length
         self.auto_increment = auto_increment
-        self.not_null = not_null
+        self.NOT_NULL = NOT_NULL
         self.created_generated = created_generated
         self.update_generated = update_generated
-        self.not_null = not_null
         self.comment = comment
         self.unsigned = unsigned
 
@@ -374,11 +380,9 @@ class Field(FieldOperator):
     def get_value(self):
         return self._value
 
-    @property
     def desc(self):
         return f'{self.name} desc'
 
-    @property
     def asc(self):
         return f'{self.name} asc'
 
@@ -394,11 +398,9 @@ class Field(FieldOperator):
     def not_in(self, args):
         return f"{self.name} not in {args}"
 
-    @property
     def count(self):
         return f"count({self.name})"
 
-    @property
     def sum(self):
         return f"sum({self.name})"
 
@@ -411,14 +413,35 @@ class Field(FieldOperator):
     def not_null(self):
         return f"{self.name} is not null"
 
-    def not_in(self, args):
-        return f"{self.name} is not in {args}"
-
     def between(self, *args):
         return f"{self.name} between {args[0]} and {args[1]}"
 
     def not_between(self, *args):
         return f"{self.name} not between {args[0]} and {args[1]}"
+
+
+def _build(types, *args):
+    q = []
+    p = []
+    for x in args:
+        if isinstance(x, Operator):
+            q.append(f"{x.key}{x.operators}?")
+            p.append(f"{x.value}")
+        elif isinstance(x, tuple):
+            p1, q1 = x
+            q.append(q1)
+            p += p1
+        else:
+            q.append(x)
+    return p, f"({types.join(q)})"
+
+
+def And(*args):
+    return _build(" and ", *args)
+
+
+def Or(*args):
+    return _build(" or ", *args)
 
 
 class Models(object):
@@ -549,7 +572,9 @@ class ModelMetaclass(type):
         attrs["__group_by__"] = None
         attrs["__limit__"] = None
         attrs["__offset__"] = None
-        return type.__new__(mcs, name, bases, attrs)
+        model = type.__new__(mcs, name, bases, attrs)
+        __MODELS__.append(model)
+        return model
 
 
 class Model(dict, metaclass=ModelMetaclass):
@@ -587,7 +612,7 @@ class Model(dict, metaclass=ModelMetaclass):
 
     def get_primary(self):
         pk = self.__primary_key__
-        pkv = self.get_value(self, pk)
+        pkv = self.get_value(pk)
         return pk, pkv
 
     #     value = getattr(self, key, None)
@@ -668,6 +693,10 @@ class Model(dict, metaclass=ModelMetaclass):
             if isinstance(x, Operator):
                 where.append(f"{tb}{x.key}{x.operators}?")
                 params.append(f"{x.value}")
+            elif isinstance(x, tuple):
+                p, q = x
+                where.append(q)
+                params += p
             else:
                 where.append(x)
         cls.__where__ = where if len(where) else None
@@ -680,7 +709,7 @@ class Model(dict, metaclass=ModelMetaclass):
         params = []
         for x in args:
             if isinstance(x, Operator):
-                having.append(f"{x.key}{x.operators.replace('==', '=')}?")
+                having.append(f"{x.key}{x.operators}?")
                 params.append(f"{x.value}")
             else:
                 having.append(x)
@@ -761,7 +790,7 @@ class Model(dict, metaclass=ModelMetaclass):
         else:
             raise "缺少where或主键"
 
-        return await query(sql, args, _ACTIONS.update)
+        return await query(sql, args, ACTIONS.update)
 
     @classmethod
     async def delete(cls):
@@ -781,7 +810,7 @@ class Model(dict, metaclass=ModelMetaclass):
             args = [pkv]
         else:
             raise "缺少where或主键"
-        return await query(sql, args, _ACTIONS.delete)
+        return await query(sql, args, ACTIONS.delete)
 
     @classmethod
     async def insert(cls, *args):
@@ -800,7 +829,7 @@ class Model(dict, metaclass=ModelMetaclass):
                     data[k] = item[k]
         keys, args = _get_key_args(**data)
         sql = f"insert into `{table}` set {keys}"
-        rs = await query(sql, args, exec_type=_ACTIONS.insert)
+        rs = await query(sql, args, exec_type=ACTIONS.insert)
         pk = cls.__primary_key__
         if rs is not None:
             cls.set_value(cls, pk, rs)

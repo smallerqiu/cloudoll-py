@@ -1,7 +1,7 @@
 from cloudoll import logging
 from cloudoll.web.server import server
-from cloudoll.orm import mysql
-from models import Articles
+from cloudoll.orm.mysql import create_engine, And, Or
+from models import Articles, Comments
 import asyncio, datetime
 
 MYSQL = {
@@ -17,11 +17,18 @@ MYSQL = {
 # server.create(template='template').run()
 
 async def test():
-    await mysql.create_engine(loop=None, **MYSQL)
+    await create_engine(loop=None, **MYSQL)
     # await mysql.create_models('models.py')
     # await mysql.create_table(Articles)
-    await mysql.create_tables()
+    # await mysql.create_tables()
     # select
+    r = await Articles.select() \
+        .join(Comments, Comments.id == Articles.id) \
+        .where(Articles.id > 0, Articles.status != 1,
+               And(Articles.title.like('a'), Articles.status != 1,
+                   Or(Articles.thumbnail.not_null(), Articles.status != 1)),
+
+               ).one()
     # r = await Users.select() \
     #     .where(Users.test > 1, Users.name.like('%a%')) \
     #     .order_by(Users.test.desc, Users.name.asc) \
