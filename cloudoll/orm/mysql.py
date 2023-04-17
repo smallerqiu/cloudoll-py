@@ -21,6 +21,7 @@ import operator
 
 import aiomysql, asyncio, re, enum
 import cloudoll.logging as logging
+from inspect import isclass
 
 
 class ACTIONS(enum.Enum):
@@ -76,7 +77,7 @@ async def query(sql, args=None, exec_type=ACTIONS.select, autocommit=True):
         await conn.begin()
     try:
         # await conn.ping()
-        print(sql, args)
+        # print(sql, args)
         sql = sql.replace("%", "%%")
         sql = sql.replace("?", "%s")
         await cur.execute(sql, args)
@@ -256,12 +257,16 @@ async def create_models(savepath: str = None, tables: list = None):
         return ms
 
 
+def _get_filed(model):
+    return [attr for attr in dir(model) if not callable(getattr(model, attr)) and not attr.startswith("__")]
+
+
 async def create_table(table):
     tb = table.__table__
     sql = f"DROP TABLE IF EXISTS `{tb}`;\n"
     sql += f"CREATE TABLE `{tb}` (\n"
 
-    labels = [attr for attr in dir(table) if not callable(getattr(table, attr)) and not attr.startswith("__")]
+    labels = _get_filed(table)
     sqls = []
     for f in labels:
         lb = getattr(table, f)
@@ -290,7 +295,8 @@ class Operator:
             '<': operator.lt,
             '<=': operator.le,
             '>': operator.gt,
-            '>=': operator.ge
+            '>=': operator.ge,
+            # "+=":operator
         }
 
     @property
@@ -315,22 +321,22 @@ class FieldOperator:
         self.name = None
 
     def __eq__(self, other):
-        return Operator('==', self.name, other)
+        return Operator('==', self.full_name, other)
 
     def __ne__(self, other):
-        return Operator('!=', self.name, other)
+        return Operator('!=', self.full_name, other)
 
     def __lt__(self, other):
-        return Operator('<', self.name, other)
+        return Operator('<', self.full_name, other)
 
     def __le__(self, other):
-        return Operator('<=', self.name, other)
+        return Operator('<=', self.full_name, other)
 
     def __gt__(self, other):
-        return Operator('>', self.name, other)
+        return Operator('>', self.full_name, other)
 
     def __ge__(self, other):
-        return Operator('>=', self.name, other)
+        return Operator('>=', self.full_name, other)
 
 
 class Field(FieldOperator):
@@ -381,43 +387,43 @@ class Field(FieldOperator):
         return self._value
 
     def desc(self):
-        return f'{self.name} desc'
+        return f'{self.full_name} desc'
 
     def asc(self):
-        return f'{self.name} asc'
+        return f'{self.full_name} asc'
 
     def like(self, args):
-        return f"{self.name} like '{args}'"
+        return f"{self.full_name} like '{args}'"
 
     def not_like(self, args):
-        return f"{self.name} not like '{args}'"
+        return f"{self.full_name} not like '{args}'"
 
     def In(self, args):
-        return f"{self.name} in {args}"
+        return f"{self.full_name} in {args}"
 
     def not_in(self, args):
-        return f"{self.name} not in {args}"
+        return f"{self.full_name} not in {args}"
 
     def count(self):
-        return f"count({self.name})"
+        return f"count({self.full_name})"
 
     def sum(self):
-        return f"sum({self.name})"
+        return f"sum({self.full_name})"
 
     def As(self, args):
-        return f"{self.name} as {args}"
+        return f"{self.full_name} as {args}"
 
     def is_null(self):
-        return f"{self.name} is null"
+        return f"{self.full_name} is null"
 
     def not_null(self):
-        return f"{self.name} is not null"
+        return f"{self.full_name} is not null"
 
     def between(self, *args):
-        return f"{self.name} between {args[0]} and {args[1]}"
+        return f"{self.full_name} between {args[0]} and {args[1]}"
 
     def not_between(self, *args):
-        return f"{self.name} not between {args[0]} and {args[1]}"
+        return f"{self.full_name} not between {args[0]} and {args[1]}"
 
 
 def _build(types, *args):
@@ -433,15 +439,29 @@ def _build(types, *args):
             p += p1
         else:
             q.append(x)
-    return p, f"({types.join(q)})"
+    return p, q
 
 
 def And(*args):
-    return _build(" and ", *args)
+    p, q = _build(*args)
+    return p, " and ".join(q)
 
 
 def Or(*args):
-    return _build(" or ", *args)
+    p, q = _build(*args)
+    return p, " or ".join(q)
+
+
+def _join(func):
+    def wrapper(*args, **kwargs):
+        for m in args:
+            if isclass(m) and issubclass(m, Model):
+                for x in _get_filed(m):
+                    filed = getattr(m, x)
+                    filed.full_name = f"`{m.__table__}`.{filed.name}"
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 class Models(object):
@@ -542,6 +562,7 @@ class ModelMetaclass(type):
                 # logging.debug("Found mapping:%s, %s" % (k, v))
                 mappings[k] = v
                 v.name = k
+                v.full_name = k
                 if v.primary_key:
                     # logging.info("主键" + k)
                     if primary_key:
@@ -579,7 +600,6 @@ class ModelMetaclass(type):
 
 class Model(dict, metaclass=ModelMetaclass):
     def __init__(self, **kw):
-
         for k, v in kw.items():
             f = getattr(self, k, None)
             if isinstance(f, Field):
@@ -601,8 +621,8 @@ class Model(dict, metaclass=ModelMetaclass):
 
     def __setattr__(self, key, value):
         # getattr(self, key, None).set_value(value)
-        # self[key] = value
-        self.set_value(key, value)
+        self[key] = value
+        # self.set_value(key, value)
 
     def get_value(self, key):
         return getattr(self, key, None).get_value()
@@ -634,12 +654,11 @@ class Model(dict, metaclass=ModelMetaclass):
         group_by = self.__group_by__
         limit = self.__limit__
         offset = self.__offset__
-
         if cols is not None:
             _cols = []
             for c in cols:
-                name = c.full_name if joins is not None else c.name
-                _cols.append(name)
+                # name = c.full_name if joins is not None else c.name
+                _cols.append(c.full_name)
             cols = ",".join(_cols)
         else:
             cols = '*'
@@ -667,12 +686,13 @@ class Model(dict, metaclass=ModelMetaclass):
         cols = []
         for a in args:
             if isinstance(a, Field):
-                a.full_name = f"{cls.__table__}.{a.name}"
+                # a.full_name = f"{cls.__table__}.{a.name}"
                 cols.append(a)
         cls.__cols__ = cols if len(cols) else None
         return cls
 
     @classmethod
+    @_join
     def join(cls, *args):
         (t, f) = args
         tb = getattr(t, '__table__', None)
@@ -686,21 +706,9 @@ class Model(dict, metaclass=ModelMetaclass):
 
     @classmethod
     def where(cls, *args):
-        where = []
-        params = []
-        tb = f"{cls.__table__}." if cls.__join__ is not None else ""
-        for x in args:
-            if isinstance(x, Operator):
-                where.append(f"{tb}{x.key}{x.operators}?")
-                params.append(f"{x.value}")
-            elif isinstance(x, tuple):
-                p, q = x
-                where.append(q)
-                params += p
-            else:
-                where.append(x)
-        cls.__where__ = where if len(where) else None
-        cls.__params__ = params if len(params) else None
+        p, q = _build(*args)
+        cls.__where__ = q if len(q) else None
+        cls.__params__ = p if len(p) else None
         return cls
 
     @classmethod
@@ -729,7 +737,7 @@ class Model(dict, metaclass=ModelMetaclass):
     def group_by(cls, *args):
         by = []
         for f in args:
-            by.append(f.name)
+            by.append(f.full_name)
         cls.__group_by__ = by if len(by) else None
         return cls
 
