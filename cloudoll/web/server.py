@@ -3,6 +3,7 @@
 
 __author__ = "chuchur/chuchur.com"
 
+import asyncio
 import base64
 import datetime
 import importlib
@@ -110,12 +111,14 @@ class Server(object):
             client_max_size=None,
     ):
         """
-        创建server
-        :params loop asyncio 的 loop
-        :params template 模板目录
-        :params static 静态资源目录 or static=dict(prefix='/other',path='/home/...')
-        :params middlewares 中间件
+        Init server
+        :params 
+        :params template 
+        :params static  or static=dict(prefix='/other',path='/home/...')
+        :params middlewares 
         """
+        if loop is None:
+            loop = asyncio.get_event_loop()
         if middlewares is None:
             middlewares = []
         self.loop = loop
@@ -135,7 +138,7 @@ class Server(object):
                 self.app.router.add_static(**static)
             else:
                 self.app.router.add_static("/static", path="static")
-            logging.warning("静态资源建议用nginx/apache 等代理")
+            logging.warning("Suggest using nginx instead.")
         if template:
             self.env = Environment(loader=FileSystemLoader(template), autoescape=True)
 
@@ -143,9 +146,9 @@ class Server(object):
 
     def run(self, **kw):
         """
-        运行服务
-        :params prot 端口，默认8080
-        :params host 地址 默认127.0.0.1
+        run server
+        :params prot default  8080
+        :params host default 127.0.0.1
         """
         self.app.add_routes(self.__routes)
         for r in self._routes:
@@ -225,15 +228,17 @@ def all(path, **kw):
 def jsons(data, **kw):
     if not data:
         data = dict()
-    data["timestamp"] = int(datetime.datetime.now().timestamp())
+    data["timestamp"] = int(datetime.datetime.now().timestamp() * 1000)
     text = json.dumps(data, ensure_ascii=False, cls=JsonEncoder)
     return web.json_response(text=text, **kw)
 
 
-def view(template=None, **kw):
-    body = server.env.get_template(template).render(
-        **kw, timestamp=int(datetime.datetime.now().timestamp())
-    )
+def view(template_name=None, **kw):
+    body = None
+    if server.env is not None:
+        body = server.env.get_template(template_name).render(
+            **kw, timestamp=int(datetime.datetime.now().timestamp() * 1000)
+        )
     _view = web.Response(body=body)
     _view.content_type = "text/html;charset=utf-8"
     return _view

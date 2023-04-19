@@ -59,7 +59,7 @@ async def _get_cursor():
     return conn, cur
 
 
-async def query(sql, args=None, exec_type=ACTIONS.select, autocommit=True):
+async def query(sql, params=None, exec_type=ACTIONS.select, autocommit=True):
     """
     自定义sql
     :params sql 要执行的sql
@@ -70,7 +70,7 @@ async def query(sql, args=None, exec_type=ACTIONS.select, autocommit=True):
     if not _pool:
         raise ValueError("请定义SQL Pool")
     # if _debug:
-    logging.info("SQL: %s \n params:%s" % (sql, args))
+    logging.info("SQL: %s \n params:%s" % (sql, params))
     conn, cur = await _get_cursor()
 
     if not autocommit:
@@ -80,7 +80,7 @@ async def query(sql, args=None, exec_type=ACTIONS.select, autocommit=True):
         # print(sql, args)
         sql = sql.replace("%", "%%")
         sql = sql.replace("?", "%s")
-        await cur.execute(sql, args)
+        await cur.execute(sql, params)
 
         if exec_type == ACTIONS.select:
             result = await cur.fetchall()
@@ -107,16 +107,24 @@ async def query(sql, args=None, exec_type=ACTIONS.select, autocommit=True):
     return result
 
 
-def _get_key_args(**kw):
+def _get_key_args(cls, args):
+    data = dict()
+    md = None
+    if args is None or not args:
+        for f in cls.__fields__:
+            data[f] = cls.get_value(cls, f)
+    else:
+        for item in args:
+            md = item
+            for k in dict(item):
+                data[k] = item[k]
     keys = []
-    args = []
-    for k, v in kw.items():
-        if v is not None:
-            keys.append("`%s`=?" % k)
-            if v == "null" or v == "NULL":
-                v = None
-            args.append(v)
-    return ",".join(keys), args
+    params = []
+    for k, v in data.items():
+        # if v is not None:
+        keys.append("`%s`=?" % k)
+        params.append(v)
+    return ",".join(keys), params, md
 
 
 def _get_col(field):
@@ -318,7 +326,7 @@ class Operator:
 
 class FieldOperator:
     def __init__(self):
-        self.name = None
+        self.full_name = None
 
     def __eq__(self, other):
         return Operator('==', self.full_name, other)
@@ -426,7 +434,7 @@ class Field(FieldOperator):
         return f"{self.full_name} not between {args[0]} and {args[1]}"
 
 
-def _build(types, *args):
+def _build(*args):
     q = []
     p = []
     for x in args:
@@ -607,6 +615,9 @@ class Model(dict, metaclass=ModelMetaclass):
 
         super(Model, self).__init__(self, **kw)
 
+    # def __str__(self):
+    #     return "1"
+
     def __call__(self, **kw):
         super(Model, self).__init__(**kw)
         return self
@@ -614,15 +625,15 @@ class Model(dict, metaclass=ModelMetaclass):
     def __getattr__(self, key):
         try:
             return self[key]
-        #         # return self.get_value(self, key)
+            # return self.get_value(self, key)
         except KeyError:
             raise AttributeError(r"'Model' object has no attribute '%s'" % key)
             # return None
 
     def __setattr__(self, key, value):
         # getattr(self, key, None).set_value(value)
-        self[key] = value
-        # self.set_value(key, value)
+        # self[key] = value
+        self.set_value(key, value)
 
     def get_value(self, key):
         return getattr(self, key, None).get_value()
@@ -632,7 +643,7 @@ class Model(dict, metaclass=ModelMetaclass):
 
     def get_primary(self):
         pk = self.__primary_key__
-        pkv = self.get_value(pk)
+        pkv = self.get_value(self, pk)
         return pk, pkv
 
     #     value = getattr(self, key, None)
@@ -770,40 +781,31 @@ class Model(dict, metaclass=ModelMetaclass):
     @classmethod
     async def update(cls, *args):
         """
-        更新数据
+        Update data
         """
-        data = dict()
         table = cls.__table__
         where = cls.__where__
 
-        for f in cls.__fields__:
-            data[f] = cls.get_value(cls, f)
-
-        if args:
-            for item in args:
-                for k in item:
-                    data[k] = item[k]
-
-        keys, args = _get_key_args(**data)
+        keys, params, md = _get_key_args(cls, args)
 
         sql = f"update `{table}` set {keys}"
 
         pk, pkv = cls.get_primary(cls)
         if where is not None:
             sql += f' where {" and ".join(f for f in where)}'
-            args += cls.__params__
+            params += cls.__params__
         elif pkv is not None:
             sql += f' where `{pk}`=?'
-            args.append(pkv)
+            params.append(pkv)
         else:
-            raise "缺少where或主键"
+            raise "Need where or primary key"
 
-        return await query(sql, args, ACTIONS.update)
+        return await query(sql, params, ACTIONS.update)
 
     @classmethod
     async def delete(cls):
         """
-        删除数据
+        Delete data
         """
         table = cls.__table__
         where = cls.__where__
@@ -823,22 +825,17 @@ class Model(dict, metaclass=ModelMetaclass):
     @classmethod
     async def insert(cls, *args):
         """
-        新增数据
+        Insert data
         :param args:
         :return:
         """
         table = cls.__table__
-        data = dict()
-        for f in cls.__fields__:
-            data[f] = cls.get_value(cls, f)
-        if args:
-            for item in args:
-                for k in item:
-                    data[k] = item[k]
-        keys, args = _get_key_args(**data)
+        keys, params, md = _get_key_args(cls, args)
         sql = f"insert into `{table}` set {keys}"
-        rs = await query(sql, args, exec_type=ACTIONS.insert)
+        rs = await query(sql, params, exec_type=ACTIONS.insert)
         pk = cls.__primary_key__
         if rs is not None:
             cls.set_value(cls, pk, rs)
+        if md is not None:
+            md[pk] = rs
         return rs

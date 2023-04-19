@@ -18,67 +18,53 @@
 ## 安装
 
 ```sh
-#for python3 
 pip install cloudoll
 # or
 pip3 install cloudoll
 ```
 [Docs](https://www.chuchur.com/article/cloudoll-for-python)
 
-## Server
-假设项目目录结构如下：
-```
-├─controllers
-│  ├─__init__.py
-│  ├─api
-│  │  ├─message.py
-│  │  └─__init__.py
-│  ├─view
-│  │  ├─errors.py
-│  │  ├─home.py
-│  │  └─__init__.py
-├─static
-│  ├─css
-│  │  └─index.css
-│  ├─img
-│  │  └─logo.png
-│  ├─js
-│  │  └─comment.js
-├─template
-│  │  ├─404.html
-│  │  ├─500.html
-│  │  └─index.html
-│  └─layout
-│      ├─footer.html
-│      ├─header.html
-│      └─index.html
-├─app.py
-├─configs.py
-└─models.py
-```
-### 初始化
-```python
-from cloudoll.web.server import server
-async def init(loop=None):
-  # await mysql.connect(loop, **MYSQL) # 可以在这里初始化orm
-  # tem_path = os.path.join(os.path.abspath("."), "template")
-  # static = os.path.join(os.path.abspath("."), "static")
-  server.create(
-          loop=loop,
-          # template=tem_path, #模板目录,可选
-          # static=static, # 静态资源 ,测试用
-          controllers="controllers", # 路由目录，路由会自动注册
-          middlewares=[], # 中间件，可选
-          client_max_size=1024*10*2 # 最大上传2MB 文件 ，，可选
-      )
 
-  await server.run(port=9000)
+## 快速上手
+新建 controller
+
+```python
+## /controllers/api/index.py
+
+from cloudoll.web.server import get, jsons
+
+@get("/")
+async def index():
+    return jsons({"msg":"ok"})
+```
+新建 `app.py`
+```python
+## /app.py
+
+from cloudoll.web.server import server,get
+
+async def init():
+  await server.create().run()
 
 if __name__ == "__main__":
     loop = asyncio.new_event_loop()
-    loop.run_until_complete(init(loop))
+    loop.run_until_complete(init())
     loop.run_forever()
 ```
+运行: 
+```sh
+python app.py
+```
+访问 [http://localhost:8080](http://localhost:8080) 看到 
+```json
+{
+  "msg" : "ok",
+  "timestamp": 1681822550140
+}
+```
+表明 Server 已启动.
+
+
 ### Rest API
 
 #### get , post, delete ,put
@@ -863,4 +849,36 @@ client = feishu.Client(
 )
 
 client.sendtext("代码出bug了！")
+```
+
+## Server
+项目目录结构如下：
+```
+├─controllers
+│  ├─__init__.py
+│  ├─api
+│  │  ├─message.py
+│  │  └─__init__.py
+│  ├─view
+│  │  ├─errors.py
+│  │  ├─home.py
+│  │  └─__init__.py
+├─static
+│  ├─css
+│  │  └─index.css
+│  ├─img
+│  │  └─logo.png
+│  ├─js
+│  │  └─comment.js
+├─template
+│  │  ├─404.html
+│  │  ├─500.html
+│  │  └─index.html
+│  └─layout
+│      ├─footer.html
+│      ├─header.html
+│      └─index.html
+├─app.py
+├─configs.py
+└─models.py
 ```
