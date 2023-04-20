@@ -15,7 +15,7 @@ MYSQL = {
 
 async def init():
     # await create_engine(loop=None, **MYSQL)
-    await server.create().run()
+    await server.create(template="template").run()
 
 
 if __name__ == "__main__":
