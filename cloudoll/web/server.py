@@ -3,7 +3,8 @@
 
 __author__ = "chuchur/chuchur.com"
 
-import asyncio
+import argparse
+import asyncio ,os
 import base64
 import datetime
 import importlib
@@ -21,6 +22,7 @@ from jinja2 import Environment, FileSystemLoader
 from setuptools import find_packages
 
 from cloudoll import logging
+from ..orm import mysql
 
 
 class _Handler(object):
@@ -28,6 +30,7 @@ class _Handler(object):
         self.fn = fn
 
     async def __call__(self, request):
+        # 获取函数参数的名称和默认值
         props = inspect.getfullargspec(self.fn)
 
         if len(props.args) == 1:
@@ -117,8 +120,8 @@ class Server(object):
         :params static  or static=dict(prefix='/other',path='/home/...')
         :params middlewares 
         """
-        if loop is None:
-            loop = asyncio.get_event_loop()
+        # if loop is None:
+        #     loop = asyncio.get_event_loop()
         if middlewares is None:
             middlewares = []
         self.loop = loop
@@ -142,6 +145,11 @@ class Server(object):
         if template:
             self.env = Environment(loader=FileSystemLoader(template), autoescape=True)
 
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--env')
+        args = parser.parse_args()
+        env = args.env if args.env else "local"
+        c_path =os.path.join( os.path.altsep , f'config/{env}' )
         return self
 
     def run(self, **kw):
@@ -155,7 +163,6 @@ class Server(object):
             self.app.router.add_route(r["method"], r["path"], r["handler"], **r["kw"])
         port = kw.get("port", 8080)
         host = kw.get("host", "127.0.0.1")
-        logging.info("Server run at http://%s:%s" % (host, port))
         if kw.get("port"):
             kw.pop("port")
         if kw.get("host"):
@@ -164,6 +171,7 @@ class Server(object):
         if self.loop is None:
             web.run_app(self.app, host=host, port=port, **kw)
         else:
+            logging.info("Server run at http://%s:%s" % (host, port))
             return self.loop.create_server(
                 self.app.make_handler(), host=host, port=port, **kw
             )
@@ -233,10 +241,14 @@ def jsons(data, **kw):
     return web.json_response(text=text, **kw)
 
 
-def view(template_name=None, **kw):
+def render(**kw):
+    return web.Response(**kw)
+
+
+def view(template=None, **kw):
     body = None
     if server.env is not None:
-        body = server.env.get_template(template_name).render(
+        body = server.env.get_template(template).render(
             **kw, timestamp=int(datetime.datetime.now().timestamp() * 1000)
         )
     _view = web.Response(body=body)
@@ -245,6 +257,7 @@ def view(template_name=None, **kw):
 
 
 def redirect(urlpath):
+    web.Response()
     return web.HTTPFound(location=urlpath)
 
 

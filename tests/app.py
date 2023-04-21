@@ -1,25 +1,24 @@
-from cloudoll import logging
-from cloudoll.web.server import server, get, jsons
-from cloudoll.orm.mysql import create_engine, And, Or
-import asyncio, datetime
+from cloudoll.web.server import server
+import asyncio, os
+from middleware.robot import mid_robot
 
-MYSQL = {
-    "host": "127.0.0.1",
-    "port": 3306,
-    "user": "root",
-    "password": "qiuzhiwu",
-    "db": "blog",
-    "charset": "utf8mb4"
-}
-
-
-async def init():
-    # await create_engine(loop=None, **MYSQL)
-    await server.create(template="template").run()
 
 
 if __name__ == "__main__":
-    loop = asyncio.new_event_loop()
-    loop.run_until_complete(init())
-    loop.run_forever()
-    # asyncio.run(test())
+    root = os.path.abspath(".")
+    tem_path = os.path.join(root, "template")
+    static_path = os.path.join(root, "static")
+    server.create(template=tem_path, static=static_path, middlewares=[mid_robot()]).run(port=9001)
+
+# async def init():
+#     # await create_engine(loop=None, **MYSQL)
+#     root = os.path.abspath(".")
+#     tem_path = os.path.join(root, "template")
+#     static_path = os.path.join(root, "static")
+#     await server.create(template=tem_path, static=static_path, middlewares=[mid_robot()]).run(port=9001)
+#
+#
+# if __name__ == "__main__":
+#     loop = asyncio.new_event_loop()
+#     loop.run_until_complete(init())
+#     loop.run_forever()

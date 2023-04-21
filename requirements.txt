@@ -3,6 +3,8 @@ PyJWT~=2.6.0
 requests~=2.28.2
 aiohttp~=3.8.4
 Jinja2~=3.1.2
-setuptools~=67.6.0
-cryptography~=39.0.2
+setuptools==67.7.1
+cryptography==40.0.2
 colorlog~=6.7.0
+cloudoll~=0.1.6
+PyYAML~=6.0
