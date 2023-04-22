@@ -4,9 +4,7 @@
 __author__ = "chuchur/chuchur.com"
 
 import argparse
-import asyncio ,os
-import base64
-import datetime
+import os, base64, datetime
 import importlib
 import inspect
 import json
@@ -15,11 +13,15 @@ import sys
 from urllib import parse
 
 from aiohttp import web
+from aiohttp.web_exceptions import *
+from aiohttp.web_middlewares import middleware
+from aiohttp.web_ws import WebSocketResponse as WebSocket
 from aiohttp_session import get_session, setup
 from aiohttp_session.cookie_storage import EncryptedCookieStorage
 from cryptography import fernet
 from jinja2 import Environment, FileSystemLoader
 from setuptools import find_packages
+from .settings import get_config
 
 from cloudoll import logging
 from ..orm import mysql
@@ -58,12 +60,12 @@ class _Handler(object):
 
 
 async def _set_session_route(request):
-    route = dict()
+    params = dict()
     # 动态路由
     rt = request.match_info
     for k, v in rt.items():
-        route[k] = v
-    request.route = route
+        params[k] = v
+    request.params = params
     session = await get_session(request)
     request.session = session
 
@@ -149,7 +151,8 @@ class Server(object):
         parser.add_argument('--env')
         args = parser.parse_args()
         env = args.env if args.env else "local"
-        c_path =os.path.join( os.path.altsep , f'config/{env}' )
+        conf_path = os.path.join(os.path.abspath("."), 'config', f'conf.{env}.yaml')
+        config = get_config(conf_path)
         return self
 
     def run(self, **kw):
@@ -245,25 +248,14 @@ def render(**kw):
     return web.Response(**kw)
 
 
-def view(template=None, **kw):
+def view(template=None, *args, **kw):
     body = None
     if server.env is not None:
-        body = server.env.get_template(template).render(
-            **kw, timestamp=int(datetime.datetime.now().timestamp() * 1000)
-        )
-    _view = web.Response(body=body)
+        body = server.env.get_template(template).render(*args)
+    _view = web.Response(body=body, **kw)
     _view.content_type = "text/html;charset=utf-8"
     return _view
 
 
 def redirect(urlpath):
-    web.Response()
     return web.HTTPFound(location=urlpath)
-
-
-def middleware(f):
-    return web.middleware(f)
-
-
-def WebSocket(**kw):
-    return web.WebSocketResponse(**kw)
