@@ -3,15 +3,15 @@
 """
 from cloudoll.orm import mysql
 
-MYSQL = {
-    "host": "127.0.0.1",
-    "port": 3306,
-    "user": "root",
-    "password": "abcdefg",
-    "db": "test",
-    "charset":"utf8mb4",
+mysql:
+    "host": 127.0.0.1
+    "port": 3306
+    "user": root
+    "password": abcdefg
+    "db": test
+    "charset":utf8mb4
     "pool_size":5
-}
+
 
 await mysql.create_engine(loop=None,**MYSQL)
 """
@@ -34,11 +34,9 @@ class ACTIONS(enum.Enum):
 __MODELS__ = []
 
 
-async def create_engine(loop=None, **kw):
+def create_engine(loop=None, **kw):
     global _pool
-    if not loop:
-        loop = asyncio.get_event_loop()
-    _pool = await aiomysql.create_pool(
+    _pool = aiomysql.create_pool(
         host=kw.get("host", "localhost"),
         port=kw.get("port", 3306),
         user=kw["user"],
@@ -60,15 +58,9 @@ async def _get_cursor():
 
 
 async def query(sql, params=None, exec_type=ACTIONS.select, autocommit=True):
-    """
-    自定义sql
-    :params sql 要执行的sql
-    :params args 防注入tuple类型
-    :params exec_type sql类型 select|insert|update|delete
-    """
     result = None
     if not _pool:
-        raise ValueError("请定义SQL Pool")
+        raise ValueError("must be create_engine first.")
     # if _debug:
     logging.info("SQL: %s \n params:%s" % (sql, params))
     conn, cur = await _get_cursor()
@@ -97,7 +89,6 @@ async def query(sql, params=None, exec_type=ACTIONS.select, autocommit=True):
         logging.error(e)
         if not autocommit:
             await conn.rollback()
-        # raise  # ValueError('执行出错了')
     finally:
         if cur:
             await cur.close()
@@ -197,8 +188,8 @@ class _ColTypes(enum.Enum):
 
 async def create_model(table):
     """
-    Table转 Model
-    :params table 表名
+    Create table
+    :params table name
     """
     rows = await query("show full COLUMNS from `%s`" % table)
 
@@ -245,9 +236,9 @@ async def create_model(table):
 
 async def create_models(savepath: str = None, tables: list = None):
     """
-    Table转Models
-    :params tables 要输出的表 ['user',...],不传取所有
-    :params savepath model存放路径 不传返回 str
+    Create models
+    :params tables
+    :params savepath
     """
     tbs = []
     if tables and len(tables) > 0:

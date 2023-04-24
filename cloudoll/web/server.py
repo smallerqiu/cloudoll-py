@@ -4,12 +4,15 @@
 __author__ = "chuchur/chuchur.com"
 
 import argparse
+import asyncio
 import os, base64, datetime
 import importlib
 import inspect
 import json
 import pkgutil
 import sys
+import socket
+import glob
 from urllib import parse
 
 from aiohttp import web
@@ -40,15 +43,14 @@ class _Handler(object):
             return await self.fn(request)
         elif len(props.args) == 2:
             await _set_session_route(request)
-            content_type = request.content_type
-            data = dict()
-            if content_type.startswith("application/json"):
-                data = await request.json()
-            elif content_type.startswith(
-                    "application/x-www-form-urlencoded"
-            ) or content_type.startswith("multipart/form-data"):
-                data = await request.post()
-
+            # content_type = request.content_type
+            # data = dict()
+            # if content_type.startswith("application/json"):
+            #     data = await request.json()
+            # elif content_type.startswith(
+            #         "application/x-www-form-urlencoded"
+            # ) or content_type.startswith("multipart/form-data"):
+            data = await request.post()
             qs = request.query_string
             if qs:
                 for k, v in parse.parse_qs(qs, True).items():
@@ -70,51 +72,84 @@ async def _set_session_route(request):
     request.session = session
 
 
-def _get_modules(module="."):
+def _get_modules(fd):
     modules = set()
-    s = find_packages(module)
+    temp = os.path.join(os.path.abspath('.'), fd)
+    if not os.path.exists(temp):
+        return
+    s = find_packages(temp)
     for pkg in s:
         # modules.add(pkg)
-        pkgpath = module + "/" + pkg.replace(".", "/")
+        pkg_path = temp + "/" + pkg.replace(".", "/")
         if sys.version_info.major == 2 or (
                 sys.version_info.major == 3 and sys.version_info.minor < 6
         ):
-            for _, name, ispkg in pkgutil.iter_modules([pkgpath]):
+            for _, name, ispkg in pkgutil.iter_modules([pkg_path]):
                 if not ispkg:
-                    modules.add("." + pkg + "." + name)
+                    modules.add(f".{pkg}.{name}")
         else:
-            for info in pkgutil.iter_modules([pkgpath]):
+            for info in pkgutil.iter_modules([pkg_path]):
                 if not info.ispkg:
-                    modules.add("." + pkg + "." + info.name)
+                    modules.add(f".{pkg}.{info.name}")
     return modules
 
 
-def _reg_router(router):
-    modules = _get_modules(router)
-    for module in modules:
-        # print(module, router)
-        importlib.import_module(module, router)
+def _check_address(host, port):
+    sk = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        r = sk.connect_ex((host, port))
+    except OSError as err:
+        raise err.strerror
+    finally:
+        sk.close()
+    if r == 0:
+        raise OSError(f"Address {host}:{port} already in use.")
+
+
+def _get_mid(model):
+    return [attr for attr in dir(model) if callable(getattr(model, attr)) and attr.startswith("mid_")]
 
 
 class Server(object):
     def __init__(self):
-        self.__routes = None
         self.env = None
-        self.loop = None
         self.app = None
-        self.__routes = web.RouteTableDef()
+        self._route_table = web.RouteTableDef()
         self._routes = []
+        self.loop = None
+        self.config = {}
+        self._args = None
 
-    def create(
-            self,
-            loop=None,
-            template=None,
-            static=None,
-            error_handler=None,
-            controllers='controllers',
-            middlewares=None,
-            client_max_size=None,
-    ):
+    def _reg_router(self):
+        fd = 'controllers'
+        modules = _get_modules(fd)
+        for module in modules:
+            # print(module, router)
+            importlib.import_module(module, fd)
+
+        self.app.add_routes(self._route_table)
+        for r in self._routes:
+            self.app.router.add_route(r["method"], r["path"], r["handler"], **r["kw"])
+
+    def _get_middleware(self):
+        fd = 'middlewares'
+        temp = os.path.join(os.path.abspath('.'), fd)
+        middlewares = []
+        if not os.path.exists(temp):
+            return middlewares
+        for f in os.listdir(temp):
+            if not f.startswith('__'):
+                module_name = f"{fd}.{os.path.basename(f)[:-3]}"
+                module = importlib.import_module(module_name)
+                mid = _get_mid(module)
+                if mid is not None:
+                    middlewares.append(mid())
+        # for md in modules:
+        #     s = importlib.import_module(md, fd)
+        #     pass
+        return middlewares
+
+    def create(self):
         """
         Init server
         :params 
@@ -122,11 +157,32 @@ class Server(object):
         :params static  or static=dict(prefix='/other',path='/home/...')
         :params middlewares 
         """
-        # if loop is None:
-        #     loop = asyncio.get_event_loop()
-        if middlewares is None:
-            middlewares = []
+        loop = asyncio.get_event_loop()
         self.loop = loop
+
+        parser = argparse.ArgumentParser(description="cloudoll server.")
+        parser.add_argument('--env', default='local1')
+        parser.add_argument('--host', default='localhost')
+        parser.add_argument('--port', default='9001')
+        parser.add_argument('--path')
+        args = parser.parse_args()
+        config = get_config(args.env)
+
+        conf_mysql = config.get('mysql')
+        if conf_mysql is not None:
+            mysql.create_engine(loop, **conf_mysql)
+
+        self._args = args
+        self.config = config
+
+        # if middlewares is None:
+        middlewares = self._get_middleware()
+
+        conf_server = config.get('server')
+        client_max_size = 1024 ** 2 * 2
+        if conf_server is not None:
+            client_max_size = conf_server.get('client_max_size', client_max_size)
+
         self.app = web.Application(
             loop=loop, middlewares=middlewares, client_max_size=client_max_size
         )
@@ -135,24 +191,19 @@ class Server(object):
         secret_key = base64.urlsafe_b64decode(fernet_key)
         setup(self.app, EncryptedCookieStorage(secret_key))
 
-        if controllers:
-            _reg_router(controllers)
+        #  controllers:
+        self._reg_router()
         # middlewares.insert(0, self._default_middleware())
-        if static:
-            if type(static) == dict:
-                self.app.router.add_static(**static)
-            else:
-                self.app.router.add_static("/static", path="static")
-            logging.warning("Suggest using nginx instead.")
-        if template:
-            self.env = Environment(loader=FileSystemLoader(template), autoescape=True)
+        # if static:
+        #     if type(static) == dict:
+        #         self.app.router.add_static(**static)
+        #     else:
+        #         self.app.router.add_static("/static", path="static")
+        #     logging.warning("Suggest using nginx instead.")
+        temp = os.path.join(os.path.abspath("."), 'templates')
+        if os.path.exists(temp):
+            self.env = Environment(loader=FileSystemLoader(temp), autoescape=True)
 
-        parser = argparse.ArgumentParser()
-        parser.add_argument('--env')
-        args = parser.parse_args()
-        env = args.env if args.env else "local"
-        conf_path = os.path.join(os.path.abspath("."), 'config', f'conf.{env}.yaml')
-        config = get_config(conf_path)
         return self
 
     def run(self, **kw):
@@ -161,18 +212,14 @@ class Server(object):
         :params prot default  8080
         :params host default 127.0.0.1
         """
-        self.app.add_routes(self.__routes)
-        for r in self._routes:
-            self.app.router.add_route(r["method"], r["path"], r["handler"], **r["kw"])
-        port = kw.get("port", 8080)
-        host = kw.get("host", "127.0.0.1")
-        if kw.get("port"):
-            kw.pop("port")
-        if kw.get("host"):
-            kw.pop("host")
-
+        conf = self.config.get('server', {})
+        conf.update(kw)
+        conf.update(self._args)
+        host = conf.host
+        port = conf.port
+        _check_address(host, port)
         if self.loop is None:
-            web.run_app(self.app, host=host, port=port, **kw)
+            return web.run_app(self.app, host=host, port=port, **kw)
         else:
             logging.info("Server run at http://%s:%s" % (host, port))
             return self.loop.create_server(
@@ -199,6 +246,10 @@ class Server(object):
             return handler
 
         return inner
+
+    @property
+    def route_table(self):
+        return self._route_table
 
 
 server = Server()
@@ -233,7 +284,7 @@ def delete(path, **kw):
 
 def all(path, **kw):
     #     return server._actions(path, 'GET')
-    return server.__routes.view(path, **kw)
+    return server.route_table.view(path, **kw)
 
 
 def jsons(data, **kw):
@@ -252,7 +303,7 @@ def view(template=None, *args, **kw):
     body = None
     if server.env is not None:
         body = server.env.get_template(template).render(*args)
-    _view = web.Response(body=body, **kw)
+    _view = render(body=body, **kw)
     _view.content_type = "text/html;charset=utf-8"
     return _view
 

@@ -2,6 +2,8 @@ from cloudoll.web import server
 from cloudoll.web.server import middleware, view
 from cloudoll import logging
 
+__all__ = "mid_error"
+
 
 async def handle_404():
     return view("404.html", {"message": "Please try again!"}, status=404)
