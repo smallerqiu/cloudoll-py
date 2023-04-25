@@ -5,3 +5,13 @@ mysql:
   password: abcd
   db: blog
   charset: utf8mb4
+
+server:
+  host: 192.168.0.1
+  port: 8080
+  client_max_size: 1024000
+  static:
+    prefix: /static
+    show_index: false
+    append_version: true
+    follow_symlinks: true

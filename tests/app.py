@@ -1,7 +1,6 @@
 from cloudoll.web.server import server
-import os, asyncio
-from middlewares.robot import mid_robot
-from middlewares.ser_error import mid_error
+import asyncio
+
 
 # if __name__ == "__main__":
 #     root = os.path.abspath(".")
@@ -18,7 +17,7 @@ from middlewares.ser_error import mid_error
 
 async def init():
     # await create_engine(loop=None, **MYSQL)
-    await server.create().run(port=9001)
+    await server.create().run()
 
 
 if __name__ == "__main__":

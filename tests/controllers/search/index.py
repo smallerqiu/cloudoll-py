@@ -1,6 +1,7 @@
 from cloudoll.web.server import render, get, post
 import json
 
+
 @get('/search')
 async def search_page(request, form):
     body = f"My name is  {form['name']}"

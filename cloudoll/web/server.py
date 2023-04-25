@@ -12,12 +12,10 @@ import json
 import pkgutil
 import sys
 import socket
-import glob
 from urllib import parse
 
 from aiohttp import web
 from aiohttp.web_exceptions import *
-from aiohttp.web_middlewares import middleware
 from aiohttp.web_ws import WebSocketResponse as WebSocket
 from aiohttp_session import get_session, setup
 from aiohttp_session.cookie_storage import EncryptedCookieStorage
@@ -97,7 +95,7 @@ def _get_modules(fd):
 def _check_address(host, port):
     sk = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        r = sk.connect_ex((host, port))
+        r = sk.connect_ex((host, int(port)))
     except OSError as err:
         raise err.strerror
     finally:
@@ -106,16 +104,13 @@ def _check_address(host, port):
         raise OSError(f"Address {host}:{port} already in use.")
 
 
-def _get_mid(model):
-    return [attr for attr in dir(model) if callable(getattr(model, attr)) and attr.startswith("mid_")]
-
-
 class Server(object):
     def __init__(self):
         self.env = None
         self.app = None
         self._route_table = web.RouteTableDef()
-        self._routes = []
+        # self._routes = []
+        self._middleware = []
         self.loop = None
         self.config = {}
         self._args = None
@@ -128,26 +123,18 @@ class Server(object):
             importlib.import_module(module, fd)
 
         self.app.add_routes(self._route_table)
-        for r in self._routes:
-            self.app.router.add_route(r["method"], r["path"], r["handler"], **r["kw"])
+        # for route in self._routes:
+        #     self.app.router.add_route(**route)
 
-    def _get_middleware(self):
+    def _reg_middleware(self):
         fd = 'middlewares'
         temp = os.path.join(os.path.abspath('.'), fd)
-        middlewares = []
         if not os.path.exists(temp):
-            return middlewares
+            return
         for f in os.listdir(temp):
             if not f.startswith('__'):
                 module_name = f"{fd}.{os.path.basename(f)[:-3]}"
-                module = importlib.import_module(module_name)
-                mid = _get_mid(module)
-                if mid is not None:
-                    middlewares.append(mid())
-        # for md in modules:
-        #     s = importlib.import_module(md, fd)
-        #     pass
-        return middlewares
+                importlib.import_module(module_name, fd)
 
     def create(self):
         """
@@ -161,11 +148,11 @@ class Server(object):
         self.loop = loop
 
         parser = argparse.ArgumentParser(description="cloudoll server.")
-        parser.add_argument('--env', default='local1')
-        parser.add_argument('--host', default='localhost')
-        parser.add_argument('--port', default='9001')
+        parser.add_argument('--env', default='local')
+        parser.add_argument('--host')
+        parser.add_argument('--port')
         parser.add_argument('--path')
-        args = parser.parse_args()
+        args, extra_argv = parser.parse_known_args()
         config = get_config(args.env)
 
         conf_mysql = config.get('mysql')
@@ -175,8 +162,8 @@ class Server(object):
         self._args = args
         self.config = config
 
-        # if middlewares is None:
-        middlewares = self._get_middleware()
+        # middlewares
+        self._reg_middleware()
 
         conf_server = config.get('server')
         client_max_size = 1024 ** 2 * 2
@@ -184,22 +171,24 @@ class Server(object):
             client_max_size = conf_server.get('client_max_size', client_max_size)
 
         self.app = web.Application(
-            loop=loop, middlewares=middlewares, client_max_size=client_max_size
+            loop=loop, middlewares=self._middleware, client_max_size=client_max_size
         )
         # init session
         fernet_key = fernet.Fernet.generate_key()
         secret_key = base64.urlsafe_b64decode(fernet_key)
         setup(self.app, EncryptedCookieStorage(secret_key))
 
-        #  controllers:
+        #  router:
         self._reg_router()
-        # middlewares.insert(0, self._default_middleware())
-        # if static:
-        #     if type(static) == dict:
-        #         self.app.router.add_static(**static)
-        #     else:
-        #         self.app.router.add_static("/static", path="static")
-        #     logging.warning("Suggest using nginx instead.")
+
+        # static
+        if conf_server is not None:
+            conf_st = conf_server.get('static')
+            if conf_st:
+                temp = os.path.join(os.path.abspath("."), 'static')
+                self.app.router.add_static(**conf_st, path=temp)
+                logging.warning("Suggest using nginx or others instead.")
+
         temp = os.path.join(os.path.abspath("."), 'templates')
         if os.path.exists(temp):
             self.env = Environment(loader=FileSystemLoader(temp), autoescape=True)
@@ -209,43 +198,48 @@ class Server(object):
     def run(self, **kw):
         """
         run server
-        :params prot default  8080
+        :params prot default  9001
         :params host default 127.0.0.1
         """
+
         conf = self.config.get('server', {})
         conf.update(kw)
-        conf.update(self._args)
-        host = conf.host
-        port = conf.port
+        conf.update(vars(self._args))
+        conf = argparse.Namespace(**conf)
+        host = conf.host if conf.host else 'localhost'
+        port = conf.port if conf.port else 9001
         _check_address(host, port)
         if self.loop is None:
             return web.run_app(self.app, host=host, port=port, **kw)
         else:
-            logging.info("Server run at http://%s:%s" % (host, port))
+            logging.info(f"Server run at http://{host}:{port}")
             return self.loop.create_server(
                 self.app.make_handler(), host=host, port=port, **kw
             )
         #
 
-    @property
-    def routes(self):
-        return self._routes
-
-    def get_route(self, path, method="GET"):
-        for r in self._routes:
-            if r["path"] == path and r["method"] == method:
-                return r["handler"]
-        return None
-
-    def actions(self, path, method, **kw):
+    def add_router(self, path, method):
         def inner(handler):
             handler = _Handler(handler)
-            self._routes.append(
-                dict(method=method, path=path, handler=handler, kw=dict(**kw))
-            )
+            # self._routes.append(
+            #     dict(method=method, path=path, handler=handler)
+            # )
+            self.app.router.add_route(method, path, handler)
             return handler
 
         return inner
+
+    def add_middleware(self):
+        def wrapper(func):
+            def inner():
+                f = func()
+                f.__middleware_version__ = 1
+                return f
+
+            mid = inner()
+            self._middleware.append(mid)
+
+        return wrapper
 
     @property
     def route_table(self):
@@ -266,25 +260,25 @@ class JsonEncoder(json.JSONEncoder):
             return super(JsonEncoder, self).default(obj)
 
 
-def get(path, **kw):
-    return server.actions(path, "GET", **kw)
+def get(path):
+    return server.add_router(path, "GET")
 
 
-def post(path, **kw):
-    return server.actions(path, "POST", **kw)
+def post(path):
+    return server.add_router(path, "POST")
 
 
-def put(path, **kw):
-    return server.actions(path, "PUT", **kw)
+def put(path):
+    return server.add_router(path, "PUT")
 
 
-def delete(path, **kw):
-    return server.actions(path, "DELETE", **kw)
+def delete(path):
+    return server.add_router(path, "DELETE")
 
 
-def all(path, **kw):
+def all(path):
     #     return server._actions(path, 'GET')
-    return server.route_table.view(path, **kw)
+    return server.route_table.view(path)
 
 
 def jsons(data, **kw):
@@ -293,6 +287,10 @@ def jsons(data, **kw):
     data["timestamp"] = int(datetime.datetime.now().timestamp() * 1000)
     text = json.dumps(data, ensure_ascii=False, cls=JsonEncoder)
     return web.json_response(text=text, **kw)
+
+
+def middleware():
+    return server.add_middleware()
 
 
 def render(**kw):

@@ -13,8 +13,8 @@ async def handle_500():
     return view("500.html", {"message": "Something went wrong."}, status=500)
 
 
+@middleware()
 def mid_error():
-    @middleware
     async def error(request, handler):
         try:
             return await handler(request)
