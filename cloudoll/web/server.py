@@ -17,6 +17,7 @@ from urllib import parse
 from aiohttp import web
 from aiohttp.web_exceptions import *
 from aiohttp.web_ws import WebSocketResponse as WebSocket
+from aiohttp.web_ws import WSMsgType
 from aiohttp_session import get_session, setup
 from aiohttp_session.cookie_storage import EncryptedCookieStorage
 from cryptography import fernet
@@ -26,7 +27,6 @@ from .settings import get_config
 
 from cloudoll import logging
 from ..orm import mysql
-
 
 class _Handler(object):
     def __init__(self, fn):
@@ -38,23 +38,21 @@ class _Handler(object):
 
         if len(props.args) == 1:
             await _set_session_route(request)
+            if request.content_type == 'application/json':
+                data = await request.json()
+            else:
+                data = await request.post()
+            q_s = request.query_string
+            body = {}
+            for k in data:
+                body[k] = data[k]
+            qs = {}
+            if q_s:
+                for k, v in parse.parse_qs(q_s, True).items():
+                    qs[k] = v[0]
+            request.qs = Object(qs)
+            request.body = Object(body)
             return await self.fn(request)
-        elif len(props.args) == 2:
-            await _set_session_route(request)
-            # content_type = request.content_type
-            # data = dict()
-            # if content_type.startswith("application/json"):
-            #     data = await request.json()
-            # elif content_type.startswith(
-            #         "application/x-www-form-urlencoded"
-            # ) or content_type.startswith("multipart/form-data"):
-            data = await request.post()
-            qs = request.query_string
-            if qs:
-                for k, v in parse.parse_qs(qs, True).items():
-                    data[k] = v[0]
-
-            return await self.fn(request, data)
         else:
             return await self.fn()
 
@@ -65,7 +63,7 @@ async def _set_session_route(request):
     rt = request.match_info
     for k, v in rt.items():
         params[k] = v
-    request.params = params
+    request.params = Object(params)
     session = await get_session(request)
     request.session = session
 
@@ -218,25 +216,18 @@ class Server(object):
             )
         #
 
-    def add_router(self, path, method):
+    def add_router(self, path, method, name):
         def inner(handler):
             handler = _Handler(handler)
-            # self._routes.append(
-            #     dict(method=method, path=path, handler=handler)
-            # )
-            self.app.router.add_route(method, path, handler)
+            self.app.router.add_route(method, path, handler, name=name)
             return handler
 
         return inner
 
     def add_middleware(self):
         def wrapper(func):
-            def inner():
-                f = func()
-                f.__middleware_version__ = 1
-                return f
-
-            mid = inner()
+            mid = func()
+            mid.__middleware_version__ = 1
             self._middleware.append(mid)
 
         return wrapper
@@ -247,6 +238,22 @@ class Server(object):
 
 
 server = Server()
+
+
+class Object(dict):
+    def __init__(self, obj: dict):
+        super().__init__()
+        for k, v in obj.items():
+            self[k] = v
+
+    def __getattr__(self, key):
+        return self[key] if key in self else ""
+
+    def __setattr__(self, key, value):
+        self[key] = value
+
+    def __str__(self):
+        return self.key
 
 
 class JsonEncoder(json.JSONEncoder):
@@ -260,20 +267,20 @@ class JsonEncoder(json.JSONEncoder):
             return super(JsonEncoder, self).default(obj)
 
 
-def get(path):
-    return server.add_router(path, "GET")
+def get(path, name=None):
+    return server.add_router(path, "GET", name)
 
 
-def post(path):
-    return server.add_router(path, "POST")
+def post(path, name=None):
+    return server.add_router(path, "POST", name)
 
 
-def put(path):
-    return server.add_router(path, "PUT")
+def put(path, name=None):
+    return server.add_router(path, "PUT", name)
 
 
-def delete(path):
-    return server.add_router(path, "DELETE")
+def delete(path, name=None):
+    return server.add_router(path, "DELETE", name)
 
 
 def all(path):

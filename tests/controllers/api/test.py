@@ -1,13 +1,13 @@
-from cloudoll.web.server import get, jsons, post
+from cloudoll.web.server import get, jsons, view, post
 
 
 @get('/test')
-async def test(q, d):
-    y = d.get('age', 0)
-    return jsons(dict(code=1, msg='ok', age=y))
+async def home_page():
+    data = {"name": "chuchur", "msg": "ok"}
+    return view("index.html", data)
 
 
 @post('/test')
-async def test(q, d):
-    name = d.get('name', 'nothing')
-    return jsons(dict(code=1, msg='ok', name=name))
+async def home_page():
+    data = {"name": "chuchur", "msg": "ok"}
+    return jsons(data)

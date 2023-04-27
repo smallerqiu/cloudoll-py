@@ -2,8 +2,6 @@ from cloudoll.web import server
 from cloudoll.web.server import middleware, view
 from cloudoll import logging
 
-__all__ = "mid_error"
-
 
 async def handle_404():
     return view("404.html", {"message": "Please try again!"}, status=404)
@@ -18,7 +16,7 @@ def mid_error():
     async def error(request, handler):
         try:
             return await handler(request)
-        except server.HTTPException:
+        except server.HTTPNotFound:
             # return render(status=404, text="The url not found.") for Restful api
             return await handle_404()
         except Exception as e:
