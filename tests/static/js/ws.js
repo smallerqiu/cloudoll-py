@@ -4,11 +4,11 @@ let socket = new WebSocket("ws://localhost:9001/ws");
 socket.onopen = () => {
     console.log("connection");
     //发送消息,告诉服务器,我上线了.
-    socket.send(JSON.stringify({name: "chuchur" + Date.now(), msg: "我来了"}));
+    socket.send(JSON.stringify({name: "chuchur", msg: "我来了", time: Date.now()}));
 };
 //接收消息
 socket.onmessage = (evt) => {
-    let data = JSON.parse(evt.data);
+    let data = evt.data;
     console.log(data);
 };
 

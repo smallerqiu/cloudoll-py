@@ -28,16 +28,20 @@ from .settings import get_config
 from cloudoll import logging
 from ..orm import mysql
 
+
 class _Handler(object):
     def __init__(self, fn):
         self.fn = fn
 
     async def __call__(self, request):
+
         # 获取函数参数的名称和默认值
         props = inspect.getfullargspec(self.fn)
 
         if len(props.args) == 1:
             await _set_session_route(request)
+            if request.content_type == 'multipart/form-data':
+                return await self.fn(request)
             if request.content_type == 'application/json':
                 data = await request.json()
             else:

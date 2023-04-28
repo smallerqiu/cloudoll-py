@@ -1,6 +1,7 @@
-from cloudoll.web.server import get, WebSocket, WSMsgType
+from cloudoll.web.server import get, WebSocket, WSMsgType, view
 
 
+# for websoket server
 @get("/ws")
 async def ws_handle(request):
     ws = WebSocket()  # 初始化 WebSocket
@@ -19,3 +20,9 @@ async def ws_handle(request):
     print("websocket connection closed")
 
     return ws
+
+
+# for view router
+@get("/websocket")
+async def ws_handle(request):
+    return view('websocket.html')
