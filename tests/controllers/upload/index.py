@@ -31,7 +31,7 @@ async def upload_bigfile_handle(request):
     size = 0
     save_path = os.path.join(os.path.abspath('.'), 'static/upload', file_name)
 
-    with open(save_path, 'wb') as f:
+    with open(save_path, 'wb+') as f:
         while True:
             chunk = await field.read_chunk()  # 8192 bytes by default.
             if not chunk:
