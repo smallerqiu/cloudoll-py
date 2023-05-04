@@ -22,11 +22,7 @@ async def upload_handle(request):
 # for Server api
 @post('/upload-big-file')
 async def upload_bigfile_handle(request):
-    reader = await request.multipart()
-    field = await reader.next()
-    # name = await field.read(decode=True)
-    assert field.name == 'mp4'  # 验证表单的字段。
-
+    field = request.field
     file_name = field.filename
     size = 0
     save_path = os.path.join(os.path.abspath('.'), 'static/upload', file_name)

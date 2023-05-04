@@ -9,7 +9,7 @@ mysql:
 server:
   host: 192.168.0.1
   port: 8080
-  client_max_size: 1024000
+  client_max_size: 2097152
   static:
     prefix: /static
     show_index: false

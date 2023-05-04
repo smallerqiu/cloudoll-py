@@ -30,7 +30,8 @@ from ..orm import mysql
 
 
 class _Handler(object):
-    def __init__(self, fn):
+    def __init__(self, cls, fn):
+        self.cls = cls
         self.fn = fn
 
     async def __call__(self, request):
@@ -41,7 +42,13 @@ class _Handler(object):
         if len(props.args) == 1:
             await _set_session_route(request)
             if request.content_type == 'multipart/form-data':
-                return await self.fn(request)
+                if int(request.headers['Content-Length']) <= self.cls.client_max_size:
+                    data = await request.post()
+                else:
+                    multipart = await request.multipart()
+                    field = await multipart.next()
+                    request.field = field
+                    return await self.fn(request)
             if request.content_type == 'application/json':
                 data = await request.json()
             else:
@@ -106,12 +113,23 @@ def _check_address(host, port):
         raise OSError(f"Address {host}:{port} already in use.")
 
 
+def _reg_middleware():
+    fd = 'middlewares'
+    temp = os.path.join(os.path.abspath('.'), fd)
+    if not os.path.exists(temp):
+        return
+    for f in os.listdir(temp):
+        if not f.startswith('__'):
+            module_name = f"{fd}.{os.path.basename(f)[:-3]}"
+            importlib.import_module(module_name, fd)
+
+
 class Server(object):
     def __init__(self):
+        self.client_max_size = 1024 ** 2 * 2
         self.env = None
         self.app = None
         self._route_table = web.RouteTableDef()
-        # self._routes = []
         self._middleware = []
         self.loop = None
         self.config = {}
@@ -127,16 +145,6 @@ class Server(object):
         self.app.add_routes(self._route_table)
         # for route in self._routes:
         #     self.app.router.add_route(**route)
-
-    def _reg_middleware(self):
-        fd = 'middlewares'
-        temp = os.path.join(os.path.abspath('.'), fd)
-        if not os.path.exists(temp):
-            return
-        for f in os.listdir(temp):
-            if not f.startswith('__'):
-                module_name = f"{fd}.{os.path.basename(f)[:-3]}"
-                importlib.import_module(module_name, fd)
 
     def create(self):
         """
@@ -165,13 +173,12 @@ class Server(object):
         self.config = config
 
         # middlewares
-        self._reg_middleware()
+        _reg_middleware()
 
         conf_server = config.get('server')
-        client_max_size = 1024 ** 2 * 2
+        client_max_size = self.client_max_size
         if conf_server is not None:
-            client_max_size = conf_server.get('client_max_size', client_max_size)
-
+            self.client_max_size = conf_server.get('client_max_size', client_max_size)
         self.app = web.Application(
             loop=loop, middlewares=self._middleware, client_max_size=client_max_size
         )
@@ -222,7 +229,7 @@ class Server(object):
 
     def add_router(self, path, method, name):
         def inner(handler):
-            handler = _Handler(handler)
+            handler = _Handler(self, handler)
             self.app.router.add_route(method, path, handler, name=name)
             return handler
 

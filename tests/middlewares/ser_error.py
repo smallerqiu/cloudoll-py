@@ -16,7 +16,7 @@ def mid_error():
     async def error(request, handler):
         try:
             return await handler(request)
-        except server.HTTPNotFound:
+        except server.HTTPMethodNotAllowed or server.HTTPNotFound:
             # return render(status=404, text="The url not found.") for Restful api
             return await handle_404()
         except Exception as e:
