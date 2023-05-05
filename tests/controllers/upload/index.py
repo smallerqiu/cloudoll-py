@@ -21,15 +21,14 @@ async def upload_handle(request):
 
 # for Server api
 @post('/upload-big-file')
-async def upload_bigfile_handle(request):
-    field = request.field
-    file_name = field.filename
+async def upload_bigfile_handle(request, multipart):
+    file_name = multipart.filename
     size = 0
     save_path = os.path.join(os.path.abspath('.'), 'static/upload', file_name)
 
-    with open(save_path, 'wb+') as f:
+    with open(save_path, 'ab+') as f:
         while True:
-            chunk = await field.read_chunk()  # 8192 bytes by default.
+            chunk = await multipart.read_chunk()  # 8192 bytes by default.
             if not chunk:
                 break
             size += len(chunk)

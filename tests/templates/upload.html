@@ -8,13 +8,10 @@
     <title>Upload Files</title>
 </head>
 <body>
-<form action="/upload-big-file" method="post" accept-charset="utf-8"
+<form action="/upload-file" method="post" accept-charset="utf-8"
       enctype="multipart/form-data">
-    <label for="mp5">Mp3</label>
-    <input id="mp5" name="mp5" type="text" value="abc"/>
     <label for="mp3">Mp3</label>
-    <input id="mp3" name="mp3" type="file" value="" multiple/>
-
+    <input id="mp3" name="mp3" type="file" value="" />
     <input type="submit" value="submit"/>
 </form>
 
@@ -37,6 +34,10 @@
         return new Promise((resolve) => setTimeout(resolve, time));
     }
 
+    function update_bar(percent){
+        document.getElementById("bar").style.width = percent + '%'
+        document.getElementById('percent').innerText = percent + '%'
+    }
 
     async function upload() {
         let file_mp4 = document.getElementById("mp4").files[0]
@@ -47,6 +48,8 @@
         let total_size = file_mp4.size //文件总大小
         let chunk_count = Math.ceil(total_size / chunk_size) //切片数量
         let uploaded_size = 0 //已经上传的大小
+
+        update_bar(0)
 
         let chunk_num = 0
         function do_upload(){
@@ -64,15 +67,18 @@
                 uploaded_size += ev.loaded
                 let percent = parseInt((uploaded_size / total_size) * 100);
                 console.log("upload: " + percent + '%')
-                document.getElementById("bar").style.width = percent + '%'
-                document.getElementById('percent').innerText = percent + '%'
+                update_bar(percent)
 
+
+            }
+            xhr.onload = function (){
                 if(chunk_num < chunk_count){
-                    chunk_num++;
                     do_upload();
                 }
             }
+
             xhr.send(data);
+            chunk_num++;
 
             // 储存切片ID， 可以做断点续传
             // localStorage.setItem('chunk_num', i)

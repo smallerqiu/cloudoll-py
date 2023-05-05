@@ -36,20 +36,19 @@ class _Handler(object):
 
     async def __call__(self, request):
 
+        c_type = request.content_type
         # 获取函数参数的名称和默认值
         props = inspect.getfullargspec(self.fn)
-
-        if len(props.args) == 1:
+        if len(props.args) == 2 and c_type == 'multipart/form-data':
             await _set_session_route(request)
-            if request.content_type == 'multipart/form-data':
-                if int(request.headers['Content-Length']) <= self.cls.client_max_size:
-                    data = await request.post()
-                else:
-                    multipart = await request.multipart()
-                    field = await multipart.next()
-                    request.field = field
-                    return await self.fn(request)
-            if request.content_type == 'application/json':
+            multipart = await request.multipart()
+            field = await multipart.next()
+            return await self.fn(request, field)
+        elif len(props.args) == 1:
+            await _set_session_route(request)
+            if c_type == 'multipart/form-data':
+                data = await request.post()
+            elif c_type == 'application/json':
                 data = await request.json()
             else:
                 data = await request.post()
