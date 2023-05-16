@@ -1,4 +1,4 @@
-from cloudoll.web.server import view, get, redirect
+from cloudoll.web import view, get, redirect
 
 
 @get('/index', name="index")

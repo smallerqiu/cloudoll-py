@@ -1,4 +1,4 @@
-from cloudoll.web.server import get, WebSocket, WSMsgType, view
+from cloudoll.web import get, WebSocket, WSMsgType, view
 
 
 # for websoket server

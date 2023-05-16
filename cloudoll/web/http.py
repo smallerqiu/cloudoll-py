@@ -6,7 +6,7 @@ __author__ = "chuchur/chuchur.com"
 import requests
 import time
 
-from cloudoll import logging
+from ..logging import logging
 
 PROXIES = {
     "http": "http://127.0.0.1:7890",

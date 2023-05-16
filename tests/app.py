@@ -1,26 +1,22 @@
-from cloudoll.web.server import server
+import os.path
+
+from cloudoll.web import app
 import asyncio
 
-
-# if __name__ == "__main__":
-#     root = os.path.abspath(".")
-#     tem_path = os.path.join(root, "template")
-#     static_path = os.path.join(root, "static")
-#     server.create(
-#                   middlewares=[mid_robot(), mid_error()]
-#                   ).run(port=9001)
-# a = {'a': 1, 'b': 2}
-# b = {'a': 2, 'b': 3, 'c': 3}
-# c = a.update(None)
-# print(c, a, b)
-
-
 async def init():
-    # await create_engine(loop=None, **MYSQL)
-    await server.create().run()
+    # await app.create().run()
+
+    App = app.create()
+    await App.mysql.create_models('models.py',tables=['test'])
+
+    # App.run()
 
 
 if __name__ == "__main__":
-    loop = asyncio.new_event_loop()
-    loop.run_until_complete(init())
-    loop.run_forever()
+    try:
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(init())
+        # loop.run_forever()
+
+    except KeyboardInterrupt:
+        pass

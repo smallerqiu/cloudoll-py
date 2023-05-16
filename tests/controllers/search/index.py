@@ -1,4 +1,4 @@
-from cloudoll.web.server import render, get, post
+from cloudoll.web import render, get, post
 import json
 
 

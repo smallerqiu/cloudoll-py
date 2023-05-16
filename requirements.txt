@@ -8,3 +8,5 @@ cryptography==39.0.2
 colorlog~=6.7.0
 cloudoll~=0.1.6
 PyYAML~=6.0
+aioredis~=2.0.1
+aiomcache~=0.8.1

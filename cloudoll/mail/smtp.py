@@ -46,7 +46,7 @@ from email.mime.multipart import MIMEMultipart
 
 from email.utils import parseaddr, formataddr
 import mimetypes
-from cloudoll import logging
+from ..logging import logging
 
 logging.getLogger()
 

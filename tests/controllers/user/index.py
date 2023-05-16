@@ -1,4 +1,4 @@
-from cloudoll.web.server import render, get, post, delete, put
+from cloudoll.web import render, get, post, delete, put
 
 
 @get('/user/{id}')

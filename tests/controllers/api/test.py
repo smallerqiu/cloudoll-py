@@ -1,4 +1,4 @@
-from cloudoll.web.server import get, jsons, view, post
+from cloudoll.web import get, jsons, view, post
 
 
 @get('/test')

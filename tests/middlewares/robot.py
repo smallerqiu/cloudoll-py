@@ -1,4 +1,4 @@
-from cloudoll.web.server import middleware, render
+from cloudoll.web import middleware, render
 import re
 
 

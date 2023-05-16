@@ -68,8 +68,6 @@
                 let percent = parseInt((uploaded_size / total_size) * 100);
                 console.log("upload: " + percent + '%')
                 update_bar(percent)
-
-
             }
             xhr.onload = function (){
                 if(chunk_num < chunk_count){

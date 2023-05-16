@@ -7,96 +7,183 @@ mysql:
     "host": 127.0.0.1
     "port": 3306
     "user": root
-    "password": abcdefg
+    "password": 123456
     "db": test
     "charset":utf8mb4
     "pool_size":5
 
 
-await mysql.create_engine(loop=None,**MYSQL)
+await mysql.create_engine(**mysql)
 """
 __author__ = "chuchur/chuchur.com"
 
 import operator
 
-import aiomysql, asyncio, re, enum
-import cloudoll.logging as logging
+import aiomysql, re, enum
+from ..logging import logging
 from inspect import isclass
 
 
-class ACTIONS(enum.Enum):
-    select = 0
-    delete = 1
-    update = 1
-    insert = 2
+class Mysql(object):
+    def __init__(self):
+        self.pool = None
+        self.__MODELS__ = []
 
+    async def create_engine(self, loop=None, **kw):
+        self.pool = await aiomysql.create_pool(
+            host=kw.get("host", "localhost"),
+            port=kw.get("port", 3306),
+            user=kw["user"],
+            password=kw["password"],
+            db=kw["db"],
+            # echo=kw['logger'],
+            charset=kw.get("charset", "utf8"),
+            autocommit=kw.get("autocommit", False),
+            maxsize=kw.get("maxsize", 10),
+            minsize=kw.get("pool_size", 5),
+            cursorclass=aiomysql.DictCursor,
+            loop=loop,
+        )
+        return self
 
-__MODELS__ = []
+    async def _get_cursor(self):
+        if not self.pool:
+            raise ValueError("must be create_engine first.")
+        conn = await self.pool.acquire()
+        cur = await conn.cursor()
+        return conn, cur
 
-
-def create_engine(loop=None, **kw):
-    global _pool
-    _pool = aiomysql.create_pool(
-        host=kw.get("host", "localhost"),
-        port=kw.get("port", 3306),
-        user=kw["user"],
-        password=kw["password"],
-        db=kw["db"],
-        charset=kw.get("charset", "utf8"),
-        autocommit=kw.get("autocommit", True),
-        maxsize=kw.get("maxsize", 10),
-        minsize=kw.get("pool_size", 5),
-        cursorclass=aiomysql.DictCursor,
-        loop=loop,
-    )
-
-
-
-async def _get_cursor():
-    conn = await _pool.acquire()
-    cur = await conn.cursor()
-    return conn, cur
-
-
-async def query(sql, params=None, exec_type=ACTIONS.select, autocommit=True):
-    result = None
-    if not _pool:
-        raise ValueError("must be create_engine first.")
-    # if _debug:
-    logging.info("SQL: %s \n params:%s" % (sql, params))
-    conn, cur = await _get_cursor()
-
-    if not autocommit:
+    async def begin_transaction(self):
+        conn, cur = await self._get_cursor()
         await conn.begin()
-    try:
-        # await conn.ping()
-        # print(sql, args)
-        sql = sql.replace("%", "%%")
-        sql = sql.replace("?", "%s")
-        await cur.execute(sql, params)
+        return conn
 
-        if exec_type == ACTIONS.select:
-            result = await cur.fetchall()
-        elif exec_type == ACTIONS.delete:
-            result = cur.rowcount
-        elif exec_type == ACTIONS.insert:
-            result = cur.lastrowid if cur.rowcount > 0 else None
+    async def query(self, sql, params=None,  autocommit=True):
+        result = None
 
-        # await cur.close()
+        logging.info("SQL: %s" % sql)
+        logging.info("params:%s" % params)
+        conn, cur = await self._get_cursor()
 
         if not autocommit:
-            await conn.commit()
-    except BaseException as e:
-        logging.error(e)
-        if not autocommit:
-            await conn.rollback()
-    finally:
-        if cur:
-            await cur.close()
-        await _pool.release(conn)
-        # _pool.release(conn)
+            await conn.begin()
+        try:
+            # await conn.ping()
+            # print(sql, args)
+            sql = sql.replace("%", "%%")
+            sql = sql.replace("?", "%s")
+            await cur.execute(sql, params)
 
-    return result
+            if sql.startswith('select') or sql.startswith('show'):
+                result = await cur.fetchall()
+            elif sql.startswith('delete'):
+                result = cur.rowcount
+            elif sql.startswith('insert'):
+                result = cur.lastrowid if cur.rowcount > 0 else None
+            else:
+                result = cur.rowcount
+            # await cur.close()
+
+            if autocommit:
+                await conn.commit()
+        except BaseException as e:
+            logging.error(e)
+            if not autocommit:
+                await conn.rollback()
+        finally:
+            if cur:
+                await cur.close()
+            self.pool.release(conn)
+
+        return result
+
+    async def create_model(self, table_name):
+        """
+        Create table
+        :params table name
+        """
+        rows = await self.query("show full COLUMNS from `%s`" % table_name)
+
+        tb = "\nclass %s(Model):\n\n" % table_name.capitalize()
+        tb += "\t__table__ = '%s'\n\n" % table_name
+        for f in rows:
+            fields = _get_col(f)
+            name = fields["name"]
+            column_type = fields["column_type"]
+            values = []
+            if fields["primary_key"]:
+                values.append("primary_key=True")
+            if fields["charset"]:
+                values.append("charset='%s'" % fields["charset"])
+            if fields["max_length"]:
+                values.append("max_length='%s'" % fields["max_length"])
+            if (
+                    fields["default"]
+                    and not fields["created_generated"]
+                    and not fields["update_generated"]
+            ):
+                values.append("default='%s'" % fields["default"])
+            if fields["auto_increment"]:
+                values.append("auto_increment=True")
+            if fields["NOT_NULL"]:
+                values.append("not_null=True")
+            if fields["created_generated"]:
+                values.append("created_generated=True")
+            if fields["update_generated"]:
+                values.append("update_generated=True")
+            if fields["comment"]:
+                values.append("comment='%s'" % fields["comment"])
+            if "unsigned" in column_type:
+                column_type = column_type.replace(" unsigned", "")
+                values.append("unsigned=True")
+            tb += "\t%s = models.%sField(%s)\n" % (
+                name,
+                _ColTypes[column_type].value,
+                ",".join(values),
+            )
+        tb += "\n"
+        return tb
+
+    async def create_models(self, save_path: str = None, tables: list = None):
+        """
+        Create models
+        :params tables
+        :params save_path
+        """
+        if tables and len(tables) > 0:
+            tbs = tables
+        else:
+            result = await self.query("show tables")
+            tbs = [list(c.values())[0] for c in result]
+        ms = "from cloudoll.orm.mysql import models, Model\n\n"
+        for t in tbs:
+            ms += await self.create_model(t)
+        if save_path:
+            with open(save_path, "a", encoding="utf-8") as f:
+                f.write(ms)
+        else:
+            return ms
+
+    async def create_table(self, table):
+        tb = table.__table__
+        sql = f"DROP TABLE IF EXISTS `{tb}`;\n"
+        sql += f"CREATE TABLE `{tb}` (\n"
+
+        labels = _get_filed(table)
+        sqls = []
+        for f in labels:
+            lb = getattr(table, f)
+            row = _get_col_sql(lb)
+            sqls.append(row)
+        sql += ",\n".join(sqls)
+        sql += ") ENGINE=InnoDB;"
+
+        logging.info(f"create table {tb} ...")
+        await self.query(sql, None)
+
+    async def create_tables(self):
+        for model in self.__MODELS__:
+            await self.create_table(model)
 
 
 def _get_key_args(cls, args):
@@ -133,11 +220,11 @@ def _get_col(field):
         "update_generated": "on update CURRENT_TIMESTAMP" == field["Extra"],
         "comment": field["Comment"],
     }
-    Type = field["Type"]
+    _type = field["Type"]
 
-    t = re.match(r"(\w+)[(](.*?)[)]", Type)
+    t = re.match(r"(\w+)[(](.*?)[)]", _type)
     if not t:
-        fields["column_type"] = Type
+        fields["column_type"] = _type
     else:
         fields["column_type"] = t.groups()[0]
         fields["max_length"] = t.groups()[1]
@@ -171,6 +258,10 @@ def _get_col_sql(field):
     return sql
 
 
+def _get_filed(model):
+    return [attr for attr in dir(model) if not callable(getattr(model, attr)) and not attr.startswith("__")]
+
+
 class _ColTypes(enum.Enum):
     varchar = "Char"
     tinyint = "Boolean"
@@ -187,101 +278,15 @@ class _ColTypes(enum.Enum):
     timestamp = "Timestamp"
 
 
-async def create_model(table):
-    """
-    Create table
-    :params table name
-    """
-    rows = await query("show full COLUMNS from `%s`" % table)
-
-    tb = "\nclass %s(Model):\n\n" % table.capitalize()
-    tb += "\t__table__ = '%s'\n\n" % table
-    for f in rows:
-        fields = _get_col(f)
-        name = fields["name"]
-        column_type = fields["column_type"]
-        values = []
-        if fields["primary_key"]:
-            values.append("primary_key=True")
-        if fields["charset"]:
-            values.append("charset='%s'" % fields["charset"])
-        if fields["max_length"]:
-            values.append("max_length='%s'" % fields["max_length"])
-        if (
-                fields["default"]
-                and not fields["created_generated"]
-                and not fields["update_generated"]
-        ):
-            values.append("default='%s'" % fields["default"])
-        if fields["auto_increment"]:
-            values.append("auto_increment=True")
-        if fields["not_null"]:
-            values.append("NOT_NULL=True")
-        if fields["created_generated"]:
-            values.append("created_generated=True")
-        if fields["update_generated"]:
-            values.append("update_generated=True")
-        if fields["comment"]:
-            values.append("comment='%s'" % fields["comment"])
-        if "unsigned" in column_type:
-            column_type = column_type.replace(" unsigned", "")
-            values.append("unsigned=True")
-        tb += "\t%s = models.%sField(%s)\n" % (
-            name,
-            _ColTypes[column_type].value,
-            ",".join(values),
-        )
-    tb += "\n"
-    return tb
-
-
-async def create_models(savepath: str = None, tables: list = None):
-    """
-    Create models
-    :params tables
-    :params savepath
-    """
-    tbs = []
-    if tables and len(tables) > 0:
-        tbs = tables
-    else:
-        result = await query("show tables")
-        tbs = [list(c.values())[0] for c in result]
-    ms = "from cloudoll.orm.mysql import models, Model\n\n"
-    for t in tbs:
-        ms += await create_model(t)
-    if savepath:
-        with open(savepath, "a", encoding="utf-8") as f:
-            f.write(ms)
-    else:
-        return ms
-
-
-def _get_filed(model):
-    return [attr for attr in dir(model) if not callable(getattr(model, attr)) and not attr.startswith("__")]
-
-
-async def create_table(table):
-    tb = table.__table__
-    sql = f"DROP TABLE IF EXISTS `{tb}`;\n"
-    sql += f"CREATE TABLE `{tb}` (\n"
-
-    labels = _get_filed(table)
-    sqls = []
-    for f in labels:
-        lb = getattr(table, f)
-        row = _get_col_sql(lb)
-        sqls.append(row)
-    sql += ",\n".join(sqls)
-    sql += ") ENGINE=InnoDB;"
-
-    logging.info(f"create table {tb} ...")
-    await query(sql, None, ACTIONS.delete)
-
-
-async def create_tables():
-    for model in __MODELS__:
-        await create_table(model)
+_OperatorMap = {
+    "!=": operator.ne,
+    '==': operator.eq,
+    '<': operator.lt,
+    '<=': operator.le,
+    '>': operator.gt,
+    '>=': operator.ge
+    # "+=":operator
+}
 
 
 class Operator:
@@ -289,15 +294,6 @@ class Operator:
         self._operators = operators
         self._value = right
         self._key = left
-        self._operator_map = {
-            "!=": operator.ne,
-            '==': operator.eq,
-            '<': operator.lt,
-            '<=': operator.le,
-            '>': operator.gt,
-            '>=': operator.ge,
-            # "+=":operator
-        }
 
     @property
     def key(self):
@@ -313,7 +309,7 @@ class Operator:
 
     @property
     def operator(self):
-        return self._operator_map[self._operators]
+        return _OperatorMap[self._operators]
 
 
 class FieldOperator:
@@ -542,6 +538,8 @@ class Models(object):
 
 models = Models()
 
+sa = Mysql()
+
 
 class ModelMetaclass(type):
     # def __init__(self, **kw):
@@ -594,7 +592,7 @@ class ModelMetaclass(type):
         attrs["__limit__"] = None
         attrs["__offset__"] = None
         model = type.__new__(mcs, name, bases, attrs)
-        __MODELS__.append(model)
+        sa.__MODELS__.append(model)
         return model
 
 
@@ -767,7 +765,7 @@ class Model(dict, metaclass=ModelMetaclass):
         cls.__where__ = None
         cls.__having__ = None
         cls.__params__ = None
-        rs = await query(sql, args)
+        rs = await sa.query(sql, args)
         return rs
 
     @classmethod
@@ -792,7 +790,7 @@ class Model(dict, metaclass=ModelMetaclass):
         else:
             raise "Need where or primary key"
 
-        return await query(sql, params, ACTIONS.update)
+        return await sa.query(sql, params)
 
     @classmethod
     async def delete(cls):
@@ -811,8 +809,8 @@ class Model(dict, metaclass=ModelMetaclass):
             sql += f' where `{pk}`=?'
             args = [pkv]
         else:
-            raise "缺少where或主键"
-        return await query(sql, args, ACTIONS.delete)
+            raise "need where or primary"
+        return await sa.query(sql, args)
 
     @classmethod
     async def insert(cls, *args):
@@ -824,7 +822,7 @@ class Model(dict, metaclass=ModelMetaclass):
         table = cls.__table__
         keys, params, md = _get_key_args(cls, args)
         sql = f"insert into `{table}` set {keys}"
-        rs = await query(sql, params, exec_type=ACTIONS.insert)
+        rs = await sa.query(sql, params)
         pk = cls.__primary_key__
         if rs is not None:
             cls.set_value(cls, pk, rs)

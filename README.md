@@ -31,7 +31,7 @@ pip3 install cloudoll
 ```python
 ## /controllers/api/index.py
 
-from cloudoll.web.server import get, jsons
+from cloudoll.web import get, jsons
 
 @get("/")
 async def index():
@@ -41,7 +41,7 @@ async def index():
 ```python
 ## /app.py
 
-from cloudoll.web.server import server,get
+from cloudoll.web import server,get
 
 async def init():
   await server.create().run()
@@ -71,7 +71,7 @@ python app.py
 ```python
 # /controllers/api/message.py
 
-from cloudoll.web.server import get,post,delete,put ,jsons
+from cloudoll.web import get,post,delete,put ,jsons
 
 #get
 @get('/v2/message/list')
@@ -132,7 +132,7 @@ async def list(request,fm):
 
 ####  上传文件
 ```python
-from cloudoll.web.server import post , jsons
+from cloudoll.web import post , jsons
 
 @post('/v2/upload/image')
 async def upload_image(request,fm):
@@ -161,7 +161,7 @@ async def list(request,fm):
 
 #### Websocket
 ```python
-from cloudoll.web.server import get, WebSocket
+from cloudoll.web import get, WebSocket
 
 @get("/v2/ws/test")
 async def getrecord(req, fm):
@@ -186,7 +186,7 @@ async def getrecord(req, fm):
 #### `Seesion`
 
 ```python
-from cloudoll.web.server import get
+from cloudoll.web import get
 
 @get('/test')
 async def test(request,fm):
@@ -200,7 +200,7 @@ async def test(request,fm):
 JSON Web Token（缩写 JWT）是目前最流行的跨域认证解决方案。
 
 ```python
-from cloudoll.web.server import post, jsons
+from cloudoll.web import post, jsons
 import cloudoll.web.jwt as jwt
 
 AUTH_KEY = 'fjkdsal&*(%^^&'
@@ -221,7 +221,7 @@ async def test(request,fm):
 #### 中间件
 下面是个登录验证的例子：
 ```python
-from cloudoll.web.server import server, middleware, redirect
+from cloudoll.web import server, middleware, redirect
 import cloudoll.web.jwt as jwt
 
 AUTH_KEY = 'fjkdsal&*(%^^&'
@@ -285,7 +285,7 @@ if __name__ == "__main__":
 默认模板引擎为 jinja2
 
 ```python
-from cloudoll.web.server import get, view
+from cloudoll.web import get, view
 
 @get('/')
 async def home(request, fm):
@@ -322,7 +322,7 @@ async def home(request, fm):
 cookie 渲染视图时可用
 
 ```python
-from cloudoll.web.server import get, view
+from cloudoll.web import get, view
 
 @get('/')
 async def home(request, fm):
