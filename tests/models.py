@@ -3,7 +3,7 @@ from cloudoll.orm.mysql import models, Model
 
 class User(Model):
 
-	__table__ = 'user'
+	__table__ = 'test'
 
 	id = models.BigIntegerField(primary_key=True,auto_increment=True,not_null=True,comment='用户ID')
 	user_name = models.CharField(charset='utf8mb4_0900_ai_ci',max_length='16',not_null=True,comment='用户名')

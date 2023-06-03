@@ -14,7 +14,6 @@ import pkgutil
 import sys
 import socket
 from urllib import parse
-
 import aiomcache
 import aioredis
 from aiohttp import web
@@ -128,7 +127,7 @@ def _reg_middleware():
 
 class Application(object):
     def __init__(self):
-        self.loop = None
+        self._loop = None
         self.mysql = None
         self.env = None
         self.app = None
@@ -141,7 +140,7 @@ class Application(object):
         loop = asyncio.get_event_loop()
         if loop is None:
             loop = asyncio.new_event_loop()
-        self.loop = loop
+        self._loop = loop
 
         parser = argparse.ArgumentParser(description="cloudoll app.")
         parser.add_argument('--env', default='local')
@@ -164,13 +163,41 @@ class Application(object):
         self.app = web.Application(logger=None, loop=loop, middlewares=self._middleware,
                                    client_max_size=client_max_size)
         # mysql
-        # mysql_task = loop.create_task(self._init_mysql())
-        # asyncio.set_event_loop(loop)
-        # loop.run_until_complete(mysql_task)
-        # asyncio.run(self._init_mysql())
-        asyncio.ensure_future(self._init_mysql())
+        self.app.on_startup.append(self._init_database)
+        self.app.on_cleanup.append(self._close_database)
+        # self.app.on_shutdown.append(sa.close)
+        # session
+        self._init_session()
+        #  router:
+        self._reg_router()
 
+        # static
+        if conf_server is not None:
+            conf_st = conf_server.get('static')
+            if conf_st:
+                temp = os.path.join(os.path.abspath("."), 'static')
+                self.app.router.add_static(**conf_st, path=temp)
+                logging.warning("Suggest using nginx or others instead.")
 
+        temp = os.path.join(os.path.abspath("."), 'templates')
+        if os.path.exists(temp):
+            self.env = Environment(loader=FileSystemLoader(temp), autoescape=True)
+
+        return self
+
+    async def _close_database(self, app):
+        if self.mysql:
+            await self.mysql.close()
+
+    async def _init_database(self, app):
+        conf_mysql = self.config.get('mysql')
+        if conf_mysql is not None:
+            self.mysql = await sa.create_engine(**conf_mysql)
+            self.app.mysql = self.mysql
+            app.mysql = self.mysql
+
+    def _init_session(self):
+        config = self.config
         # redis
         redis_conf = config.get('redis')
         mcache_conf = config.get('memcached')
@@ -232,29 +259,6 @@ class Application(object):
                                                             httponly=httponly)
             setup(self.app, storage)
 
-        #  router:
-        self._reg_router()
-
-        # static
-        if conf_server is not None:
-            conf_st = conf_server.get('static')
-            if conf_st:
-                temp = os.path.join(os.path.abspath("."), 'static')
-                self.app.router.add_static(**conf_st, path=temp)
-                logging.warning("Suggest using nginx or others instead.")
-
-        temp = os.path.join(os.path.abspath("."), 'templates')
-        if os.path.exists(temp):
-            self.env = Environment(loader=FileSystemLoader(temp), autoescape=True)
-
-        return self
-
-    async def _init_mysql(self):
-        conf_mysql = self.config.get('mysql')
-        if conf_mysql is not None:
-            await sa.create_engine( **conf_mysql)
-
-
     def _reg_router(self):
         fd = 'controllers'
         modules = _get_modules(fd)
@@ -281,7 +285,7 @@ class Application(object):
         path = conf.path
         _check_address(host, port)
         # logging.info(f"Server run at http://{host}:{port}")
-        web.run_app(self.app, loop=self.loop, host=host, port=port, path=path, access_log=None, **kw)
+        web.run_app(self.app, loop=self._loop, host=host, port=port, path=path, access_log=None, **kw)
         # # old
         # if self.loop is None:
         #     return web.run_app(self.app, host=host, port=port, **kw)
@@ -310,6 +314,22 @@ class Application(object):
     @property
     def route_table(self):
         return self._route_table
+
+    @property
+    def on_startup(self):
+        return self.app.on_startup
+
+    @property
+    def on_shutdown(self):
+        return self.app.on_shutdown
+
+    @property
+    def on_cleanup(self):
+        return self.app.on_cleanup
+
+    @property
+    def cleanup_ctx(self):
+        return self.app.cleanup_ctx
 
 
 app = Application()

@@ -46,6 +46,11 @@ class Mysql(object):
         )
         return self
 
+    async def close(self):
+        if self.pool:
+            self.pool.close()
+            await self.pool.wait_closed()
+
     async def _get_cursor(self):
         if not self.pool:
             raise ValueError("must be create_engine first.")
@@ -58,7 +63,7 @@ class Mysql(object):
         await conn.begin()
         return conn
 
-    async def query(self, sql, params=None,  autocommit=True):
+    async def query(self, sql, params=None, autocommit=True):
         result = None
 
         logging.info("SQL: %s" % sql)
