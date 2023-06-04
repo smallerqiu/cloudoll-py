@@ -165,6 +165,7 @@ class Application(object):
         # mysql
         self.app.on_startup.append(self._init_database)
         self.app.on_cleanup.append(self._close_database)
+        self.app.config = config
         # self.app.on_shutdown.append(sa.close)
         # session
         self._init_session()

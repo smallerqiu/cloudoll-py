@@ -1,27 +1,29 @@
 import os.path
 
 from cloudoll.web import app
-import asyncio
+from models import User
 
 
-async def test(app):
-    await app.mysql.create_models('models.py')
+async def create_models(app):
+    await app.mysql.create_models('models.py', ['test'])
+
+
+async def create_tables(app):
+    await app.mysql.create_tables(User)
 
 
 def init():
     # await app.create().run()
 
     App = app.create()
-    # app.on_startup.append(test)
+    # app.on_startup.append(create_models)
+    # app.on_startup.append(create_tables)
     App.run()
 
 
 if __name__ == "__main__":
     try:
         init()
-        # loop = asyncio.new_event_loop()
-        # loop.run_until_complete(init())
-        # loop.run_forever()
 
     except KeyboardInterrupt:
         pass

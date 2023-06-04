@@ -34,7 +34,7 @@ class Mysql(object):
             host=kw.get("host", "localhost"),
             port=kw.get("port", 3306),
             user=kw["user"],
-            password=kw["password"],
+            password=str(kw.get("password","")),
             db=kw["db"],
             # echo=kw['logger'],
             charset=kw.get("charset", "utf8"),
@@ -82,7 +82,7 @@ class Mysql(object):
             if sql.startswith('select') or sql.startswith('show'):
                 result = await cur.fetchall()
             elif sql.startswith('delete'):
-                result = cur.rowcount
+                result = cur.rowcount > 0
             elif sql.startswith('insert'):
                 result = cur.lastrowid if cur.rowcount > 0 else None
             else:
@@ -121,7 +121,7 @@ class Mysql(object):
             if fields["charset"]:
                 values.append("charset='%s'" % fields["charset"])
             if fields["max_length"]:
-                values.append("max_length='%s'" % fields["max_length"])
+                values.append("max_length=%s" % fields["max_length"])
             if (
                     fields["default"]
                     and not fields["created_generated"]
@@ -171,7 +171,8 @@ class Mysql(object):
 
     async def create_table(self, table):
         tb = table.__table__
-        sql = f"DROP TABLE IF EXISTS `{tb}`;\n"
+        # sql = f"DROP TABLE IF EXISTS `{tb}`;\n"
+        sql = ""
         sql += f"CREATE TABLE `{tb}` (\n"
 
         labels = _get_filed(table)
@@ -252,7 +253,7 @@ def _get_col_sql(field):
     if field.NOT_NULL:
         sql += " NOT NULL"
     elif field.default:
-        sql += f" DEFAULT '{field.default}'"
+        sql += f" DEFAULT {field.default}"
     else:
         sql += " DEFAULT NULL"
     if field.update_generated:
@@ -485,60 +486,60 @@ class Models(object):
     class BigIntegerField(Field):
         def __init__(self, name=None, primary_key=False, default=None, auto_increment=False,
                      not_null=False, unsigned=False, comment=None, ):
-            super().__init__(name, "bigint", default, primary_key, auto_increment=auto_increment, not_null=not_null,
+            super().__init__(name, "bigint", default, primary_key, auto_increment=auto_increment, NOT_NULL=not_null,
                              unsigned=unsigned, comment=comment, )
 
     class FloatField(Field):
         def __init__(self, name=None, default=None, not_null=False, max_length=None, unsigned=False,
                      comment=None, ):
-            super().__init__(name, "double", default, not_null=not_null, max_length=max_length,
+            super().__init__(name, "double", default, NOT_NULL=not_null, max_length=max_length,
                              unsigned=unsigned, comment=comment, )
 
     class DecimalField(Field):
         def __init__(self, name=None, default=0.0, not_null=False, max_length="10,2", unsigned=False,
                      comment=None, ):
-            super().__init__(name, "decimal", default, not_null=not_null, unsigned=unsigned,
+            super().__init__(name, "decimal", default, NOT_NULL=not_null, unsigned=unsigned,
                              max_length=max_length, comment=comment, )
 
     class TextField(Field):
         def __init__(self, name=None, default=None, charset=None, max_length=None, not_null=False,
                      comment=None, ):
             super().__init__(name, "text", default, charset=charset, max_length=max_length,
-                             not_null=not_null, comment=comment, )
+                             NOT_NULL=not_null, comment=comment, )
 
     class LongTextField(Field):
         def __init__(self, name=None, default=None, charset=None, max_length=None, not_null=False,
                      comment=None, ):
             super().__init__(name, "longtext", default, charset=charset, max_length=max_length,
-                             not_null=not_null, comment=comment, )
+                             NOT_NULL=not_null, comment=comment, )
 
     class MediumtextField(Field):
         def __init__(self, name=None, default=None, charset=None, max_length=None, not_null=False,
                      comment=None, ):
-            super().__init__(name, "mediumtext", default, charset=charset, max_length=max_length, not_null=not_null,
+            super().__init__(name, "mediumtext", default, charset=charset, max_length=max_length, NOT_NULL=not_null,
                              comment=comment, )
 
     class DatetimeField(Field):
         def __init__(self, name=None, default=None, max_length=None, not_null=False, created_generated=False,
                      update_generated=False, comment=None, ):
-            super().__init__(name, "datetime", default, max_length=max_length, not_null=not_null,
+            super().__init__(name, "datetime", default, max_length=max_length, NOT_NULL=not_null,
                              created_generated=created_generated, update_generated=update_generated, comment=comment, )
 
     class DateField(Field):
         def __init__(self, name=None, default=None, max_length=None, not_null=False, created_generated=False,
                      update_generated=False, comment=None, ):
-            super().__init__(name, "date", default, max_length=max_length, not_null=not_null,
+            super().__init__(name, "date", default, max_length=max_length, NOT_NULL=not_null,
                              created_generated=created_generated, update_generated=update_generated, comment=comment, )
 
     class TimestampField(Field):
         def __init__(self, name=None, default=None, max_length=None, not_null=False, created_generated=False,
                      update_generated=False, comment=None, ):
-            super().__init__(name, "timestamp", default, False, max_length=max_length, not_null=not_null,
+            super().__init__(name, "timestamp", default, False, max_length=max_length, NOT_NULL=not_null,
                              created_generated=created_generated, update_generated=update_generated, comment=comment, )
 
     class JsonField(Field):
         def __init__(self, name=None, default=None, charset=None, not_null=False, comment=None):
-            super().__init__(name, "json", default, charset=charset, not_null=not_null, comment=comment, )
+            super().__init__(name, "json", default, charset=charset, NOT_NULL=not_null, comment=comment, )
 
 
 models = Models()
@@ -683,7 +684,7 @@ class Model(dict, metaclass=ModelMetaclass):
         if limit is not None:
             sql += f" limit {limit}"
         if offset is not None:
-            sql += f"offset {offset}"
+            sql += f" offset {offset}"
 
         return sql
 

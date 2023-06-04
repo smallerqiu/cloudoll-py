@@ -1,8 +1,8 @@
 mysql:
-  host: 127.0.0.1
+  host: localhost
   port: 3306
   user: root
-  password: qiuzhiwu
+  password: 123456
   db: blog
   charset: utf8mb4
 
@@ -18,7 +18,7 @@ server:
 
 session:
   key: CLOUDOLL_SESSION
-  max_age: 5 #24 * 3600 * 1
+  max_age: 24 * 3600 * 1
   httponly: true
 
 #redis:
@@ -34,3 +34,7 @@ memcached:
   httponly: true
   host: 127.0.0.1
   port: 11211
+
+jwt:
+  key: CLOUDOLL_JWT
+  exp: 3600 * 24 * 2

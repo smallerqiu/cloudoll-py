@@ -1,10 +1,13 @@
-from cloudoll.web import render, get, post, delete, put
+from cloudoll.web import render, get, post, delete, put, jsons
+from tests.services.user import get_user_by_id
 
 
 @get('/user/{id}')
 async def user_page(request):
     body = f"Hello {request.params.id}"
-    return render(body=body)
+    user = await  get_user_by_id()
+    return jsons(user)
+    # return render(body=body)
 
 
 @post('/user/{id}')
