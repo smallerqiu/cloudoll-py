@@ -7,7 +7,7 @@ import jwt, datetime
 from ..logging import logging
 
 
-def encode(payload, key, exp=3600):
+def encode(payload, key, exp: [int, str] = 3600):
     """
     jwt 加密
     :params payload
@@ -15,7 +15,7 @@ def encode(payload, key, exp=3600):
     :params exp 过期时间单位秒，默认1个小时
     """
     headers = dict(typ="jwt", alg="HS256")
-    exp = datetime.datetime.now() + datetime.timedelta(seconds=eval(exp))  # 过期时间
+    exp = datetime.datetime.now() + datetime.timedelta(seconds=eval(exp) if isinstance(exp, str) else exp)  # 过期时间
     payload["exp"] = exp.timestamp()
     result = jwt.encode(payload=payload, key=key, algorithm="HS256", headers=headers)
     return result

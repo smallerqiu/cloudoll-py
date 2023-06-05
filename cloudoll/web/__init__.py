@@ -26,8 +26,7 @@ from .settings import get_config
 
 from ..logging import logging
 from ..orm.mysql import sa
-
-_SESSION_KEY = 'CLOUDOLL_SESSION'
+from . import jwt
 
 
 class _Handler(object):
@@ -125,6 +124,10 @@ def _reg_middleware():
             importlib.import_module(module_name, fd)
 
 
+def _int(num):
+    return eval(num) if isinstance(num, str) else num
+
+
 class Application(object):
     def __init__(self):
         self._loop = None
@@ -161,12 +164,13 @@ class Application(object):
         if conf_server is not None:
             client_max_size = conf_server.get('client_max_size', client_max_size)
         self.app = web.Application(logger=None, loop=loop, middlewares=self._middleware,
-                                   client_max_size=client_max_size)
-        # mysql
+                                   client_max_size=_int(client_max_size))
+        # database
         self.app.on_startup.append(self._init_database)
         self.app.on_cleanup.append(self._close_database)
         self.app.config = config
-        # self.app.on_shutdown.append(sa.close)
+        self.app.jwt_encode = self.jwt_encode
+        self.app.jwt_decode = self.jwt_decode
         # session
         self._init_session()
         #  router:
@@ -186,22 +190,24 @@ class Application(object):
 
         return self
 
-    async def _close_database(self, app):
+    async def _close_database(self, apps):
         if self.mysql:
             await self.mysql.close()
 
-    async def _init_database(self, app):
+    async def _init_database(self, apps):
         conf_mysql = self.config.get('mysql')
         if conf_mysql is not None:
             self.mysql = await sa.create_engine(**conf_mysql)
             self.app.mysql = self.mysql
-            app.mysql = self.mysql
+            apps.mysql = self.mysql
 
     def _init_session(self):
         config = self.config
         # redis
         redis_conf = config.get('redis')
         mcache_conf = config.get('memcached')
+        _SESSION_KEY = 'CLOUDOLL_SESSION'
+
         if redis_conf:
             redis_url = redis_conf.get('url')
             if not redis_url:
@@ -228,7 +234,7 @@ class Application(object):
             redis = aioredis.from_url(redis_url)
             self.app.redis = redis
             storage = redis_storage.RedisStorage(redis,
-                                                 cookie_name=cookie_name, max_age=max_age, httponly=httponly,
+                                                 cookie_name=cookie_name, max_age=_int(max_age), httponly=httponly,
                                                  secure=secure)
             setup(self.app, storage)
         elif mcache_conf:
@@ -240,7 +246,7 @@ class Application(object):
             cookie_name = mcache_conf.get('key', _SESSION_KEY)
             mc = aiomcache.Client(host, port)
             self.app.memcached = mc
-            storage = memcached_storage.MemcachedStorage(mc, cookie_name=cookie_name, max_age=max_age,
+            storage = memcached_storage.MemcachedStorage(mc, cookie_name=cookie_name, max_age=_int(max_age),
                                                          httponly=httponly, secure=secure)
             setup(self.app, storage)
         else:
@@ -256,7 +262,7 @@ class Application(object):
 
             max_age = sess.get('max_age')
             httponly = sess.get('httponly')
-            storage = cookie_storage.EncryptedCookieStorage(secret_key, cookie_name=sess_name, max_age=max_age,
+            storage = cookie_storage.EncryptedCookieStorage(secret_key, cookie_name=sess_name, max_age=_int(max_age),
                                                             httponly=httponly)
             setup(self.app, storage)
 
@@ -311,6 +317,19 @@ class Application(object):
             self._middleware.append(mid)
 
         return wrapper
+
+    def jwt_encode(self, payload):
+        jwt_conf = self.config.get('jwt', {})
+        key = jwt_conf.get('key')
+        exp = jwt_conf.get('exp')
+        if not key or not exp:
+            raise KeyError("Please set jwt key or exp...")
+        return jwt.encode(payload, key, exp)
+
+    def jwt_decode(self, token):
+        jwt_conf = self.config.get('jwt', {})
+        key = jwt_conf.get('key')
+        return jwt.decode(token, key)
 
     @property
     def route_table(self):

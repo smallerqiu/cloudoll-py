@@ -34,7 +34,7 @@ class Mysql(object):
             host=kw.get("host", "localhost"),
             port=kw.get("port", 3306),
             user=kw["user"],
-            password=str(kw.get("password","")),
+            password=str(kw.get("password", "")),
             db=kw["db"],
             # echo=kw['logger'],
             charset=kw.get("charset", "utf8"),
@@ -89,8 +89,8 @@ class Mysql(object):
                 result = cur.rowcount
             # await cur.close()
 
-            if autocommit:
-                await conn.commit()
+            # if autocommit:
+            await conn.commit()
         except BaseException as e:
             logging.error(e)
             if not autocommit:
@@ -290,7 +290,9 @@ _OperatorMap = {
     '<': operator.lt,
     '<=': operator.le,
     '>': operator.gt,
-    '>=': operator.ge
+    '>=': operator.ge,
+    '&': operator.and_,
+    '|': operator.or_
     # "+=":operator
 }
 
@@ -339,6 +341,25 @@ class FieldOperator:
 
     def __ge__(self, other):
         return Operator('>=', self.full_name, other)
+
+    def __and__(self, other):
+        return Operator('|', self.full_name, other)
+
+    def __or__(self, other):
+        return Operator('&', self.full_name, other)
+
+
+class AO:
+    def __init__(self, obj):
+        self.obj = obj
+
+    def __and__(self, other):
+        p, q = _build(*other)
+        return p, " or ".join(q)
+
+    def __or__(self, other):
+        p, q = _build(*other)
+        return p, " or ".join(q)
 
 
 class Field(FieldOperator):
@@ -395,16 +416,16 @@ class Field(FieldOperator):
         return f'{self.full_name} asc'
 
     def like(self, args):
-        return f"{self.full_name} like '{args}'"
+        return AO(f"{self.full_name} like '{args}'")
 
     def not_like(self, args):
-        return f"{self.full_name} not like '{args}'"
+        return AO(f"{self.full_name} not like '{args}'")
 
     def In(self, args):
-        return f"{self.full_name} in {args}"
+        return AO(f"{self.full_name} in {args}")
 
     def not_in(self, args):
-        return f"{self.full_name} not in {args}"
+        return AO(f"{self.full_name} not in {args}")
 
     def count(self):
         return f"count({self.full_name})"
@@ -416,16 +437,19 @@ class Field(FieldOperator):
         return f"{self.full_name} as {args}"
 
     def is_null(self):
-        return f"{self.full_name} is null"
+        return AO(f"{self.full_name} is null")
 
     def not_null(self):
-        return f"{self.full_name} is not null"
+        return AO(f"{self.full_name} is not null")
 
     def between(self, *args):
-        return f"{self.full_name} between {args[0]} and {args[1]}"
+        return AO(f"{self.full_name} between {args[0]} and {args[1]}")
 
     def not_between(self, *args):
-        return f"{self.full_name} not between {args[0]} and {args[1]}"
+        return AO(f"{self.full_name} not between {args[0]} and {args[1]}")
+
+    def contains(self, args):
+        return AO(f"contains({self.full_name},{args})")
 
 
 def _build(*args):
@@ -439,6 +463,9 @@ def _build(*args):
             p1, q1 = x
             q.append(q1)
             p += p1
+        elif isinstance(x,AO):
+            print(x)
+            q.append(x.obj)
         else:
             q.append(x)
     return p, q
