@@ -297,6 +297,19 @@ _OperatorMap = {
 }
 
 
+class AO:
+    def __init__(self, obj):
+        self.obj = obj
+
+    def __and__(self, other):
+        p, q = _build(*other)
+        return p, " or ".join(q)
+
+    def __or__(self, other):
+        p, q = _build(*other)
+        return p, " or ".join(q)
+
+
 class Operator:
     def __init__(self, operators, left, right):
         self._operators = operators
@@ -319,6 +332,16 @@ class Operator:
     def operator(self):
         return _OperatorMap[self._operators]
 
+    def __or__(self, *args):
+        arg = list(args)
+        arg.insert(0,self)
+        p, q = _builds('or',tuple(arg))
+        return p,q
+    def __and__(self,*args):
+        arg = list(args)
+        arg.insert(0,self)
+        p, q = _builds('and',tuple(arg))
+        return p,q
 
 class FieldOperator:
     def __init__(self):
@@ -347,19 +370,6 @@ class FieldOperator:
 
     def __or__(self, other):
         return Operator('&', self.full_name, other)
-
-
-class AO:
-    def __init__(self, obj):
-        self.obj = obj
-
-    def __and__(self, other):
-        p, q = _build(*other)
-        return p, " or ".join(q)
-
-    def __or__(self, other):
-        p, q = _build(*other)
-        return p, " or ".join(q)
 
 
 class Field(FieldOperator):
@@ -451,7 +461,14 @@ class Field(FieldOperator):
     def contains(self, args):
         return AO(f"contains({self.full_name},{args})")
 
-
+def _builds(ao,*args):
+    qs =[]
+    ps =[]
+    for x in args:
+      p,q =_build(*x)
+      qs+=q
+      ps+=p
+    return ps ,f" {ao} ".join(qs)
 def _build(*args):
     q = []
     p = []
@@ -463,7 +480,7 @@ def _build(*args):
             p1, q1 = x
             q.append(q1)
             p += p1
-        elif isinstance(x,AO):
+        elif isinstance(x, AO):
             print(x)
             q.append(x.obj)
         else:

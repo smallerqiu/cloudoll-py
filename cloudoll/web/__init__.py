@@ -166,8 +166,8 @@ class Application(object):
         self.app = web.Application(logger=None, loop=loop, middlewares=self._middleware,
                                    client_max_size=_int(client_max_size))
         # database
-        self.app.on_startup.append(self._init_database)
-        self.app.on_cleanup.append(self._close_database)
+        # self.app.on_startup.append(self._init_database)
+        # self.app.on_cleanup.append(self._close_database)
         self.app.config = config
         self.app.jwt_encode = self.jwt_encode
         self.app.jwt_decode = self.jwt_decode

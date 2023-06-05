@@ -2,7 +2,8 @@ mysql:
   host: localhost
   port: 3306
   user: root
-  password: qiuzhiwu
+#  password: qiuzhiwu
+  password: 123456
   db: blog
   charset: utf8mb4
 
