@@ -298,16 +298,29 @@ _OperatorMap = {
 
 
 class AO:
-    def __init__(self, obj):
-        self.obj = obj
+    def __init__(self, q, p=None):
+        self.q = q
+        self.p = p
 
-    def __and__(self, other):
-        p, q = _build(*other)
+    def __and__(self, *args):
+        p, q = self._build(*args)
+        return p, " and ".join(q)
+
+    def __or__(self, *args):
+        p, q = self._build(*args)
         return p, " or ".join(q)
 
-    def __or__(self, other):
-        p, q = _build(*other)
-        return p, " or ".join(q)
+    def _build(self, *args):
+        p1 = [], q1 = []
+        s = self.q, b = self.p
+        q1.append(s)
+        if b:
+            if isinstance(b, tuple):
+                p1 += list(b)
+            else:
+                p1.append(b)
+
+        return p, q
 
 
 class Operator:
@@ -334,14 +347,16 @@ class Operator:
 
     def __or__(self, *args):
         arg = list(args)
-        arg.insert(0,self)
-        p, q = _builds('or',tuple(arg))
-        return p,q
-    def __and__(self,*args):
+        arg.insert(0, self)
+        p, q = _builds('or', tuple(arg))
+        return p, q
+
+    def __and__(self, *args):
         arg = list(args)
-        arg.insert(0,self)
-        p, q = _builds('and',tuple(arg))
-        return p,q
+        arg.insert(0, self)
+        p, q = _builds('and', tuple(arg))
+        return p, q
+
 
 class FieldOperator:
     def __init__(self):
@@ -426,16 +441,16 @@ class Field(FieldOperator):
         return f'{self.full_name} asc'
 
     def like(self, args):
-        return AO(f"{self.full_name} like '{args}'")
+        return AO(f"{self.full_name} like ?", args)
 
     def not_like(self, args):
-        return AO(f"{self.full_name} not like '{args}'")
+        return AO(f"{self.full_name} not like ?", args)
 
     def In(self, args):
-        return AO(f"{self.full_name} in {args}")
+        return AO(f"{self.full_name} in ?", args)
 
     def not_in(self, args):
-        return AO(f"{self.full_name} not in {args}")
+        return AO(f"{self.full_name} not in ?", args)
 
     def count(self):
         return f"count({self.full_name})"
@@ -453,22 +468,15 @@ class Field(FieldOperator):
         return AO(f"{self.full_name} is not null")
 
     def between(self, *args):
-        return AO(f"{self.full_name} between {args[0]} and {args[1]}")
+        return AO(f"{self.full_name} between ? and ?", args)
 
     def not_between(self, *args):
-        return AO(f"{self.full_name} not between {args[0]} and {args[1]}")
+        return AO(f"{self.full_name} not between ? and ?", args)
 
     def contains(self, args):
-        return AO(f"contains({self.full_name},{args})")
+        return AO(f"contains({self.full_name},?)", args)
 
-def _builds(ao,*args):
-    qs =[]
-    ps =[]
-    for x in args:
-      p,q =_build(*x)
-      qs+=q
-      ps+=p
-    return ps ,f" {ao} ".join(qs)
+
 def _build(*args):
     q = []
     p = []
@@ -481,8 +489,13 @@ def _build(*args):
             q.append(q1)
             p += p1
         elif isinstance(x, AO):
-            print(x)
             q.append(x.obj)
+            p1 = x.params
+            if p1:
+                if isinstance(p1, tuple):
+                    p += list(p1)
+                else:
+                    p.append(p1)
         else:
             q.append(x)
     return p, q
