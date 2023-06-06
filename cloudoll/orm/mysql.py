@@ -303,24 +303,32 @@ class AO:
         self.p = p
 
     def __and__(self, *args):
-        p, q = self._build(*args)
+        p, q = self._build('and', *args)
         return p, " and ".join(q)
 
     def __or__(self, *args):
-        p, q = self._build(*args)
+        p, q = self._build('or', *args)
         return p, " or ".join(q)
 
-    def _build(self, *args):
-        p1 = [], q1 = []
-        s = self.q, b = self.p
-        q1.append(s)
-        if b:
-            if isinstance(b, tuple):
-                p1 += list(b)
-            else:
-                p1.append(b)
-
+    def _build(self, op, *args):
+        p = []
+        q = []
+        _build_ao(self, p, q)
+        for x in args:
+            if isinstance(x, AO):
+                _build_ao(x, p, q)
         return p, q
+
+
+def _build_ao(ao, p, q):
+    _q = ao.q
+    _p = ao.p
+    if _p:
+        if isinstance(_p, tuple):
+            p += list(_p)
+        else:
+            p.append(_p)
+    q.append(_q)
 
 
 class Operator:
