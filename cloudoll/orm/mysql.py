@@ -21,7 +21,7 @@ import operator
 
 import aiomysql, re, enum
 from ..logging import logging
-from inspect import isclass
+from inspect import isclass, isfunction
 
 
 class Mysql(object):
@@ -63,6 +63,20 @@ class Mysql(object):
         await conn.begin()
         return conn
 
+    async def begin_transaction_scope(self, fun):
+        conn, cur = await self._get_cursor()
+        await conn.begin()
+        if isfunction(fun):
+            try:
+                await fun()
+            except Exception as e:
+                logging.error(e)
+                await conn.rollback()
+            finally:
+                if cur:
+                    await cur.close()
+            self.pool.release(conn)
+
     async def query(self, sql, params=None, autocommit=True):
         result = None
 
@@ -70,8 +84,8 @@ class Mysql(object):
         logging.info("params:%s" % params)
         conn, cur = await self._get_cursor()
 
-        if not autocommit:
-            await conn.begin()
+        # if not autocommit:
+        #     await conn.begin()
         try:
             # await conn.ping()
             # print(sql, args)
@@ -93,8 +107,8 @@ class Mysql(object):
             await conn.commit()
         except BaseException as e:
             logging.error(e)
-            if not autocommit:
-                await conn.rollback()
+            # if not autocommit:
+            #     await conn.rollback()
         finally:
             if cur:
                 await cur.close()

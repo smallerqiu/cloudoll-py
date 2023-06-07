@@ -19,12 +19,13 @@ async def create_tables(app):
 
 
 async def test(app):
-    await A.select(A.id, B.user_name) \
-        .join(B, B.id == A.id) \
-        .where(A.id > 1, B.user_name.contains('%c%') & (A.user_name.is_null() | (B.user_name.not_null(), B.id > 5))) \
-        .limit(10) \
-        .offset(10) \
-        .all()
+    await User.where(User.email.like('%tom%')).delete()
+    # await A.select(A.id, B.user_name) \
+    #     .join(B, B.id == A.id) \
+    #     .where(A.id > 1, B.user_name.contains('%c%') & (A.user_name.is_null() | (B.user_name.not_null(), B.id > 5))) \
+    #     .limit(10) \
+    #     .offset(10) \
+    #     .all()
 
 
 def init():
