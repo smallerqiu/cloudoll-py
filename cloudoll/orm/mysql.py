@@ -291,8 +291,8 @@ _OperatorMap = {
     '<=': operator.le,
     '>': operator.gt,
     '>=': operator.ge,
-    '&': operator.and_,
-    '|': operator.or_
+    # '&': operator.and_,
+    # '|': operator.or_
     # "+=":operator
 }
 
@@ -303,20 +303,27 @@ class AO:
         self.p = p
 
     def __and__(self, *args):
-        p, q = self._build('and', *args)
-        return p, " and ".join(q)
+        p, q = self._build(*args)
+        return AO(f'({" and ".join(q)})', p)
 
     def __or__(self, *args):
-        p, q = self._build('or', *args)
-        return p, " or ".join(q)
+        p, q = self._build(*args)
+        return AO(f'({" or ".join(q)})', p)
 
-    def _build(self, op, *args):
+    def _build(self, *args):
         p = []
         q = []
         _build_ao(self, p, q)
         for x in args:
+            print(type(x))
             if isinstance(x, AO):
                 _build_ao(x, p, q)
+            if isinstance(x, Operator):
+                _build_op(x, p, q)
+            if isinstance(x, tuple):
+                p += x
+            if isinstance(x, str):
+                q.append(x)
         return p, q
 
 
@@ -325,10 +332,17 @@ def _build_ao(ao, p, q):
     _p = ao.p
     if _p:
         if isinstance(_p, tuple):
-            p += list(_p)
+            p += _p
+        if isinstance(_p, list):
+            p += _p
         else:
             p.append(_p)
     q.append(_q)
+
+
+def _build_op(op, p, q):
+    q.append(f"{op.key}{op.operators}?")
+    p.append(op.value)
 
 
 class Operator:
@@ -354,15 +368,20 @@ class Operator:
         return _OperatorMap[self._operators]
 
     def __or__(self, *args):
-        arg = list(args)
-        arg.insert(0, self)
-        p, q = _builds('or', tuple(arg))
-        return p, q
+        p, q = self._build(*args)
+        return AO(f'({" or ".join(q)})', p)
 
     def __and__(self, *args):
-        arg = list(args)
-        arg.insert(0, self)
-        p, q = _builds('and', tuple(arg))
+        p, q = self._build(*args)
+        return AO(f'({" and ".join(q)})', p)
+
+    def _build(self, *args):
+        p = []
+        q = []
+        _build_op(self, p, q)
+        for x in args:
+            if isinstance(x, AO):
+                _build_ao(x, p, q)
         return p, q
 
 
@@ -387,12 +406,6 @@ class FieldOperator:
 
     def __ge__(self, other):
         return Operator('>=', self.full_name, other)
-
-    def __and__(self, other):
-        return Operator('|', self.full_name, other)
-
-    def __or__(self, other):
-        return Operator('&', self.full_name, other)
 
 
 class Field(FieldOperator):
@@ -455,10 +468,10 @@ class Field(FieldOperator):
         return AO(f"{self.full_name} not like ?", args)
 
     def In(self, args):
-        return AO(f"{self.full_name} in ?", args)
+        return AO(f"{self.full_name} in {args}")
 
     def not_in(self, args):
-        return AO(f"{self.full_name} not in ?", args)
+        return AO(f"{self.full_name} not in {args}")
 
     def count(self):
         return f"count({self.full_name})"
@@ -476,10 +489,10 @@ class Field(FieldOperator):
         return AO(f"{self.full_name} is not null")
 
     def between(self, *args):
-        return AO(f"{self.full_name} between ? and ?", args)
+        return AO(f"{self.full_name} between {args[0]} and {args[1]}")
 
     def not_between(self, *args):
-        return AO(f"{self.full_name} not between ? and ?", args)
+        return AO(f"{self.full_name} not between {args[0]} and {args[1]}")
 
     def contains(self, args):
         return AO(f"contains({self.full_name},?)", args)
@@ -488,35 +501,12 @@ class Field(FieldOperator):
 def _build(*args):
     q = []
     p = []
-    for x in args:
-        if isinstance(x, Operator):
-            q.append(f"{x.key}{x.operators}?")
-            p.append(f"{x.value}")
-        elif isinstance(x, tuple):
-            p1, q1 = x
-            q.append(q1)
-            p += p1
-        elif isinstance(x, AO):
-            q.append(x.obj)
-            p1 = x.params
-            if p1:
-                if isinstance(p1, tuple):
-                    p += list(p1)
-                else:
-                    p.append(p1)
-        else:
-            q.append(x)
+    for o in args:
+        if isinstance(o, Operator):
+            _build_op(o, p, q)
+        elif isinstance(o, AO):
+            _build_ao(o, p, q)
     return p, q
-
-
-def And(*args):
-    p, q = _build(*args)
-    return p, " and ".join(q)
-
-
-def Or(*args):
-    p, q = _build(*args)
-    return p, " or ".join(q)
 
 
 def _join(func):
