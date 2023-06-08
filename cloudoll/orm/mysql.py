@@ -51,64 +51,67 @@ class Mysql(object):
             self.pool.close()
             await self.pool.wait_closed()
 
-    async def _get_cursor(self):
+    async def _get_conn(self):
         if not self.pool:
             raise ValueError("must be create_engine first.")
         conn = await self.pool.acquire()
-        cur = await conn.cursor()
-        return conn, cur
+        # cur = await conn.cursor()
+        return conn  # , cur
 
     async def begin_transaction(self):
-        conn, cur = await self._get_cursor()
+        conn = await self._get_conn()
         await conn.begin()
         return conn
 
     async def begin_transaction_scope(self, fun):
-        conn, cur = await self._get_cursor()
+        conn = await self._get_conn()
         await conn.begin()
+        cursor = None
         if isfunction(fun):
             try:
-                await fun()
+                cursor = await conn.cursor()
+                await fun(cursor)
+                await conn.commit()
             except Exception as e:
                 logging.error(e)
                 await conn.rollback()
             finally:
-                if cur:
-                    await cur.close()
+                if cursor:
+                    await cursor.close()
             self.pool.release(conn)
 
-    async def query(self, sql, params=None, autocommit=True):
+    async def _execute(self, cur, sql, params=None):
+        sql = sql.replace("%", "%%")
+        sql = sql.replace("?", "%s")
+        await cur.execute(sql, params)
+
+        if sql.startswith('select') or sql.startswith('show'):
+            result = await cur.fetchall()
+        elif sql.startswith('delete'):
+            result = cur.rowcount > 0
+        elif sql.startswith('insert'):
+            result = cur.lastrowid if cur.rowcount > 0 else None
+        else:
+            result = cur.rowcount
+        return result
+
+    async def query(self, sql, params=None, **kwargs):
         result = None
 
         logging.info("SQL: %s" % sql)
         logging.info("params:%s" % params)
-        conn, cur = await self._get_cursor()
+        cursor = kwargs.get('cursor', None)
+        if cursor:
+            return self._execute(cursor, sql, params)
 
-        # if not autocommit:
-        #     await conn.begin()
+        conn = await self._get_conn()
+        cur = await conn.cursor()
+
         try:
-            # await conn.ping()
-            # print(sql, args)
-            sql = sql.replace("%", "%%")
-            sql = sql.replace("?", "%s")
-            await cur.execute(sql, params)
-
-            if sql.startswith('select') or sql.startswith('show'):
-                result = await cur.fetchall()
-            elif sql.startswith('delete'):
-                result = cur.rowcount > 0
-            elif sql.startswith('insert'):
-                result = cur.lastrowid if cur.rowcount > 0 else None
-            else:
-                result = cur.rowcount
-            # await cur.close()
-
-            # if autocommit:
+            result = await self._execute(cur, sql, params)
             await conn.commit()
         except BaseException as e:
             logging.error(e)
-            # if not autocommit:
-            #     await conn.rollback()
         finally:
             if cur:
                 await cur.close()
@@ -183,23 +186,24 @@ class Mysql(object):
         else:
             return ms
 
-    async def create_table(self, table):
-        tb = table.__table__
-        # sql = f"DROP TABLE IF EXISTS `{tb}`;\n"
-        sql = ""
-        sql += f"CREATE TABLE `{tb}` (\n"
+    async def create_table(self, *tables):
+        for table in tables:
+            tb = table.__table__
+            # sql = f"DROP TABLE IF EXISTS `{tb}`;\n"
+            sql = ""
+            sql += f"CREATE TABLE `{tb}` (\n"
 
-        labels = _get_filed(table)
-        sqls = []
-        for f in labels:
-            lb = getattr(table, f)
-            row = _get_col_sql(lb)
-            sqls.append(row)
-        sql += ",\n".join(sqls)
-        sql += ") ENGINE=InnoDB;"
+            labels = _get_filed(table)
+            sqls = []
+            for f in labels:
+                lb = getattr(table, f)
+                row = _get_col_sql(lb)
+                sqls.append(row)
+            sql += ",\n".join(sqls)
+            sql += ") ENGINE=InnoDB;"
 
-        logging.info(f"create table {tb} ...")
-        await self.query(sql, None)
+            logging.info(f"create table {tb} ...")
+            await self.query(sql, None)
 
     async def create_tables(self):
         for model in self.__MODELS__:
@@ -329,13 +333,18 @@ class AO:
         q = []
         _build_ao(self, p, q)
         for x in args:
-            print(type(x))
             if isinstance(x, AO):
                 _build_ao(x, p, q)
             if isinstance(x, Operator):
                 _build_op(x, p, q)
             if isinstance(x, tuple):
-                p += x
+                for y in x:
+                    if isinstance(y, AO):
+                        _build_ao(y, p, q)
+                    elif isinstance(y, Operator):
+                        _build_op(y, p, q)
+                    else:
+                        p.append(y)
             if isinstance(x, str):
                 q.append(x)
         return p, q
@@ -844,7 +853,7 @@ class Model(dict, metaclass=ModelMetaclass):
         return rs
 
     @classmethod
-    async def update(cls, *args):
+    async def update(cls, *args, **kwargs):
         """
         Update data
         """
@@ -865,10 +874,10 @@ class Model(dict, metaclass=ModelMetaclass):
         else:
             raise "Need where or primary key"
 
-        return await sa.query(sql, params)
+        return await sa.query(sql, params, **kwargs)
 
     @classmethod
-    async def delete(cls):
+    async def delete(cls, **kwargs):
         """
         Delete data
         """
@@ -885,10 +894,10 @@ class Model(dict, metaclass=ModelMetaclass):
             args = [pkv]
         else:
             raise "need where or primary"
-        return await sa.query(sql, args)
+        return await sa.query(sql, args, **kwargs)
 
     @classmethod
-    async def insert(cls, *args):
+    async def insert(cls, *args, **kwargs):
         """
         Insert data
         :param args:
@@ -897,7 +906,7 @@ class Model(dict, metaclass=ModelMetaclass):
         table = cls.__table__
         keys, params, md = _get_key_args(cls, args)
         sql = f"insert into `{table}` set {keys}"
-        rs = await sa.query(sql, params)
+        rs = await sa.query(sql, params, **kwargs)
         pk = cls.__primary_key__
         if rs is not None:
             cls.set_value(cls, pk, rs)

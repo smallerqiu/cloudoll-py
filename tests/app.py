@@ -13,28 +13,29 @@ async def create_models(app):
 async def create_tables(app):
     """ 从模型建表
     """
-    await app.mysql.create_tables(User)
+    await app.mysql.create_table(A)
+    await app.mysql.create_table(B)
 
     # .where(A.id > 1, B.user_name.contains('%c%') & (A.user_name.is_null() | (B.user_name.not_null(), B.id > 5))) \
 
 
 async def test(app):
-    await User.where(User.email.like('%tom%')).delete()
-    # await A.select(A.id, B.user_name) \
-    #     .join(B, B.id == A.id) \
-    #     .where(A.id > 1, B.user_name.contains('%c%') & (A.user_name.is_null() | (B.user_name.not_null(), B.id > 5))) \
-    #     .limit(10) \
-    #     .offset(10) \
-    #     .all()
+    # await User.where(User.email.like('%tom%')).delete()
+    await A.select(A.id, B.user_name) \
+        .join(B, B.id == A.id) \
+        .where(A.id > 1, B.user_name.contains('%c%'), (A.user_name.is_null() | (B.user_name.not_null(), B.id > 5))) \
+        .limit(10) \
+        .offset(10) \
+        .all()
 
 
 def init():
     # await app.create().run()
 
     App = app.create()
-    app.on_startup.append(test)
+    # app.on_startup.append(test)
     # app.on_startup.append(create_models)
-    # app.on_startup.append(create_tables)
+    app.on_startup.append(create_tables)
     App.run()
 
 
