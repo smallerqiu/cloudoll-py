@@ -84,8 +84,8 @@ class Mysql(object):
         sql = sql.replace("%", "%%")
         sql = sql.replace("?", "%s")
         await cur.execute(sql, params)
-
-        if sql.startswith('select') or sql.startswith('show'):
+        
+        if sql.lower().startswith('select') or sql.lower().startswith('show') or sql.lower().startswith('with'):
             result = await cur.fetchall()
         elif sql.startswith('delete'):
             result = cur.rowcount > 0
