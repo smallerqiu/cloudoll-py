@@ -18,7 +18,7 @@ URL = "https://gitee.com/chuchur/cloudoll-py"
 EMAIL = "chuchur@qq.com"
 AUTHOR = "chuchur"
 REQUIRES_PYTHON = ">=3.6.0"
-VERSION = "2.0.2"
+VERSION = "2.0.3"
 
 # What packages are required for this module to be executed?
 REQUIRED = [
@@ -29,7 +29,7 @@ REQUIRED = [
     "aiohttp",
     "aioredis",
     "aiomcache",
-    "aioreloader",
+    "aiohttp-devtools",
     "jinja2",
     "pyjwt",
     "aiohttp_session[secure]",

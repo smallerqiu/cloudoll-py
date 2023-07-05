@@ -152,9 +152,9 @@ class Application(object):
 
         parser = argparse.ArgumentParser(description="cloudoll app.")
         parser.add_argument("--env", default="local")
-        parser.add_argument("--host")
-        parser.add_argument("--port")
-        parser.add_argument("--path")
+        parser.add_argument("--host", default=None)
+        parser.add_argument("--port", default=None)
+        parser.add_argument("--path", default=None)
         args, extra_argv = parser.parse_known_args()
         config = get_config(args.env)
 
@@ -299,22 +299,22 @@ class Application(object):
         # for route in self._routes:
         #     self.app.router.add_route(**route)
 
-    def run(self, **kw):
+    def run(self, *args, **kw):
         """
         run app
         :params prot default  9001
         :params host default 127.0.0.1
         """
         conf = self.config.get("server", {})
-        if conf.get('reload',False) is True:
-            import aioreloader
-            aioreloader.start()
-        conf.update(kw)
-        conf.update(vars(self._args))
-        conf = argparse.Namespace(**conf)
-        host = conf.host if conf.host else "localhost"
-        port = conf.port if conf.port else 9001
-        path = conf.path
+        # if conf.get('reload',False) is True:
+        # import aioreloader
+        # aioreloader.start()
+        conf.update(args)
+        args = {k: v for k, v in vars(self._args).items() if v is not None}
+        conf.update(args)
+        host = conf.get("host", "127.0.0.1")
+        port = conf.get("port", 9001)
+        path = conf.get("path")
         _check_address(host, port)
         # logging.info(f"Server run at http://{host}:{port}")
         web.run_app(

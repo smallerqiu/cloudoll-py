@@ -10,3 +10,4 @@ PyYAML~=6.0
 aioredis~=2.0.1
 aiomcache~=0.8.1
 aioreloader~=0.4.0
+aiohttp-devtools~=1.1

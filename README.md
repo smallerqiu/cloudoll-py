@@ -309,3 +309,10 @@ mysql:
 ```
 
 默认开发会使用默认的`local`作为配置。 启动时 通过 `env` 加载对应的配置。 如 `python3 app.py --env=prod` 会加载 `conf.prod.yaml`
+
+
+# 开发模式
+
+```sh
+adev runserver app.py
+```
