@@ -43,7 +43,7 @@ class HandleLog:
         # cur_path = os.path.dirname(os.path.realpath(__file__))  # 当前项目路径
         # log_path = os.path.join(os.path.normpath(os.getcwd() + os.sep + os.pardir), 'logs')
         self.__logger = logging.getLogger()
-        log_path = os.path.join(os.path.normpath(os.getcwd() + os.sep), "logs")
+        log_path = os.path.join(os.path.normpath(os.getcwd() + os.sep), "../logs")
         now_time = datetime.now().strftime("%Y-%m-%d")  # 当前日期格式化
         if not os.path.exists(log_path):
             os.mkdir(log_path)  # 若不存在logs文件夹，则自动创建
@@ -54,9 +54,9 @@ class HandleLog:
         error_log_path = os.path.join(log_path, "%s-error.log" % now_time)
 
         # set handle
-        self.__logger.setLevel(logging.DEBUG)  # 设置默认日志记录器记录级别
+        self.__logger.setLevel(logging.INFO)  # 设置默认日志记录器记录级别
         # all
-        self.__create_handler(all_log_path, logging.DEBUG)
+        self.__create_handler(all_log_path, logging.INFO)
         # error
         self.__create_handler(error_log_path, logging.ERROR)
         # console
