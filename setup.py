@@ -27,7 +27,7 @@ REQUIRED = [
     "aiomysql",
     "aiopg",
     "aiohttp",
-    "aioredis",
+    "redis[hiredis]",
     "aiomcache",
     "aiohttp-devtools",
     "jinja2",

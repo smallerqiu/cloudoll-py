@@ -15,7 +15,7 @@ import sys
 import socket
 from urllib import parse
 import aiomcache
-import aioredis
+from redis import asyncio as aioredis
 from aiohttp import web
 from aiohttp.web_exceptions import *
 from aiohttp.web_ws import WebSocketResponse as WebSocket, WSMsgType
@@ -220,7 +220,7 @@ class Application(object):
         if redis_conf:
             redis_url = redis_conf.get("url")
             if not redis_url:
-                protocol = redis_conf.get("protocol", "redis:")
+                protocol = redis_conf.get("protocol", "redis")
                 host = redis_conf.get("host")
                 port = redis_conf.get("port", 6379)
                 username = redis_conf.get("username")
@@ -233,13 +233,13 @@ class Application(object):
                     path = f"{path}?db={db}"
                 if password and username:
                     path = f"{username}:{password}@{path}"
-                redis_url = f"{protocol}//{path}"
+                redis_url = f"{protocol}://{path}"
 
             max_age = redis_conf.get("max_age")
             secure = redis_conf.get("secure")
             httponly = redis_conf.get("httponly")
             cookie_name = redis_conf.get("key", _SESSION_KEY)
-
+            
             redis = aioredis.from_url(redis_url)
             self.app.redis = redis
             storage = redis_storage.RedisStorage(
