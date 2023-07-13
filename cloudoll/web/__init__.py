@@ -143,6 +143,8 @@ class Application(object):
         self._middleware = []
         self.config = {}
         self._args = None
+        self.tasks = []
+        self._run_tasks = {}
 
     def create(self):
         loop = asyncio.get_event_loop()
@@ -184,6 +186,10 @@ class Application(object):
         self._init_session()
         #  router:
         self._reg_router()
+        # start task
+
+        self._init_task()
+        self.app.on_cleanup.append(self._free_task)
 
         # static
         if conf_server is not None:
@@ -239,7 +245,7 @@ class Application(object):
             secure = redis_conf.get("secure")
             httponly = redis_conf.get("httponly")
             cookie_name = redis_conf.get("key", _SESSION_KEY)
-            
+
             redis = aioredis.from_url(redis_url)
             self.app.redis = redis
             storage = redis_storage.RedisStorage(
@@ -299,6 +305,33 @@ class Application(object):
         # for route in self._routes:
         #     self.app.router.add_route(**route)
 
+    def _create_task(self, fun):
+        if not callable(fun):
+            raise ValueError("Task must be function.")
+
+        def inner():
+            fun_name = getattr(fun, "__name__")
+            self._run_tasks[fun_name] = asyncio.create_task(fun())
+
+        return inner
+
+    def _init_task(self):
+        for task in self.tasks:
+            fun = self._create_task(task)
+            self.on_startup.append(fun)
+
+    def _free_task(self):
+        for task in self.tasks:
+            self.free_task(task)
+
+    async def free_task(self, fun: function):
+        fun_name = getattr(fun, "__name__")
+        task = self._run_tasks[fun_name]
+        if task:
+            del self._ran_tasks[fun_name]
+            task.cancel()
+            await task
+
     def run(self, *args, **kw):
         """
         run app
@@ -306,9 +339,6 @@ class Application(object):
         :params host default 127.0.0.1
         """
         conf = self.config.get("server", {})
-        # if conf.get('reload',False) is True:
-        # import aioreloader
-        # aioreloader.start()
         conf.update(args)
         args = {k: v for k, v in vars(self._args).items() if v is not None}
         conf.update(args)
@@ -412,28 +442,28 @@ class JsonEncoder(json.JSONEncoder):
             return super(JsonEncoder, self).default(obj)
 
 
-def get(path, name=None):
+def get(path: str, name=None):
     return app.add_router(path, "GET", name)
 
 
-def post(path, name=None):
+def post(path: str, name=None):
     return app.add_router(path, "POST", name)
 
 
-def put(path, name=None):
+def put(path: str, name=None):
     return app.add_router(path, "PUT", name)
 
 
-def delete(path, name=None):
+def delete(path: str, name=None):
     return app.add_router(path, "DELETE", name)
 
 
-def all(path):
+def all(path: str):
     #     return app._actions(path, 'GET')
     return app.route_table.view(path)
 
 
-def jsons(data, **kw):
+def jsons(data, **kw) -> web.Response:
     res = {}
     if isinstance(data, list):
         res["data"] = data
