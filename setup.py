@@ -29,6 +29,7 @@ REQUIRED = [
     "aiohttp",
     "redis[hiredis]",
     "aiomcache",
+    "aiojobs",
     "aiohttp-devtools",
     "jinja2",
     "pyjwt",

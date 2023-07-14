@@ -6,7 +6,7 @@ __author__ = "chuchur/chuchur.com"
 import argparse
 import asyncio
 import hashlib
-import os, base64, datetime
+import os, base64
 import importlib
 import inspect
 import json
@@ -14,7 +14,7 @@ import pkgutil
 import sys
 import socket
 from urllib import parse
-import aiomcache
+import aiomcache, aiojobs
 from redis import asyncio as aioredis
 from aiohttp import web
 from aiohttp.web_exceptions import *
@@ -33,6 +33,8 @@ from .settings import get_config
 from ..logging import logging
 from ..orm.mysql import sa
 from . import jwt
+from decimal import Decimal
+from datetime import datetime
 
 
 class _Handler(object):
@@ -143,7 +145,7 @@ class Application(object):
         self._middleware = []
         self.config = {}
         self._args = None
-        self.tasks = []
+        self.tasks = None
         self._run_tasks = {}
 
     def create(self):
@@ -187,9 +189,12 @@ class Application(object):
         #  router:
         self._reg_router()
         # start task
-
-        self._init_task()
-        self.app.on_cleanup.append(self._free_task)
+        # self.tasks = await aiojobs.create_scheduler()
+        # await scheduler.close()
+        # await scheduler.join()
+        
+        # self._init_task()
+        # self.app.on_cleanup.append(self._free_task)
 
         # static
         if conf_server is not None:
@@ -436,8 +441,12 @@ class Object(dict):
 
 class JsonEncoder(json.JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, datetime.datetime) or isinstance(obj, datetime.date):
+        if isinstance(obj, datetime) or isinstance(obj, datetime.date):
             return obj.__str__()
+        elif isinstance(obj, Decimal):
+            return str(obj)
+        elif isinstance(obj, set):
+            return list(obj)
         else:
             return super(JsonEncoder, self).default(obj)
 
