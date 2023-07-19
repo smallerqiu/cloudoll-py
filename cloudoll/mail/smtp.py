@@ -46,9 +46,7 @@ from email.mime.multipart import MIMEMultipart
 
 from email.utils import parseaddr, formataddr
 import mimetypes
-from ..logging import logging
-
-logging.getLogger()
+from ..logging import info, error
 
 
 def _format_addr(s):
@@ -58,7 +56,6 @@ def _format_addr(s):
 
 class Client(object):
     def __init__(self, **config):
-
         self._content = None
         self._subject = None
         smtp_server = config.get("smtp_server")
@@ -81,10 +78,10 @@ class Client(object):
             password = self._password
             if account is None or password is None:
                 raise KeyError("请设置账号密码")
-            logging.info("登录中...")
+            info("登录中...")
             self._server.login(account, password)
         except BaseException as e:
-            logging.error(e)
+            error(e)
             raise
 
     def send(self):
@@ -110,7 +107,7 @@ class Client(object):
             self._server.sendmail(self._account, to_addr, msg.as_string())
             self._server.quit()
         except BaseException as er:
-            logging.error(er)
+            error(er)
 
     def add_to_addr(self, nick, addr):
         """
@@ -142,7 +139,7 @@ class Client(object):
             if len(mime_types) > 0:
                 mime_type = mime_types[0]
             else:
-                logging.error("无法匹配附件类型,可以尝试安装httpd服务")
+                error("无法匹配附件类型,可以尝试安装httpd服务")
             ## 这里如果拿不到type 需要安装httpd ,dnf install httpd
             [t, n] = mime_type.split("/")
             filename = os.path.basename(filepath)  # 'a.txt'

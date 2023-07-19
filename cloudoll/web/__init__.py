@@ -30,7 +30,7 @@ from jinja2 import Environment, FileSystemLoader
 from setuptools import find_packages
 from .settings import get_config
 
-from ..logging import logging
+from ..logging import warning
 from ..orm.mysql import sa
 from . import jwt
 from decimal import Decimal
@@ -193,7 +193,7 @@ class Application(object):
             if conf_st:
                 temp = os.path.join(os.path.abspath("."), "static")
                 self.app.router.add_static(**conf_st, path=temp)
-                logging.warning("Suggest using nginx or others instead.")
+                warning("Suggest using nginx or others instead.")
 
         temp = os.path.join(os.path.abspath("."), "templates")
         if os.path.exists(temp):
@@ -448,7 +448,7 @@ def jsons(data, **kw) -> web.Response:
         res.update(data)
     else:
         raise ValueError("data must be list , dict or tuple.")
-    res["timestamp"] = int(datetime.datetime.now().timestamp() * 1000)
+    res["timestamp"] = int(datetime.now().timestamp() * 1000)
     text = json.dumps(res, ensure_ascii=False, cls=JsonEncoder)
     return web.json_response(text=text, **kw)
 

@@ -20,7 +20,7 @@ __author__ = "chuchur/chuchur.com"
 import operator
 
 import aiomysql, re, enum
-from ..logging import logging
+from ..logging import error, info, warning
 from inspect import isclass, isfunction
 
 
@@ -73,7 +73,7 @@ class Mysql(object):
                 await fun(cursor)
                 await conn.commit()
             except Exception as e:
-                logging.error(e)
+                error(e)
                 await conn.rollback()
             finally:
                 if cursor:
@@ -98,8 +98,8 @@ class Mysql(object):
     async def query(self, sql, params=None, **kwargs):
         result = None
 
-        logging.info("SQL: %s" % sql)
-        logging.info("params:%s" % params)
+        info("SQL: %s" % sql)
+        info("params:%s" % params)
         cursor = kwargs.get('cursor', None)
         if cursor:
             return self._execute(cursor, sql, params)
@@ -111,7 +111,7 @@ class Mysql(object):
             result = await self._execute(cur, sql, params)
             await conn.commit()
         except BaseException as e:
-            logging.error(e)
+            error(e)
         finally:
             if cur:
                 await cur.close()
@@ -202,7 +202,7 @@ class Mysql(object):
             sql += ",\n".join(sqls)
             sql += ") ENGINE=InnoDB;"
 
-            logging.info(f"create table {tb} ...")
+            info(f"create table {tb} ...")
             await self.query(sql, None)
 
     async def create_tables(self):
@@ -632,7 +632,7 @@ class ModelMetaclass(type):
     def __new__(mcs, name, bases, attrs):
         if name == "Model":
             return type.__new__(mcs, name, bases, attrs)
-        # logging.debug("Found model:%s" % name)
+        # debug("Found model:%s" % name)
         # 表名
         table_name = attrs.get("__table__", None) or name
         primary_key = None
@@ -641,12 +641,12 @@ class ModelMetaclass(type):
         for k, v in attrs.items():
             if isinstance(v, Field):
                 # if _debug:
-                # logging.debug("Found mapping:%s, %s" % (k, v))
+                # debug("Found mapping:%s, %s" % (k, v))
                 mappings[k] = v
                 v.name = k
                 v.full_name = k
                 if v.primary_key:
-                    # logging.info("主键" + k)
+                    # info("主键" + k)
                     if primary_key:
                         raise RuntimeError("主键重复")
                     primary_key = k
@@ -655,7 +655,7 @@ class ModelMetaclass(type):
                     fields.append(k)
 
         if not primary_key:
-            logging.warning("%s表缺少主键" % table_name)
+            warning("%s表缺少主键" % table_name)
 
         # for k in mappings.keys():
         #     attrs.pop(k)

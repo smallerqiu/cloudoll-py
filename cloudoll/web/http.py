@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
- 
+
 __author__ = "chuchur/chuchur.com"
 
 import requests
 import time
 
-from ..logging import logging
+from ..logging import error, info
 
 PROXIES = {
     "http": "http://127.0.0.1:7890",
@@ -57,22 +57,22 @@ class Client(object):
                 trytimes = 0
                 head = result.headers
                 ctype = head["Content-Type"]
-                if result.status_code==200:
+                if result.status_code == 200:
                     if "application/json" in ctype:
                         return result.json()
                     elif "text/html" in ctype:
                         return result.text
                     return result
                 else:
-                    logging.error("Network error ,try gain....")
+                    error("Network error ,try gain....")
                     trytimes += 1
                     time.sleep(2)
             except BaseException as e:
-                # logging.info(e)
-                logging.error("Network error ,try gain....")
+                # info(e)
+                error("Network error ,try gain....")
                 trytimes -= 1
                 time.sleep(2)
-                # logging.info(e)
+                # info(e)
         return result
 
 
@@ -125,14 +125,14 @@ def download(url, savepath=None, **kw):
     if not savepath:
         return rb.content
     if not rb:
-        logging.error("下载出错")
+        error("下载出错")
         return False
     else:
         try:
             with open(savepath, "wb") as f:
                 f.write(rb.content)
-                logging.info("下载完成！")
+                info("下载完成！")
         except BaseException as e:
-            logging.error(e)
+            error(e)
             return False
     return True
