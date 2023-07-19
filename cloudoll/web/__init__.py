@@ -14,7 +14,7 @@ import pkgutil
 import sys
 import socket
 from urllib import parse
-import aiomcache, aiojobs
+import aiomcache
 from redis import asyncio as aioredis
 from aiohttp import web
 from aiohttp.web_exceptions import *
