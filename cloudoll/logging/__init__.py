@@ -7,7 +7,7 @@ import logging
 import os
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-
+from logging import INFO, DEBUG, ERROR, CRITICAL, DEBUG
 import colorlog
 
 _COLORS = {
@@ -34,7 +34,7 @@ class HandleLog:
     """
     建日志记录器(logging.getLogger)
     设置日志级别(logger.setLevel)
-    接着创建日志文件(logging.FileHandler)
+    创建日志文件(logging.FileHandler)
     设置日志格式(logging.Formatter)
     日志处理程序记录到记录器(addHandler)
     """
@@ -54,21 +54,21 @@ class HandleLog:
         self.error_handle = None
 
         # console
-        if __debug__:
-            console_handle = colorlog.StreamHandler()
-            console_fmt = colorlog.ColoredFormatter(
-                _FORMATS["console_format"], log_colors=_COLORS
-            )
-            console_handle.setFormatter(console_fmt)
-            console_handle.setLevel(logging.DEBUG)
-            self.__logger.addHandler(console_handle)
+        # if __debug__:
+        console_handle = colorlog.StreamHandler()
+        console_fmt = colorlog.ColoredFormatter(
+            _FORMATS["console_format"], log_colors=_COLORS
+        )
+        console_handle.setFormatter(console_fmt)
+        console_handle.setLevel(DEBUG)
+        self.__logger.addHandler(console_handle)
 
     def setLevel(self, level):
         self.__logger.setLevel(level)
 
-    def getLogger(self, __file):
+    def getLogger(self, __file=None):
         self.__logger = logging.getLogger(__file)  # 创建日志记录器
-
+        self.__logger.setLevel(INFO)
         # self._set_handle()
         return self.__logger
 
@@ -111,12 +111,11 @@ class HandleLog:
             # set handle
             # self.__logger.setLevel(logging.INFO)  # 设置默认日志记录器记录级别
             # all
-            self.all_handle = self.__create_handler(all_log_path, logging.INFO)
+            self.all_handle = self.__create_handler(all_log_path, INFO)
             # error
-            self.error_handle = self.__create_handler(error_log_path, logging.ERROR)
+            self.error_handle = self.__create_handler(error_log_path, ERROR)
 
-        log = getattr(logger, method, None)
-        return log
+        return getattr(logger, method, None)
 
 
 _handler = None
@@ -134,7 +133,7 @@ def setLevel(level: int):
 
 
 def getLogger(name=None):
-    return _get_handle().getLogger(name)
+    return _get_handle().getLogger(name=name)
 
 
 debug = _get_handle().log("debug")

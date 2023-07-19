@@ -90,7 +90,7 @@ def _get_modules(fd):
     modules = set()
     temp = os.path.join(os.path.abspath("."), fd)
     if not os.path.exists(temp):
-        return
+        return modules
     s = find_packages(temp)
     for pkg in s:
         # modules.add(pkg)
@@ -145,8 +145,6 @@ class Application(object):
         self._middleware = []
         self.config = {}
         self._args = None
-        self.tasks = None
-        self._run_tasks = {}
 
     def create(self):
         loop = asyncio.get_event_loop()
@@ -188,14 +186,7 @@ class Application(object):
         self._init_session()
         #  router:
         self._reg_router()
-        # start task
-        # self.tasks = await aiojobs.create_scheduler()
-        # await scheduler.close()
-        # await scheduler.join()
         
-        # self._init_task()
-        # self.app.on_cleanup.append(self._free_task)
-
         # static
         if conf_server is not None:
             conf_st = conf_server.get("static")
@@ -310,32 +301,6 @@ class Application(object):
         # for route in self._routes:
         #     self.app.router.add_route(**route)
 
-    def _create_task(self, fun):
-        if not callable(fun):
-            raise ValueError("Task must be function.")
-
-        def inner():
-            fun_name = getattr(fun, "__name__")
-            self._run_tasks[fun_name] = asyncio.create_task(fun())
-
-        return inner
-
-    def _init_task(self):
-        for task in self.tasks:
-            fun = self._create_task(task)
-            self.on_startup.append(fun)
-
-    def _free_task(self):
-        for task in self.tasks:
-            self.free_task(task)
-
-    async def free_task(self, fun: function):
-        fun_name = getattr(fun, "__name__")
-        task = self._run_tasks[fun_name]
-        if task:
-            del self._ran_tasks[fun_name]
-            task.cancel()
-            await task
 
     def run(self, *args, **kw):
         """

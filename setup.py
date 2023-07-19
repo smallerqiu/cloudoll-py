@@ -18,7 +18,7 @@ URL = "https://gitee.com/chuchur/cloudoll-py"
 EMAIL = "chuchur@qq.com"
 AUTHOR = "chuchur"
 REQUIRES_PYTHON = ">=3.6.0"
-VERSION = "2.0.6"
+VERSION = "2.0.7"
 
 # What packages are required for this module to be executed?
 REQUIRED = [
