@@ -11,4 +11,3 @@ redis~=4.6.0
 hiredis~=2.2.3
 aiomcache~=0.8.1
 aiohttp-devtools~=1.1
-aiojobs~=1.1.0
