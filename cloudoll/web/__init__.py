@@ -34,7 +34,7 @@ from ..logging import warning
 from ..orm.mysql import sa
 from . import jwt
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime ,date
 
 
 class _Handler(object):
@@ -406,7 +406,7 @@ class Object(dict):
 
 class JsonEncoder(json.JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, datetime) or isinstance(obj, datetime.date):
+        if isinstance(obj, datetime) or isinstance(obj, date):
             return obj.__str__()
         elif isinstance(obj, Decimal):
             return str(obj)
