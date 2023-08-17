@@ -18,7 +18,7 @@ URL = "https://gitee.com/chuchur/cloudoll-py"
 EMAIL = "chuchur@qq.com"
 AUTHOR = "chuchur"
 REQUIRES_PYTHON = ">=3.6.0"
-VERSION = "2.0.11"
+VERSION = "2.0.12"
 
 # What packages are required for this module to be executed?
 REQUIRED = [
@@ -96,9 +96,9 @@ class UploadCommand(Command):
         self.status("Uploading the package to PyPI via Twine…")
         os.system("twine upload dist/*")
 
-        self.status("Pushing git tags…")
-        os.system("git tag v{0}".format(about["__version__"]))
-        os.system("git push --tags")
+        # self.status("Pushing git tags…")
+        # os.system("git tag v{0}".format(about["__version__"]))
+        # os.system("git push --tags")
 
         sys.exit()
 
