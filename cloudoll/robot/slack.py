@@ -5,12 +5,21 @@ web_hook: https://infloww.slack.com/apps/A0F7XDUAZ-incoming-webhook?tab=settings
 blocks_info: https://api.slack.com/messaging/composing/layouts
 """
 
+
 class Header:
     def __init__(self, text: str):
         self._text = text
 
     def get_json(self):
         return {"type": "header", "text": {"type": "plain_text", "text": self._text}}
+
+
+class Text:
+    def __init__(self, text: str | int):
+        self._text = text
+
+    def get_json(self):
+        return {"type": "section", "text": {"type": "mrkdwn", "text": self._text}}
 
 
 class Field:
@@ -34,18 +43,16 @@ class Section:
 
 
 class Blocks:
-    def __init__(self, header=None):
-        self._header: Header = header
-        self._section: list[Section] = []
+    def __init__(self):
+        self._blocks = []
 
-    def add(self, section: Section):
-        self._section.append(section.get_json())
+    def add(self, block: Section | Header | Text):
+        self._blocks.append(block.get_json())
 
     def get_json(self):
         blocks = []
-        blocks.append(self._header.get_json())
-        for s in self._section:
-            blocks.append(s)
+        for block in self._blocks:
+            blocks.append(block)
         return blocks
 
 
