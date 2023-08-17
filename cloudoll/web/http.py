@@ -5,7 +5,7 @@ __author__ = "chuchur/chuchur.com"
 
 import requests
 import time
-
+from requests import Response
 from ..logging import error, info
 
 PROXIES = {
@@ -46,31 +46,31 @@ class Client(object):
                 kw["proxies"] = PROXIES
             else:
                 kw["proxies"] = proxies
-        trytimes = kw.get("trytimes", 2)
-        if trytimes != 2:
-            kw.pop("trytimes")
+        try_times = kw.get("try_times", 2)
+        if kw.get("try_times"):
+            kw.pop("try_times")
         result = None
-        while trytimes > 0:
+        while try_times > 0:
             try:
                 fun = getattr(self.session, method, None)
-                result = fun(url, **kw)
-                trytimes = 0
+                result: Response = fun(url, **kw)
                 head = result.headers
                 ctype = head["Content-Type"]
                 if result.status_code == 200:
+                    try_times = 0
                     if "application/json" in ctype:
                         return result.json()
                     elif "text/html" in ctype:
                         return result.text
                     return result
                 else:
-                    error("Network error ,try gain....")
-                    trytimes += 1
+                    print(result.json())
+                    error(f"Error : code ->{result.status_code},try gain....")
+                    try_times -= 1
                     time.sleep(2)
             except BaseException as e:
-                # info(e)
-                error("Network error ,try gain....")
-                trytimes -= 1
+                error(e)
+                try_times -= 1
                 time.sleep(2)
                 # info(e)
         return result
