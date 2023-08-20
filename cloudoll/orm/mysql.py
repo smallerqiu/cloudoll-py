@@ -20,13 +20,18 @@ __author__ = "chuchur/chuchur.com"
 import operator
 
 import aiomysql, re, enum
+from aiomysql.pool import Pool
+from aiomysql.cursors import Cursor
+from aiomysql.connection import Connection
 from ..logging import error, info, warning
 from inspect import isclass, isfunction
 
 
 class Mysql(object):
     def __init__(self):
-        self.pool = None
+        self.pool: Pool = None
+        self.cursor = None
+        self.conn = None
         self.__MODELS__ = []
 
     async def create_engine(self, loop=None, **kw):
@@ -36,7 +41,7 @@ class Mysql(object):
             user=kw["user"],
             password=str(kw.get("password", "")),
             db=kw["db"],
-            # echo=kw['logger'],
+            echo=kw["echo"],
             charset=kw.get("charset", "utf8"),
             autocommit=kw.get("autocommit", False),
             maxsize=kw.get("maxsize", 10),
@@ -51,56 +56,84 @@ class Mysql(object):
             self.pool.close()
             await self.pool.wait_closed()
 
-    async def _get_conn(self):
+    # async def begin_transaction(self):
+    #     conn = await self._set_conn()
+    #     await conn.begin()
+    #     return conn
+
+    # async def begin_transaction_scope(self, fun):
+    #     conn = await self._set_conn()
+    #     await conn.begin()
+    #     cursor = None
+    #     if isfunction(fun):
+    #         try:
+    #             cursor = await conn.cursor()
+    #             await fun(cursor)
+    #             await conn.commit()
+    #         except Exception as e:
+    #             error(e)
+    #             await conn.rollback()
+    #         finally:
+    #             if cursor:
+    #                 await cursor.close()
+    #         self.pool.release(conn)
+
+    async def release(self):
+        cursor = self.cursor
+        if cursor:
+            await cursor.close()
+        if self.pool:
+            self.pool.release(self.conn)
+
+    async def query(self, sql, params=None):
+        sql = sql.replace("?", "%s")
+        print('sql',sql,params)
         if not self.pool:
             raise ValueError("must be create_engine first.")
         conn = await self.pool.acquire()
-        # cur = await conn.cursor()
-        return conn  # , cur
+        cursor = await conn.cursor()
+        await cursor.execute(sql, params)
+        self.cursor = cursor
+        self.conn = conn
+        return self
 
-    async def begin_transaction(self):
-        conn = await self._get_conn()
-        await conn.begin()
-        return conn
-
-    async def begin_transaction_scope(self, fun):
-        conn = await self._get_conn()
-        await conn.begin()
-        cursor = None
-        if isfunction(fun):
-            try:
-                cursor = await conn.cursor()
-                await fun(cursor)
-                await conn.commit()
-            except Exception as e:
-                error(e)
-                await conn.rollback()
-            finally:
-                if cursor:
-                    await cursor.close()
-            self.pool.release(conn)
-
-    async def _execute(self, cur, sql, params=None):
-        sql = sql.replace("%", "%%")
-        sql = sql.replace("?", "%s")
-        await cur.execute(sql, params)
-        
-        if sql.lower().startswith('select') or sql.lower().startswith('show') or sql.lower().startswith('with'):
-            result = await cur.fetchall()
-        elif sql.startswith('delete'):
-            result = cur.rowcount > 0
-        elif sql.startswith('insert'):
-            result = cur.lastrowid if cur.rowcount > 0 else None
-        else:
-            result = cur.rowcount
+    async def all(self):
+        cursor = self.cursor
+        result = None
+        if cursor:
+            result = await cursor.fetchall()
+            await self.release()
         return result
 
-    async def query(self, sql, params=None, **kwargs):
+    async def one(self):
+        cursor = self.cursor
+        result = None
+        if cursor:
+            result = await cursor.fetchone()
+            await self.release()
+        return result
+
+    async def many(self, size: int):
+        cursor = self.cursor
+        result = None
+        if cursor:
+            result = await cursor.fetchmany(size)
+            await self.release()
+        return result
+
+    async def count(self):
+        result = await self.one()
+        value = 0
+        for r in result:
+            value = result[r]
+        return value
+
+    async def _query(self, sql, params=None, **kwargs):
         result = None
 
         info("SQL: %s" % sql)
         info("params:%s" % params)
-        cursor = kwargs.get('cursor', None)
+        cursor = kwargs.get("cursor", None)
         if cursor:
             return self._execute(cursor, sql, params)
 
@@ -124,8 +157,8 @@ class Mysql(object):
         Create table
         :params table name
         """
-        rows = await self.query("show full COLUMNS from `%s`" % table_name)
-
+        rs = await self.query("show full COLUMNS from `%s`" % table_name)
+        rows = await rs.all()
         tb = "\nclass %s(Model):\n\n" % table_name.capitalize()
         tb += "\t__table__ = '%s'\n\n" % table_name
         for f in rows:
@@ -140,9 +173,9 @@ class Mysql(object):
             if fields["max_length"]:
                 values.append("max_length=%s" % fields["max_length"])
             if (
-                    fields["default"]
-                    and not fields["created_generated"]
-                    and not fields["update_generated"]
+                fields["default"]
+                and not fields["created_generated"]
+                and not fields["update_generated"]
             ):
                 values.append("default='%s'" % fields["default"])
             if fields["auto_increment"]:
@@ -164,6 +197,7 @@ class Mysql(object):
                 ",".join(values),
             )
         tb += "\n"
+        await rs.release()
         return tb
 
     async def create_models(self, save_path: str = None, tables: list = None):
@@ -175,8 +209,10 @@ class Mysql(object):
         if tables and len(tables) > 0:
             tbs = tables
         else:
-            result = await self.query("show tables")
+            rs = await self.query("show tables")
+            result = await rs.all()
             tbs = [list(c.values())[0] for c in result]
+            await rs.release()
         ms = "from cloudoll.orm.mysql import models, Model\n\n"
         for t in tbs:
             ms += await self.create_model(t)
@@ -203,7 +239,8 @@ class Mysql(object):
             sql += ") ENGINE=InnoDB;"
 
             info(f"create table {tb} ...")
-            await self.query(sql, None)
+            rs = await self.query(sql, None)
+            await rs.release()
 
     async def create_tables(self):
         for model in self.__MODELS__:
@@ -262,7 +299,7 @@ def _get_col_sql(field):
         sql += f"({field.max_length})"
     if field.charset:
         # _ci 不区分大小写 _cs Yes
-        cs = field.charset.split('_')[0]
+        cs = field.charset.split("_")[0]
         sql += f" CHARACTER SET {cs} COLLATE {field.charset}"
     if field.primary_key:
         sql += " PRIMARY KEY"
@@ -283,7 +320,11 @@ def _get_col_sql(field):
 
 
 def _get_filed(model):
-    return [attr for attr in dir(model) if not callable(getattr(model, attr)) and not attr.startswith("__")]
+    return [
+        attr
+        for attr in dir(model)
+        if not callable(getattr(model, attr)) and not attr.startswith("__")
+    ]
 
 
 class _ColTypes(enum.Enum):
@@ -304,11 +345,11 @@ class _ColTypes(enum.Enum):
 
 _OperatorMap = {
     "!=": operator.ne,
-    '==': operator.eq,
-    '<': operator.lt,
-    '<=': operator.le,
-    '>': operator.gt,
-    '>=': operator.ge,
+    "==": operator.eq,
+    "<": operator.lt,
+    "<=": operator.le,
+    ">": operator.gt,
+    ">=": operator.ge,
     # '&': operator.and_,
     # '|': operator.or_
     # "+=":operator
@@ -384,7 +425,7 @@ class Operator:
 
     @property
     def operators(self):
-        return self._operators.replace('==', '=')
+        return self._operators.replace("==", "=")
 
     @property
     def operator(self):
@@ -413,40 +454,40 @@ class FieldOperator:
         self.full_name = None
 
     def __eq__(self, other):
-        return Operator('==', self.full_name, other)
+        return Operator("==", self.full_name, other)
 
     def __ne__(self, other):
-        return Operator('!=', self.full_name, other)
+        return Operator("!=", self.full_name, other)
 
     def __lt__(self, other):
-        return Operator('<', self.full_name, other)
+        return Operator("<", self.full_name, other)
 
     def __le__(self, other):
-        return Operator('<=', self.full_name, other)
+        return Operator("<=", self.full_name, other)
 
     def __gt__(self, other):
-        return Operator('>', self.full_name, other)
+        return Operator(">", self.full_name, other)
 
     def __ge__(self, other):
-        return Operator('>=', self.full_name, other)
+        return Operator(">=", self.full_name, other)
 
 
 class Field(FieldOperator):
     def __init__(
-            self,
-            name,  # 列名
-            column_type,  # 类型
-            default=None,  # 默认值
-            primary_key=False,  # 主键
-            charset=None,  # 编码
-            max_length=None,  # 长度
-            auto_increment=False,  # 自增
-            NOT_NULL=False,  # 非空
-            created_generated=False,  # 创建时for datetime
-            update_generated=False,  # 更新时for datetime
-            unsigned=False,  # 无符号，没有负数
-            comment=None,  # 备注
-            **kwargs
+        self,
+        name,  # 列名
+        column_type,  # 类型
+        default=None,  # 默认值
+        primary_key=False,  # 主键
+        charset=None,  # 编码
+        max_length=None,  # 长度
+        auto_increment=False,  # 自增
+        NOT_NULL=False,  # 非空
+        created_generated=False,  # 创建时for datetime
+        update_generated=False,  # 更新时for datetime
+        unsigned=False,  # 无符号，没有负数
+        comment=None,  # 备注
+        **kwargs,
     ):
         super().__init__()
         self.full_name = None
@@ -479,10 +520,10 @@ class Field(FieldOperator):
         return self._value
 
     def desc(self):
-        return f'{self.full_name} desc'
+        return f"{self.full_name} desc"
 
     def asc(self):
-        return f'{self.full_name} asc'
+        return f"{self.full_name} asc"
 
     def like(self, args):
         return AO(f"{self.full_name} like ?", args)
@@ -498,8 +539,10 @@ class Field(FieldOperator):
 
     def count(self):
         return f"count({self.full_name})"
+        # return AO(f"count({self.full_name})")
 
     def sum(self):
+        # return AO(f"sum({self.full_name})")
         return f"sum({self.full_name})"
 
     def As(self, args):
@@ -546,78 +589,260 @@ def _join(func):
 
 class Models(object):
     class CharField(Field):
-        def __init__(self, name=None, primary_key=False, default=None, charset=None, max_length=None, not_null=False,
-                     comment=None, ):
-            super().__init__(name, "varchar", default, primary_key, charset=charset, max_length=max_length,
-                             not_null=not_null, comment=comment, )
+        def __init__(
+            self,
+            name=None,
+            primary_key=False,
+            default=None,
+            charset=None,
+            max_length=None,
+            not_null=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
+                "varchar",
+                default,
+                primary_key,
+                charset=charset,
+                max_length=max_length,
+                not_null=not_null,
+                comment=comment,
+            )
 
     class BooleanField(Field):
         def __init__(self, name=None, default=False, not_null=False, comment=None):
-            super().__init__(name, "boolean", default, not_null=not_null, comment=comment, )
+            super().__init__(
+                name,
+                "boolean",
+                default,
+                not_null=not_null,
+                comment=comment,
+            )
 
     class IntegerField(Field):
-        def __init__(self, name=None, primary_key=False, default=None, auto_increment=False,
-                     not_null=False, unsigned=False, comment=None, ):
-            super().__init__(name, "int", default, primary_key, auto_increment=auto_increment, not_null=not_null,
-                             unsigned=unsigned, comment=comment, )
+        def __init__(
+            self,
+            name=None,
+            primary_key=False,
+            default=None,
+            auto_increment=False,
+            not_null=False,
+            unsigned=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
+                "int",
+                default,
+                primary_key,
+                auto_increment=auto_increment,
+                not_null=not_null,
+                unsigned=unsigned,
+                comment=comment,
+            )
 
     class BigIntegerField(Field):
-        def __init__(self, name=None, primary_key=False, default=None, auto_increment=False,
-                     not_null=False, unsigned=False, comment=None, ):
-            super().__init__(name, "bigint", default, primary_key, auto_increment=auto_increment, NOT_NULL=not_null,
-                             unsigned=unsigned, comment=comment, )
+        def __init__(
+            self,
+            name=None,
+            primary_key=False,
+            default=None,
+            auto_increment=False,
+            not_null=False,
+            unsigned=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
+                "bigint",
+                default,
+                primary_key,
+                auto_increment=auto_increment,
+                NOT_NULL=not_null,
+                unsigned=unsigned,
+                comment=comment,
+            )
 
     class FloatField(Field):
-        def __init__(self, name=None, default=None, not_null=False, max_length=None, unsigned=False,
-                     comment=None, ):
-            super().__init__(name, "double", default, NOT_NULL=not_null, max_length=max_length,
-                             unsigned=unsigned, comment=comment, )
+        def __init__(
+            self,
+            name=None,
+            default=None,
+            not_null=False,
+            max_length=None,
+            unsigned=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
+                "double",
+                default,
+                NOT_NULL=not_null,
+                max_length=max_length,
+                unsigned=unsigned,
+                comment=comment,
+            )
 
     class DecimalField(Field):
-        def __init__(self, name=None, default=0.0, not_null=False, max_length="10,2", unsigned=False,
-                     comment=None, ):
-            super().__init__(name, "decimal", default, NOT_NULL=not_null, unsigned=unsigned,
-                             max_length=max_length, comment=comment, )
+        def __init__(
+            self,
+            name=None,
+            default=0.0,
+            not_null=False,
+            max_length="10,2",
+            unsigned=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
+                "decimal",
+                default,
+                NOT_NULL=not_null,
+                unsigned=unsigned,
+                max_length=max_length,
+                comment=comment,
+            )
 
     class TextField(Field):
-        def __init__(self, name=None, default=None, charset=None, max_length=None, not_null=False,
-                     comment=None, ):
-            super().__init__(name, "text", default, charset=charset, max_length=max_length,
-                             NOT_NULL=not_null, comment=comment, )
+        def __init__(
+            self,
+            name=None,
+            default=None,
+            charset=None,
+            max_length=None,
+            not_null=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
+                "text",
+                default,
+                charset=charset,
+                max_length=max_length,
+                NOT_NULL=not_null,
+                comment=comment,
+            )
 
     class LongTextField(Field):
-        def __init__(self, name=None, default=None, charset=None, max_length=None, not_null=False,
-                     comment=None, ):
-            super().__init__(name, "longtext", default, charset=charset, max_length=max_length,
-                             NOT_NULL=not_null, comment=comment, )
+        def __init__(
+            self,
+            name=None,
+            default=None,
+            charset=None,
+            max_length=None,
+            not_null=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
+                "longtext",
+                default,
+                charset=charset,
+                max_length=max_length,
+                NOT_NULL=not_null,
+                comment=comment,
+            )
 
     class MediumtextField(Field):
-        def __init__(self, name=None, default=None, charset=None, max_length=None, not_null=False,
-                     comment=None, ):
-            super().__init__(name, "mediumtext", default, charset=charset, max_length=max_length, NOT_NULL=not_null,
-                             comment=comment, )
+        def __init__(
+            self,
+            name=None,
+            default=None,
+            charset=None,
+            max_length=None,
+            not_null=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
+                "mediumtext",
+                default,
+                charset=charset,
+                max_length=max_length,
+                NOT_NULL=not_null,
+                comment=comment,
+            )
 
     class DatetimeField(Field):
-        def __init__(self, name=None, default=None, max_length=None, not_null=False, created_generated=False,
-                     update_generated=False, comment=None, ):
-            super().__init__(name, "datetime", default, max_length=max_length, NOT_NULL=not_null,
-                             created_generated=created_generated, update_generated=update_generated, comment=comment, )
+        def __init__(
+            self,
+            name=None,
+            default=None,
+            max_length=None,
+            not_null=False,
+            created_generated=False,
+            update_generated=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
+                "datetime",
+                default,
+                max_length=max_length,
+                NOT_NULL=not_null,
+                created_generated=created_generated,
+                update_generated=update_generated,
+                comment=comment,
+            )
 
     class DateField(Field):
-        def __init__(self, name=None, default=None, max_length=None, not_null=False, created_generated=False,
-                     update_generated=False, comment=None, ):
-            super().__init__(name, "date", default, max_length=max_length, NOT_NULL=not_null,
-                             created_generated=created_generated, update_generated=update_generated, comment=comment, )
+        def __init__(
+            self,
+            name=None,
+            default=None,
+            max_length=None,
+            not_null=False,
+            created_generated=False,
+            update_generated=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
+                "date",
+                default,
+                max_length=max_length,
+                NOT_NULL=not_null,
+                created_generated=created_generated,
+                update_generated=update_generated,
+                comment=comment,
+            )
 
     class TimestampField(Field):
-        def __init__(self, name=None, default=None, max_length=None, not_null=False, created_generated=False,
-                     update_generated=False, comment=None, ):
-            super().__init__(name, "timestamp", default, False, max_length=max_length, NOT_NULL=not_null,
-                             created_generated=created_generated, update_generated=update_generated, comment=comment, )
+        def __init__(
+            self,
+            name=None,
+            default=None,
+            max_length=None,
+            not_null=False,
+            created_generated=False,
+            update_generated=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
+                "timestamp",
+                default,
+                False,
+                max_length=max_length,
+                NOT_NULL=not_null,
+                created_generated=created_generated,
+                update_generated=update_generated,
+                comment=comment,
+            )
 
     class JsonField(Field):
-        def __init__(self, name=None, default=None, charset=None, not_null=False, comment=None):
-            super().__init__(name, "json", default, charset=charset, NOT_NULL=not_null, comment=comment, )
+        def __init__(
+            self, name=None, default=None, charset=None, not_null=False, comment=None
+        ):
+            super().__init__(
+                name,
+                "json",
+                default,
+                charset=charset,
+                NOT_NULL=not_null,
+                comment=comment,
+            )
 
 
 models = Models()
@@ -665,8 +890,8 @@ class ModelMetaclass(type):
         attrs["__table__"] = table_name
         attrs["__primary_key__"] = primary_key
         attrs["__fields__"] = fields
+        
         attrs["__join__"] = None
-
         attrs["__where__"] = None
         attrs["__having__"] = None
         attrs["__params__"] = None
@@ -682,18 +907,21 @@ class ModelMetaclass(type):
 
 class Model(dict, metaclass=ModelMetaclass):
     def __init__(self, **kw):
+        
         for k, v in kw.items():
             f = getattr(self, k, None)
             if isinstance(f, Field):
                 self.set_value(k, v)
 
         super(Model, self).__init__(self, **kw)
+        
 
     # def __str__(self):
     #     return "1"
 
     def __call__(self, **kw):
-        super(Model, self).__init__(**kw)
+        super(Model, self).__init__(self,**kw)
+        
         return self
 
     def __getattr__(self, key):
@@ -728,6 +956,16 @@ class Model(dict, metaclass=ModelMetaclass):
     #             field.default) else field.default
     #         setattr(self, key, value)
     # return value
+    def _clear(self):
+        self.__join__ = None
+        self.__where__ = None
+        self.__having__ = None
+        self.__params__ = None
+        self.__cols__ = None
+        self.__order_by__ = None
+        self.__group_by__ = None
+        self.__limit__ = None
+        self.__offset__ = None
 
     def _build_sql(self):
         table = self.__table__
@@ -743,10 +981,13 @@ class Model(dict, metaclass=ModelMetaclass):
             _cols = []
             for c in cols:
                 # name = c.full_name if joins is not None else c.name
-                _cols.append(c.full_name)
+                if isinstance(c,str): #for count()
+                    _cols.append(c)
+                elif isinstance(c,Field):    
+                    _cols.append(c.full_name)
             cols = ",".join(_cols)
         else:
-            cols = '*'
+            cols = "*"
 
         sql = f"select {cols} from `{table}`"
         if joins is not None:
@@ -763,7 +1004,7 @@ class Model(dict, metaclass=ModelMetaclass):
             sql += f" limit {limit}"
         if offset is not None:
             sql += f" offset {offset}"
-
+        
         return sql
 
     @classmethod
@@ -773,6 +1014,9 @@ class Model(dict, metaclass=ModelMetaclass):
             if isinstance(a, Field):
                 # a.full_name = f"{cls.__table__}.{a.name}"
                 cols.append(a)
+            elif isinstance(a,str): #for count()
+                cols.append(a)
+                # print(a,type(a))
         cls.__cols__ = cols if len(cols) else None
         return cls
 
@@ -780,8 +1024,8 @@ class Model(dict, metaclass=ModelMetaclass):
     @_join
     def join(cls, *args):
         (t, f) = args
-        tb = getattr(t, '__table__', None)
-        n = getattr(f.value, 'name', None)
+        tb = getattr(t, "__table__", None)
+        n = getattr(f.value, "name", None)
         join = f" join {tb} on {cls.__table__}.{f.key}{f.operators}{tb}.{n} "
         if cls.__join__ is None:
             cls.__join__ = join
@@ -792,8 +1036,25 @@ class Model(dict, metaclass=ModelMetaclass):
     @classmethod
     def where(cls, *args):
         p, q = _build(*args)
-        cls.__where__ = q if len(q) else None
-        cls.__params__ = p if len(p) else None
+        print(p,q)
+        where = cls.__where__
+        params = cls.__params__
+        if len(q):
+            if where:
+                where += q
+            else:
+                where = q
+        if len(p):
+            if params:
+                params += p
+            else:
+                params = p
+        cls.__where__ =  where
+        cls.__params__ =  params
+        # print(where,params)
+        # print(cls.__where__,cls.__params__)
+        # cls.__where__ = q if len(q) else None
+        # cls.__params__ = p if len(p) else None
         return cls
 
     @classmethod
@@ -828,9 +1089,11 @@ class Model(dict, metaclass=ModelMetaclass):
 
     @classmethod
     async def one(cls):
-        cls.__limit__ = 1
-        rs = await cls.all()
-        return cls(**rs[0]) if rs else None
+        sql = cls._build_sql(cls)
+        args = cls.__params__
+        rs = await sa.query(sql, args)
+        cls._clear(cls)
+        return await rs.one()
 
     @classmethod
     def limit(cls, limit: int):
@@ -846,14 +1109,12 @@ class Model(dict, metaclass=ModelMetaclass):
     async def all(cls):
         sql = cls._build_sql(cls)
         args = cls.__params__
-        cls.__where__ = None
-        cls.__having__ = None
-        cls.__params__ = None
         rs = await sa.query(sql, args)
-        return rs
+        cls._clear(cls)
+        return await rs.all()
 
     @classmethod
-    async def update(cls, *args, **kwargs):
+    async def update(cls, *args) -> bool:
         """
         Update data
         """
@@ -869,47 +1130,57 @@ class Model(dict, metaclass=ModelMetaclass):
             sql += f' where {" and ".join(f for f in where)}'
             params += cls.__params__
         elif pkv is not None:
-            sql += f' where `{pk}`=?'
+            sql += f" where `{pk}`=?"
             params.append(pkv)
         else:
             raise "Need where or primary key"
 
-        return await sa.query(sql, params, **kwargs)
+        rs = await sa.query(sql, params)
+        result = rs.cursor.rowcount > 0
+        await rs.release()
+        cls._clear(cls)
+        return result
 
     @classmethod
-    async def delete(cls, **kwargs):
+    async def delete(cls) -> bool:
         """
         Delete data
         """
         table = cls.__table__
         where = cls.__where__
         args = cls.__params__
-        sql = f'delete from `{table}`'
+        sql = f"delete from `{table}`"
 
         pk, pkv = cls.get_primary(cls)
         if where is not None:
             sql += f' where {" and ".join(f for f in where)}'
         elif pkv is not None:
-            sql += f' where `{pk}`=?'
+            sql += f" where `{pk}`=?"
             args = [pkv]
         else:
             raise "need where or primary"
-        return await sa.query(sql, args, **kwargs)
+        # return await sa.query(sql, args)
+        rs = await sa.query(sql, args)
+        result = rs.cursor.rowcount > 0
+        await rs.release()
+        cls._clear(cls)
+        return result
 
     @classmethod
-    async def insert(cls, *args, **kwargs):
-        """
-        Insert data
-        :param args:
-        :return:
-        """
+    async def insert(cls, *args):
         table = cls.__table__
         keys, params, md = _get_key_args(cls, args)
         sql = f"insert into `{table}` set {keys}"
-        rs = await sa.query(sql, params, **kwargs)
-        pk = cls.__primary_key__
-        if rs is not None:
-            cls.set_value(cls, pk, rs)
-        if md is not None:
-            md[pk] = rs
-        return rs
+        rs = await sa.query(sql, params)
+        result = rs.cursor.rowcount > 0
+        id = rs.cursor.lastrowid
+        await rs.release()
+        return result, id
+
+    @classmethod
+    async def count(cls):
+        sql = cls._build_sql(cls)
+        args = cls.__params__
+        rs = await sa.query(sql, args)
+        cls._clear(cls)
+        return await rs.count()
