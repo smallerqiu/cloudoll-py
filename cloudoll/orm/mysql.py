@@ -26,7 +26,17 @@ from aiomysql.connection import Connection
 from ..logging import error, info, warning
 from inspect import isclass, isfunction
 
+class AttrDict(dict):
+    """Dict that can get attribute by dot, and doesn't raise KeyError"""
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            return None
 
+class AttrDictCursor(aiomysql.DictCursor):
+    dict_type = AttrDict
+    
 class Mysql(object):
     def __init__(self):
         self.pool: Pool = None
@@ -46,7 +56,7 @@ class Mysql(object):
             autocommit=kw.get("autocommit", False),
             maxsize=kw.get("maxsize", 10),
             minsize=kw.get("pool_size", 5),
-            cursorclass=aiomysql.DictCursor,
+            cursorclass=AttrDictCursor,
             loop=loop,
         )
         return self
@@ -352,7 +362,7 @@ _OperatorMap = {
     ">=": operator.ge,
     # '&': operator.and_,
     # '|': operator.or_
-    # "+=":operator
+    "+=":operator.iadd
 }
 
 
@@ -917,8 +927,11 @@ class Model(dict, metaclass=ModelMetaclass):
         
 
     # def __str__(self):
+        # return '<Model: %s>' % self.__class__.__name__
     #     return "1"
-
+    def __repr__(self):
+        return '<Model: %s>' % self.__class__.__name__
+    
     def __call__(self, **kw):
         super(Model, self).__init__(self,**kw)
         
@@ -1027,6 +1040,7 @@ class Model(dict, metaclass=ModelMetaclass):
         tb = getattr(t, "__table__", None)
         n = getattr(f.value, "name", None)
         join = f" join {tb} on {cls.__table__}.{f.key}{f.operators}{tb}.{n} "
+        # join = f" join {tb} on  {f.full_name}{f.operators}{tb}.{n} "
         if cls.__join__ is None:
             cls.__join__ = join
         else:
@@ -1093,7 +1107,8 @@ class Model(dict, metaclass=ModelMetaclass):
         args = cls.__params__
         rs = await sa.query(sql, args)
         cls._clear(cls)
-        return await rs.one()
+        item =  await rs.one()
+        return cls(**item)
 
     @classmethod
     def limit(cls, limit: int):
