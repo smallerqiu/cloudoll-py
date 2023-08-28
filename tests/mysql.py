@@ -25,8 +25,9 @@ import enum
 from aiomysql.pool import Pool
 from aiomysql.cursors import Cursor
 from aiomysql.connection import Connection
-from ..logging import error, info, warning
+from cloudoll.logging import error, info, warning
 from inspect import isclass, isfunction
+from functools import reduce
 
 
 class AttrDict(dict):
@@ -293,6 +294,7 @@ OP = objdict(
     IS='IS',
     DESC='DESC',
     ASC='ASC',
+    AVG='AVG',
     AS='AS',
     SUM='SUM',
     COUNT='COUNT',
@@ -300,13 +302,14 @@ OP = objdict(
     IS_NOT_NULL='IS NOT NULL',
     IS_NULL='IS NULL',
     LIKE='LIKE',
-    NOT_LIKE='LIKE',
+    NOT_LIKE='NOT LIKE',
     ILIKE='ILIKE',
     BETWEEN='BETWEEN',
     CONTAINS='CONTAINS',
     NOT_BETWEEN='NOT BETWEEN',
     REGEXP='REGEXP',
     IREGEXP='IREGEXP',
+    DISTINCT='DISTINCT',
     CONCAT='||',
     BITWISE_NEGATION='~')
 
@@ -407,111 +410,7 @@ class _ColTypes(enum.Enum):
     timestamp = "Timestamp"
 
 
-class AO:
-    def __init__(self, q, p=None):
-        self.q = q
-        self.p = p
-
-    def __and__(self, *args):
-        p, q = self._build(*args)
-        return AO(f'({" and ".join(q)})', p)
-
-    def __or__(self, *args):
-        p, q = self._build(*args)
-        return AO(f'({" or ".join(q)})', p)
-
-    def _build(self, *args):
-        p = []
-        q = []
-        _build_ao(self, p, q)
-        for x in args:
-            if isinstance(x, AO):
-                _build_ao(x, p, q)
-            if isinstance(x, Operator):
-                _build_op(x, p, q)
-            if isinstance(x, tuple):
-                for y in x:
-                    if isinstance(y, AO):
-                        _build_ao(y, p, q)
-                    elif isinstance(y, Operator):
-                        _build_op(y, p, q)
-                    else:
-                        p.append(y)
-            if isinstance(x, str):
-                q.append(x)
-        return p, q
-
-
-def _build_ao(ao, p, q):
-    _q = ao.q
-    _p = ao.p
-    if _p:
-        if isinstance(_p, tuple):
-            p += _p
-        if isinstance(_p, list):
-            p += _p
-        else:
-            p.append(_p)
-    q.append(_q)
-
-
-def _build_op(op, p, q):
-    q.append(f"{op.key}{op.operators}?")
-    p.append(op.value)
-
-
-class Operator:
-    def __init__(self, operators, left, right):
-        self._operators = operators
-        self._value = right
-        self._key = left
-
-    @property
-    def key(self):
-        return self._key
-
-    @property
-    def value(self):
-        return self._value
-
-    @property
-    def operators(self):
-        return self._operators.replace("==", "=")
-
-    @property
-    def operator(self):
-        return _OperatorMap[self._operators]
-
-    def __or__(self, *args):
-        p, q = self._build(*args)
-        return AO(f'({" or ".join(q)})', p)
-
-    def __and__(self, *args):
-        p, q = self._build(*args)
-        return AO(f'({" and ".join(q)})', p)
-
-    def _build(self, *args):
-        p = []
-        q = []
-        _build_op(self, p, q)
-        for x in args:
-            if isinstance(x, AO):
-                _build_ao(x, p, q)
-        return p, q
-
-
-class Expression(FieldBase):
-    def __init__(self, lhs, op, rhs, flat=False):
-        self.lhs = lhs
-        self.op = op
-        self.rhs = rhs
-        self.flat = flat
-
-
 class FieldBase:
-    def __init__(self):
-        self.full_name = None
-
     def _op(op, inverse=False):
         def inner(self, rhs):
             if inverse:
@@ -524,10 +423,13 @@ class FieldBase:
 
     def __ne__(self, rhs):
         return Expression(self, OP.NE, rhs)
+
     __lt__ = _op(OP.LT)  # <
     __le__ = _op(OP.LTE)  # <=
     __gt__ = _op(OP.GT)  # >
     __ge__ = _op(OP.GTE)  # >=
+    __and__ = _op(OP.AND)  # and
+    __or__ = _op(OP.OR)  # or
 
     # 运算
     __add__ = _op(OP.ADD)  # +
@@ -539,81 +441,83 @@ class FieldBase:
     __div__ = _op(OP.DIV)  # /
     __rdiv__ = _op(OP.DIV, True)  # /=
 
-    # def __eq__(self, other):
-    #     return Operator("==", self.full_name, other)
+    In = _op(OP.IN)  # in
+    not_in = _op(OP.NOT_IN)  # not in
+    like = _op(OP.LIKE)  # like
+    ilike = _op(OP.ILIKE)  # ilike for pg
+    not_like = _op(OP.NOT_LIKE)  # not like
 
-    # def __ne__(self, other):
-    #     return Operator("!=", self.full_name, other)
+    def distinct(self, *arg):
+        return Expression(self, OP.DISTINCT, arg)
 
-    # def __lt__(self, other):
-    #     return Operator("<", self.full_name, other)
-
-    # def __le__(self, other):
-    #     return Operator("<=", self.full_name, other)
-
-    # def __gt__(self, other):
-    #     return Operator(">", self.full_name, other)
-
-    # def __ge__(self, other):
-    #     return Operator(">=", self.full_name, other)
     def desc(self):
-        return Exception(self, OP.DESC)
-        # return f"{self.full_name} desc"
+        return Expression(self, OP.DESC, None)
 
     def asc(self):
-        return Exception(self, OP.ASC)
-
-    def like(self, args):
-        return Exception(self, OP.LIKE, args)
-        # return AO(f"{self.full_name} like ?", args)
-
-    # for postgres
-    def ilike(self, args):
-        return Exception(self, OP.ILIKE, args)
-
-    def not_like(self, args):
-        return Exception(self, OP.NOT_LIKE, args)
-        # return AO(f"{self.full_name} not like ?", args)
-
-    def In(self, args):
-        return Exception(self, OP.IN, args)
-        # return AO(f"{self.full_name} in {args}")
-
-    def not_in(self, args):
-        return Exception(self, OP.NOT_IN, args)
-        # return AO(f"{self.full_name} not in {args}")
+        return Expression(self, OP.ASC, None)
 
     def count(self):
-        return Exception(self, OP.COUNT)
-        # return AO(f"count({self.full_name})")
+        return Function(self, OP.COUNT)
 
     def sum(self):
-        return Exception(self, OP.SUM)
-        # return f"sum({self.full_name})"
+        return Function(self, OP.SUM)
 
-    def As(self, args):
-        return Exception(self, OP.AS, args)
-        # return f"{self.full_name} as {args}"
-
-    def is_null(self):
-        return Exception(self, OP.IS_NULL)
-        # return AO(f"{self.full_name} is null")
-
-    def not_null(self):
-        return Exception(self, OP.IS_NOT_NULL)
-        # return AO(f"{self.full_name} is not null")
-
-    def between(self, h1, h2):
-        return Exception(self, OP.BETWEEN, f"{h1} AND {h2}")
-        # return AO(f"{self.full_name} between {args[0]} and {args[1]}")
-
-    def not_between(self, h1, h2):
-        return Exception(self, OP.NOT_BETWEEN, f"{h1} AND {h2}")
-        # return AO(f"{self.full_name} not between {args[0]} and {args[1]}")
+    def avg(self):
+        return Function(self, OP.AVG)
 
     def contains(self, args):
-        return Exception(self, OP.CONTAINS, args)
+        return Function(self, OP.CONTAINS, args)
         # return AO(f"contains({self.full_name},?)", args)
+
+    def As(self, args):
+        return Expression(self, OP.AS, args)
+
+    def is_null(self):
+        return Expression(self, OP.IS_NULL, None)
+
+    def not_null(self):
+        return Expression(self, OP.IS_NOT_NULL, None)
+
+    def between(self, h1, h2):
+        return Expression(self, OP.BETWEEN, ExpList(h1, OP.AND, h2))
+
+    def not_between(self, h1, h2):
+        return Expression(self, OP.NOT_BETWEEN, ExpList(h1, OP.AND, h2))
+
+
+class ExpList(FieldBase):
+    def __init__(self, lpt, op, rpt):
+        self.lpt = lpt
+        self.op = op
+        self.rpt = rpt
+
+    def sql(self):
+        lpt = self.lpt
+        rpt = self.rpt
+        return f"{lpt.sql() if isinstance(lpt,Expression) else lpt} {self.op} {rpt.sql() if isinstance(rpt,Expression) else rpt}"
+
+
+class Function(FieldBase):
+    def __init__(self, col, op, rpt=None):
+        self.col = col
+        self.op = op
+        self.rpt = rpt
+
+    def sql(self):
+        # todo:
+        return f"{self.op}({self.col.full_name} {','+str(self.rpt) if self.rpt else ''})"
+
+
+class Expression(FieldBase):
+    def __init__(self, lhs, op, rhs):
+        self.lhs = lhs
+        self.op = op
+        self.rhs = rhs
+
+    def sql(self):
+        l = self.lhs
+        r = self.rhs
+        return f"({l.full_name if isinstance(l,Field) else l.sql()} {self.op} {r.full_name if isinstance(r,Field) else (r.sql() if isinstance(r,FieldBase) else str(r))})"
 
 
 class Field(FieldBase):
@@ -662,29 +566,6 @@ class Field(FieldBase):
 
     def get_value(self):
         return self._value
-
-
-def _build(*args):
-    q = []
-    p = []
-    for o in args:
-        if isinstance(o, Operator):
-            _build_op(o, p, q)
-        elif isinstance(o, AO):
-            _build_ao(o, p, q)
-    return p, q
-
-
-def _join(func):
-    def wrapper(*args, **kwargs):
-        for m in args:
-            if isclass(m) and issubclass(m, Model):
-                for x in _get_filed(m):
-                    filed = getattr(m, x)
-                    filed.full_name = f"`{m.__table__}`.{filed.name}"
-        return func(*args, **kwargs)
-
-    return wrapper
 
 
 class Models(object):
@@ -961,11 +842,9 @@ class ModelMetaclass(type):
         # 表名
         table_name = attrs.get("__table__", None) or name
         primary_key = None
-        # mappings = dict()
         fields = []
         for k, v in attrs.items():
             if isinstance(v, Field):
-                # mappings[k] = v
                 v.name = k
                 v.full_name = f'`{table_name}`.{k}'
                 if v.primary_key:
@@ -1049,14 +928,6 @@ class Model(dict, metaclass=ModelMetaclass):
         pkv = self.get_value(self, pk)
         return pk, pkv
 
-    #     value = getattr(self, key, None)
-    # if value is None:
-    #     field = self.__mappings__[key]
-    #     if field.default:
-    #         value = field.default() if callable(
-    #             field.default) else field.default
-    #         setattr(self, key, value)
-    # return value
     def _clear(self):
         self.__join__ = None
         self.__where__ = None
@@ -1068,67 +939,21 @@ class Model(dict, metaclass=ModelMetaclass):
         self.__limit__ = None
         self.__offset__ = None
 
-    def _build_sql(self):
-        table = self.__table__
-        cols = self.__cols__
-        where = self.__where__
-        joins = self.__join__
-        having = self.__having__
-        order_by = self.__order_by__
-        group_by = self.__group_by__
-        limit = self.__limit__
-        offset = self.__offset__
-        if cols is not None:
-            _cols = []
-            for c in cols:
-                # name = c.full_name if joins is not None else c.name
-                if isinstance(c, str):  # for count()
-                    _cols.append(c)
-                elif isinstance(c, Field):
-                    _cols.append(c.full_name)
-            cols = ",".join(_cols)
-        else:
-            cols = "*"
-
-        sql = f"select {cols} from `{table}`"
-        if joins is not None:
-            sql += joins
-        if where is not None:
-            sql += f" where {' and '.join(f for f in where)}"
-        if group_by:
-            sql += f' group by {",".join(f for f in group_by)}'
-        if having:
-            sql += f' HAVING {",".join(f for f in having)}'
-        if order_by is not None:
-            sql += f' order by {",".join(f for f in order_by)}'
-        if limit is not None:
-            sql += f" limit {limit}"
-        if offset is not None:
-            sql += f" offset {offset}"
-
-        return sql
-
     @classmethod
     def select(cls, *args):
         cols = []
-        for a in args:
-            if isinstance(a, Field):
-                # a.full_name = f"{cls.__table__}.{a.name}"
-                cols.append(a)
-            elif isinstance(a, str):  # for count()
-                cols.append(a)
-                # print(a,type(a))
-        cls.__cols__ = cols if len(cols) else None
+        for col in args:
+            if isinstance(col, Field):
+                cols.append(col.full_name)
+            elif isinstance(col, Function):
+                cols.append(col.sql())
+        cls.__cols__ = ",".join(cols) if len(cols) else '*'
         return cls
 
     @classmethod
-    @_join
-    def join(cls, *args):
-        (t, f) = args
-        tb = getattr(t, "__table__", None)
-        n = getattr(f.value, "name", None)
-        join = f" join {tb} on {cls.__table__}.{f.key}{f.operators}{tb}.{n} "
-        # join = f" join {tb} on  {f.full_name}{f.operators}{tb}.{n} "
+    def join(cls, table, *exp):
+        exp = reduce(operator.and_, exp).sql()
+        join = f"JOIN {table.__table__} ON {exp}"
         if cls.__join__ is None:
             cls.__join__ = join
         else:
@@ -1136,49 +961,27 @@ class Model(dict, metaclass=ModelMetaclass):
         return cls
 
     @classmethod
-    def where(cls, *args):
-        p, q = _build(*args)
-        print(p, q)
-        where = cls.__where__
-        params = cls.__params__
-        if len(q):
-            if where:
-                where += q
-            else:
-                where = q
-        if len(p):
-            if params:
-                params += p
-            else:
-                params = p
-        cls.__where__ = where
-        cls.__params__ = params
-        # print(where,params)
-        # print(cls.__where__,cls.__params__)
-        # cls.__where__ = q if len(q) else None
-        # cls.__params__ = p if len(p) else None
+    def where(cls, *exp):
+        if cls.__where__ is not None:
+            exp = (cls.__where__,) + exp
+        cls.__where__ = reduce(operator.and_, exp)
         return cls
 
     @classmethod
-    def having(cls, *args):
-        having = []
-        params = []
-        for x in args:
-            if isinstance(x, Operator):
-                having.append(f"{x.key}{x.operators}?")
-                params.append(f"{x.value}")
-            else:
-                having.append(x)
-        cls.__having__ = having if len(having) else None
-        cls.__params__ = params if len(params) else None
+    def having(cls, *exp):
+        if cls.__having__ is not None:
+            exp = (cls.__having__,) + exp
+        cls.__having__ = reduce(operator.and_, exp)
         return cls
 
     @classmethod
     def order_by(cls, *args):
         by = []
         for f in args:
-            by.append(f)
-        cls.__order_by__ = by if len(by) else None
+            by.append(f"{f.lhs.full_name} {f.op}")
+        if cls.__order_by__ is not None:
+            by = cls.__order_by__+by
+        cls.__order_by__ = by
         return cls
 
     @classmethod
@@ -1186,16 +989,41 @@ class Model(dict, metaclass=ModelMetaclass):
         by = []
         for f in args:
             by.append(f.full_name)
-        cls.__group_by__ = by if len(by) else None
+        if cls.__group_by__ is not None:
+            by = cls.__group_by__+by
+        cls.__group_by__ = by
         return cls
 
+    def _literal(self, op, exp):
+        if exp is not None:
+            if isinstance(exp, list):
+                return f'{op} {",".join(exp)}'
+            elif isinstance(exp, Expression):
+                return f'{op} {exp.sql()}'
+            else:
+                return exp
+        return ''
+
+    def sql(self):
+        JOIN = self._literal('JOIN', self.__join__)
+        WHERE = self._literal('WHERE', self.__where__)
+        GROUPBY = self._literal('GROUP BY', self.__group_by__)
+        HAVING = self._literal('HAVING', self.__having__)
+        ORDERBY = self._literal('ORDER BY', self.__order_by__)
+        LIMIT = self._literal('LIMIT', self.__limit__)
+        OFFSET = self._literal('OFFSET', self.__offset__)
+        aft = ' '.join([JOIN, WHERE, GROUPBY, HAVING, ORDERBY, LIMIT, OFFSET])
+        return f"SELECT {self.__cols__} FROM {self.__table__} {aft}"
+        # return self._build_sql(cls)
+
     @classmethod
-    def sql(cls):
-        return cls._build_sql(cls)
+    def test(cls):
+        return cls.sql(cls)
 
     @classmethod
     async def one(cls):
         sql = cls._build_sql(cls)
+        cls.limit(1)
         args = cls.__params__
         rs = await sa.query(sql, args)
         cls._clear(cls)
@@ -1204,12 +1032,12 @@ class Model(dict, metaclass=ModelMetaclass):
 
     @classmethod
     def limit(cls, limit: int):
-        cls.__limit__ = limit
+        cls.__limit__ = f'LIMIT {limit}'
         return cls
 
     @classmethod
     def offset(cls, offset: int):
-        cls.__offset__ = offset
+        cls.__offset__ = f'OFFSET {offset}'
         return cls
 
     @classmethod
