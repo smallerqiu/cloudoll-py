@@ -353,19 +353,6 @@ class _ColTypes(enum.Enum):
     timestamp = "Timestamp"
 
 
-_OperatorMap = {
-    "!=": operator.ne,
-    "==": operator.eq,
-    "<": operator.lt,
-    "<=": operator.le,
-    ">": operator.gt,
-    ">=": operator.ge,
-    # '&': operator.and_,
-    # '|': operator.or_
-    "+=":operator.iadd
-}
-
-
 class AO:
     def __init__(self, q, p=None):
         self.q = q
@@ -437,9 +424,9 @@ class Operator:
     def operators(self):
         return self._operators.replace("==", "=")
 
-    @property
-    def operator(self):
-        return _OperatorMap[self._operators]
+    # @property
+    # def operator(self):
+        # return _OperatorMap[self._operators]
 
     def __or__(self, *args):
         p, q = self._build(*args)
@@ -643,7 +630,7 @@ class Models(object):
         ):
             super().__init__(
                 name,
-                "int",
+                "INT",
                 default,
                 primary_key,
                 auto_increment=auto_increment,
@@ -665,7 +652,7 @@ class Models(object):
         ):
             super().__init__(
                 name,
-                "bigint",
+                "BIGINT",
                 default,
                 primary_key,
                 auto_increment=auto_increment,
@@ -686,7 +673,7 @@ class Models(object):
         ):
             super().__init__(
                 name,
-                "double",
+                "FLOAT",
                 default,
                 NOT_NULL=not_null,
                 max_length=max_length,
@@ -706,7 +693,7 @@ class Models(object):
         ):
             super().__init__(
                 name,
-                "decimal",
+                "DECIMAL",
                 default,
                 NOT_NULL=not_null,
                 unsigned=unsigned,
@@ -726,7 +713,7 @@ class Models(object):
         ):
             super().__init__(
                 name,
-                "text",
+                "TEXT",
                 default,
                 charset=charset,
                 max_length=max_length,
@@ -787,7 +774,7 @@ class Models(object):
         ):
             super().__init__(
                 name,
-                "datetime",
+                "DATETIME",
                 default,
                 max_length=max_length,
                 NOT_NULL=not_null,
@@ -809,7 +796,7 @@ class Models(object):
         ):
             super().__init__(
                 name,
-                "date",
+                "DATE",
                 default,
                 max_length=max_length,
                 NOT_NULL=not_null,
@@ -914,6 +901,8 @@ class ModelMetaclass(type):
         sa.__MODELS__.append(model)
         return model
 
+    def __repr__(self):
+        return '<Model: %s>' % self.__name__
 
 class Model(dict, metaclass=ModelMetaclass):
     def __init__(self, **kw):
@@ -926,11 +915,11 @@ class Model(dict, metaclass=ModelMetaclass):
         super(Model, self).__init__(self, **kw)
         
 
-    # def __str__(self):
-        # return '<Model: %s>' % self.__class__.__name__
-    #     return "1"
-    def __repr__(self):
+    def __str__(self):
         return '<Model: %s>' % self.__class__.__name__
+    
+    # def __repr__(self):
+        # return '<Model: %s>' % self.__class__.__name__
     
     def __call__(self, **kw):
         super(Model, self).__init__(self,**kw)

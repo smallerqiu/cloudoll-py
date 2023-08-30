@@ -14,8 +14,6 @@ import pkgutil
 import sys
 import socket
 from urllib import parse
-import aiomcache
-from redis import asyncio as aioredis
 from aiohttp import web
 from aiohttp.web_exceptions import *
 from aiohttp.web_ws import WebSocketResponse as WebSocket, WSMsgType
@@ -34,7 +32,7 @@ from ..logging import warning
 from ..orm.mysql import sa
 from . import jwt
 from decimal import Decimal
-from datetime import datetime ,date
+from datetime import datetime, date
 
 
 class _Handler(object):
@@ -183,10 +181,11 @@ class Application(object):
         self.app.jwt_encode = self.jwt_encode
         self.app.jwt_decode = self.jwt_decode
         # session
-        self._init_session()
+        self.app.on_startup.append(self._init_session)
+        # self._init_session()
         #  router:
         self._reg_router()
-        
+
         # static
         if conf_server is not None:
             conf_st = conf_server.get("static")
@@ -212,7 +211,7 @@ class Application(object):
             self.app.mysql = self.mysql
             apps.mysql = self.mysql
 
-    def _init_session(self):
+    async def _init_session(self, apps):
         config = self.config
         # redis
         redis_conf = config.get("redis")
@@ -242,8 +241,9 @@ class Application(object):
             httponly = redis_conf.get("httponly")
             cookie_name = redis_conf.get("key", _SESSION_KEY)
 
-            redis = aioredis.from_url(redis_url)
-            self.app.redis = redis
+            from redis import asyncio as aioredis
+            redis = await aioredis.from_url(redis_url)
+            apps.redis = redis
             storage = redis_storage.RedisStorage(
                 redis,
                 cookie_name=cookie_name,
@@ -251,7 +251,7 @@ class Application(object):
                 httponly=httponly,
                 secure=secure,
             )
-            setup(self.app, storage)
+            setup(apps, storage)
         elif mcache_conf:
             host = mcache_conf.get("host")
             port = mcache_conf.get("port", 11211)
@@ -259,8 +259,9 @@ class Application(object):
             secure = mcache_conf.get("secure")
             httponly = mcache_conf.get("httponly")
             cookie_name = mcache_conf.get("key", _SESSION_KEY)
+            import aiomcache
             mc = aiomcache.Client(host, port)
-            self.app.memcached = mc
+            apps.memcached = mc
             storage = memcached_storage.MemcachedStorage(
                 mc,
                 cookie_name=cookie_name,
@@ -268,7 +269,7 @@ class Application(object):
                 httponly=httponly,
                 secure=secure,
             )
-            setup(self.app, storage)
+            setup(apps, storage)
         else:
             sess = config.get("session", {})
             sess_name = sess.get("key", _SESSION_KEY)
@@ -288,7 +289,7 @@ class Application(object):
                 max_age=_int(max_age),
                 httponly=httponly,
             )
-            setup(self.app, storage)
+            setup(apps, storage)
 
     def _reg_router(self):
         fd = "controllers"
@@ -300,7 +301,6 @@ class Application(object):
         self.app.add_routes(self._route_table)
         # for route in self._routes:
         #     self.app.router.add_route(**route)
-
 
     def run(self, *args, **kw):
         """
