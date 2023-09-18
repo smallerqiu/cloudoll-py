@@ -6,7 +6,8 @@ __author__ = "chuchur/chuchur.com"
 import argparse
 import asyncio
 import hashlib
-import os, base64
+import os
+import base64
 import importlib
 import inspect
 import json
@@ -26,15 +27,15 @@ from aiohttp_session import (
     memcached_storage,
     cookie_storage,
 )
-from jinja2 import Environment, FileSystemLoader
 from setuptools import find_packages
 from .settings import get_config
 
 from ..logging import warning
-from ..orm.mysql import sa
+from ..orm.mysql import Mysql
+from ..orm.postgres import Postgres
 from . import jwt
 from decimal import Decimal
-from datetime import datetime ,date
+from datetime import datetime, date
 
 
 class _Handler(object):
@@ -169,7 +170,8 @@ class Application(object):
         conf_server = config.get("server")
         client_max_size = 1024**2 * 2
         if conf_server is not None:
-            client_max_size = conf_server.get("client_max_size", client_max_size)
+            client_max_size = conf_server.get(
+                "client_max_size", client_max_size)
         self.app = web.Application(
             logger=None,
             loop=loop,
@@ -177,16 +179,18 @@ class Application(object):
             client_max_size=_int(client_max_size),
         )
         # database
+        self.app.db = {}
         self.app.on_startup.append(self._init_database)
         self.app.on_cleanup.append(self._close_database)
         self.app.config = config
         self.app.jwt_encode = self.jwt_encode
         self.app.jwt_decode = self.jwt_decode
         # session
-        self._init_session()
+        self.app.on_startup.append(self._init_session)
+        # self._init_session()
         #  router:
         self._reg_router()
-        
+
         # static
         if conf_server is not None:
             conf_st = conf_server.get("static")
@@ -197,22 +201,36 @@ class Application(object):
 
         temp = os.path.join(os.path.abspath("."), "templates")
         if os.path.exists(temp):
-            self.env = Environment(loader=FileSystemLoader(temp), autoescape=True)
+            from jinja2 import Environment, FileSystemLoader
+            self.env = Environment(
+                loader=FileSystemLoader(temp), autoescape=True)
 
         return self
 
     async def _close_database(self, apps):
-        if self.mysql:
-            await self.mysql.close()
+        for db in apps.db:
+            await apps.db[db].close()
+
+        if apps.redis:
+            await apps.redis.close()
 
     async def _init_database(self, apps):
-        conf_mysql = self.config.get("mysql")
-        if conf_mysql is not None:
-            self.mysql = await sa.create_engine(**conf_mysql)
-            self.app.mysql = self.mysql
-            apps.mysql = self.mysql
+        conf_db = self.config.get("database")
+        if conf_db:
+            # print(conf_db)
+            for db in conf_db:
+                db_type = conf_db[db].get('type', 'mysql')
+                if db_type == 'mysql':
+                    apps.db[db] = await Mysql().create_engine(**conf_db[db])
+                elif db_type == 'postgres':
+                    apps.db[db] = await Postgres().create_engine(**conf_db[db])
+                else:
+                    raise (f'sorry, {db_type} is not supported.')
+            # self.mysql = await sa.create_engine(**conf_mysql)
+            # self.app.mysql = self.mysql
+            # apps.mysql = self.mysql
 
-    def _init_session(self):
+    async def _init_session(self, apps):
         config = self.config
         # redis
         redis_conf = config.get("redis")
@@ -242,8 +260,8 @@ class Application(object):
             httponly = redis_conf.get("httponly")
             cookie_name = redis_conf.get("key", _SESSION_KEY)
 
-            redis = aioredis.from_url(redis_url)
-            self.app.redis = redis
+            redis = await aioredis.from_url(redis_url)
+            apps.redis = redis
             storage = redis_storage.RedisStorage(
                 redis,
                 cookie_name=cookie_name,
@@ -251,7 +269,7 @@ class Application(object):
                 httponly=httponly,
                 secure=secure,
             )
-            setup(self.app, storage)
+            setup(apps, storage)
         elif mcache_conf:
             host = mcache_conf.get("host")
             port = mcache_conf.get("port", 11211)
@@ -260,7 +278,7 @@ class Application(object):
             httponly = mcache_conf.get("httponly")
             cookie_name = mcache_conf.get("key", _SESSION_KEY)
             mc = aiomcache.Client(host, port)
-            self.app.memcached = mc
+            apps.memcached = mc
             storage = memcached_storage.MemcachedStorage(
                 mc,
                 cookie_name=cookie_name,
@@ -268,7 +286,7 @@ class Application(object):
                 httponly=httponly,
                 secure=secure,
             )
-            setup(self.app, storage)
+            setup(apps, storage)
         else:
             sess = config.get("session", {})
             sess_name = sess.get("key", _SESSION_KEY)
@@ -288,7 +306,7 @@ class Application(object):
                 max_age=_int(max_age),
                 httponly=httponly,
             )
-            setup(self.app, storage)
+            setup(apps, storage)
 
     def _reg_router(self):
         fd = "controllers"
@@ -300,7 +318,6 @@ class Application(object):
         self.app.add_routes(self._route_table)
         # for route in self._routes:
         #     self.app.router.add_route(**route)
-
 
     def run(self, *args, **kw):
         """

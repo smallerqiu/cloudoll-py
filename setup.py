@@ -34,6 +34,7 @@ REQUIRED = [
     "pyjwt",
     "aiohttp_session[secure]",
     "PyYAML",
+    "click"
 ]
 
 # What packages are optional?
@@ -91,7 +92,8 @@ class UploadCommand(Command):
             pass
 
         self.status("Building Source and Wheel (universal) distribution…")
-        os.system("{0} setup.py sdist bdist_wheel --universal".format(sys.executable))
+        os.system(
+            "{0} setup.py sdist bdist_wheel --universal".format(sys.executable))
 
         self.status("Uploading the package to PyPI via Twine…")
         os.system("twine upload dist/*")
@@ -114,13 +116,19 @@ setup(
     author_email=EMAIL,
     python_requires=REQUIRES_PYTHON,
     url=URL,
-    packages=find_packages(exclude=["tests", "*.tests", "*.tests.*", "tests.*"]),
+    packages=find_packages(
+        exclude=["tests", "*.tests", "*.tests.*", "tests.*"]),
     # If your package is a single module, use this instead of 'packages':
     # py_modules=['mypackage'],
     # entry_points={
     #     'console_scripts': ['mycli=mymodule:cli'],
     # },
     install_requires=REQUIRED,
+    entry_points={
+        'console_scripts': [
+            'cloudoll = cloudoll.cli:main'
+        ]
+    },
     extras_require=EXTRAS,
     include_package_data=True,
     license="MIT",
