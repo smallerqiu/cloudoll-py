@@ -10,7 +10,7 @@ from .logging import error
 @click.command()
 @click.option('-p', '--path', help='create model path or from model to creat table', default="models.py")
 @click.option('-c', '--create', help='For create model or table, model | table', default='model')
-@click.option('-t', '--table', help="Table's name or Model's name, split by `,` or 'ALL'")
+@click.option('-t', '--table', help="Table's name or Model's name, split by `,` or 'ALL'",required=True)
 @click.option('-env', '--environment', help="Environment, local | test | prod", default="local")
 @click.option('-db', '--database', help="Database name, pick the database in conf.{env}.yaml", default='mysql')
 def main(path, create,  table, environment, database):
