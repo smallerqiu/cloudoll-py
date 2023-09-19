@@ -3,7 +3,7 @@ import re
 from ..logging import info
 
 
-async def create_model(pool, table_name):
+async def create_model(pool, table_name) -> str:
     """
     Create table
     :params table name
@@ -48,7 +48,6 @@ async def create_model(pool, table_name):
             ",".join(values),
         )
     tb += "\n"
-    await rs.release()
     return tb
 
 
@@ -58,22 +57,25 @@ async def create_models(pool, save_path: str = None, tables: list = None):
     :params tables
     :params save_path
     """
+    print(save_path)
     if tables and len(tables) > 0:
         tbs = tables
     else:
         rs = await pool.query("show tables")
         result = await rs.all()
         tbs = [list(c.values())[0] for c in result]
-        await rs.release()
     content = ""
-    ipt_con = "from cloudoll.orm.model import models, Model\n\n"
+    import_line = "from cloudoll.orm.model import models, Model\n\n"
     for t in tbs:
         content += await create_model(pool, t)
     if save_path:
-        with open(save_path, "ra", encoding="utf-8") as f:
+        first_append = True
+        with open(save_path, 'r', encoding="utf-8")as f:
             t = f.readlines(5)
-            if ipt_con not in t:
-                content = ipt_con+content
+            first_append = import_line not in t
+        with open(save_path, "a", encoding="utf-8") as f:
+            if first_append:
+                content = import_line+content
             f.write(content)
     else:
         return content
@@ -191,6 +193,7 @@ class _ColTypes(enum.Enum):
     varchar = "Char"
     tinyint = "Boolean"
     int = "Integer"
+    smallint = "Integer"
     bigint = "BigInteger"
     double = "Float"
     text = "Text"
