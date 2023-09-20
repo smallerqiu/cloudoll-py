@@ -1,5 +1,4 @@
-
-from .field import Field,  Function, Expression
+from .field import Field, Function, Expression
 from ..logging import warning
 from functools import reduce
 from ..utils.m2d import _get_key_args
@@ -21,10 +20,10 @@ class ModelMetaclass(type):
         for k, v in attrs.items():
             if isinstance(v, Field):
                 v.name = k
-                v.full_name = f'`{table_name}`.{k}'
+                v.full_name = f"`{table_name}`.{k}"
                 if v.primary_key:
                     if primary_key:
-                        raise RuntimeError("Duplicate primary key")
+                        warning(f"Duplicate primary key for {table_name}")
                     primary_key = k
                 else:
                     fields.append(k)
@@ -56,12 +55,11 @@ class ModelMetaclass(type):
         return model
 
     def __repr__(self):
-        return '<Model: %s>' % self.__name__
+        return "<Model: %s>" % self.__name__
 
 
 class Model(dict, metaclass=ModelMetaclass):
     def __init__(self, **kw):
-
         for k, v in kw.items():
             f = getattr(self, k, None)
             if isinstance(f, Field):
@@ -70,10 +68,10 @@ class Model(dict, metaclass=ModelMetaclass):
         super(Model, self).__init__(self, **kw)
 
     def __str__(self):
-        return '<Model: %s>' % self.__class__.__name__
+        return "<Model: %s>" % self.__class__.__name__
 
     # def __repr__(self):
-        # return '<Model: %s>' % self.__class__.__name__
+    # return '<Model: %s>' % self.__class__.__name__
 
     def __call__(self, **kw):
         super(Model, self).__init__(self, **kw)
@@ -123,7 +121,7 @@ class Model(dict, metaclass=ModelMetaclass):
                 cols.append(col.full_name)
             elif isinstance(col, Function):
                 cols.append(col.sql())
-        cls.__cols__ = ",".join(cols) if len(cols) else '*'
+        cls.__cols__ = ",".join(cols) if len(cols) else "*"
         return cls
 
     @classmethod
@@ -156,7 +154,7 @@ class Model(dict, metaclass=ModelMetaclass):
         for f in args:
             by.append(f"{f.lhs.full_name} {f.op}")
         if cls.__order_by__ is not None:
-            by = cls.__order_by__+by
+            by = cls.__order_by__ + by
         cls.__order_by__ = by
         return cls
 
@@ -166,7 +164,7 @@ class Model(dict, metaclass=ModelMetaclass):
         for f in args:
             by.append(f.full_name)
         if cls.__group_by__ is not None:
-            by = cls.__group_by__+by
+            by = cls.__group_by__ + by
         cls.__group_by__ = by
         return cls
 
@@ -175,20 +173,20 @@ class Model(dict, metaclass=ModelMetaclass):
             if isinstance(exp, list):
                 return f'{op} {",".join(exp)}'
             elif isinstance(exp, Expression):
-                return f'{op} {exp.sql()}'
+                return f"{op} {exp.sql()}"
             else:
                 return exp
-        return ''
+        return ""
 
     def sql(self):
-        JOIN = self._literal('JOIN', self.__join__)
-        WHERE = self._literal('WHERE', self.__where__)
-        GROUPBY = self._literal('GROUP BY', self.__group_by__)
-        HAVING = self._literal('HAVING', self.__having__)
-        ORDERBY = self._literal('ORDER BY', self.__order_by__)
-        LIMIT = self._literal('LIMIT', self.__limit__)
-        OFFSET = self._literal('OFFSET', self.__offset__)
-        aft = ' '.join([JOIN, WHERE, GROUPBY, HAVING, ORDERBY, LIMIT, OFFSET])
+        JOIN = self._literal("JOIN", self.__join__)
+        WHERE = self._literal("WHERE", self.__where__)
+        GROUPBY = self._literal("GROUP BY", self.__group_by__)
+        HAVING = self._literal("HAVING", self.__having__)
+        ORDERBY = self._literal("ORDER BY", self.__order_by__)
+        LIMIT = self._literal("LIMIT", self.__limit__)
+        OFFSET = self._literal("OFFSET", self.__offset__)
+        aft = " ".join([JOIN, WHERE, GROUPBY, HAVING, ORDERBY, LIMIT, OFFSET])
         return f"SELECT {self.__cols__} FROM {self.__table__} {aft}"
         # return self._build_sql(cls)
 
@@ -208,12 +206,12 @@ class Model(dict, metaclass=ModelMetaclass):
 
     @classmethod
     def limit(cls, limit: int):
-        cls.__limit__ = f'LIMIT {limit}'
+        cls.__limit__ = f"LIMIT {limit}"
         return cls
 
     @classmethod
     def offset(cls, offset: int):
-        cls.__offset__ = f'OFFSET {offset}'
+        cls.__offset__ = f"OFFSET {offset}"
         return cls
 
     @classmethod
@@ -311,6 +309,28 @@ class Models(object):
         ):
             super().__init__(
                 name,
+                "char",
+                default,
+                primary_key,
+                charset=charset,
+                max_length=max_length,
+                not_null=not_null,
+                comment=comment,
+            )
+
+    class VarCharField(Field):
+        def __init__(
+            self,
+            name=None,
+            primary_key=False,
+            default=None,
+            charset=None,
+            max_length=None,
+            not_null=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
                 "varchar",
                 default,
                 primary_key,
@@ -321,12 +341,13 @@ class Models(object):
             )
 
     class BooleanField(Field):
-        def __init__(self, name=None, default=False, not_null=False, comment=None):
+        def __init__(self, name=None, default=False, not_null=False, comment=None, unsigned=False):
             super().__init__(
                 name,
                 "boolean",
                 default,
                 not_null=not_null,
+                unsigned=unsigned,
                 comment=comment,
             )
 
@@ -343,7 +364,7 @@ class Models(object):
         ):
             super().__init__(
                 name,
-                "INT",
+                "int",
                 default,
                 primary_key,
                 auto_increment=auto_increment,
@@ -365,11 +386,31 @@ class Models(object):
         ):
             super().__init__(
                 name,
-                "BIGINT",
+                "bigint",
                 default,
                 primary_key,
                 auto_increment=auto_increment,
                 NOT_NULL=not_null,
+                unsigned=unsigned,
+                comment=comment,
+            )
+
+    class DoubleField(Field):
+        def __init__(
+            self,
+            name=None,
+            default=None,
+            not_null=False,
+            max_length=None,
+            unsigned=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
+                "double",
+                default,
+                NOT_NULL=not_null,
+                max_length=max_length,
                 unsigned=unsigned,
                 comment=comment,
             )
@@ -386,7 +427,7 @@ class Models(object):
         ):
             super().__init__(
                 name,
-                "FLOAT",
+                "float",
                 default,
                 NOT_NULL=not_null,
                 max_length=max_length,
@@ -400,13 +441,13 @@ class Models(object):
             name=None,
             default=0.0,
             not_null=False,
-            max_length="10,2",
+            max_length=None,
             unsigned=False,
             comment=None,
         ):
             super().__init__(
                 name,
-                "DECIMAL",
+                "decimal",
                 default,
                 NOT_NULL=not_null,
                 unsigned=unsigned,
@@ -426,7 +467,7 @@ class Models(object):
         ):
             super().__init__(
                 name,
-                "TEXT",
+                "text",
                 default,
                 charset=charset,
                 max_length=max_length,
@@ -454,7 +495,7 @@ class Models(object):
                 comment=comment,
             )
 
-    class MediumtextField(Field):
+    class MediumTextField(Field):
         def __init__(
             self,
             name=None,
@@ -487,7 +528,7 @@ class Models(object):
         ):
             super().__init__(
                 name,
-                "DATETIME",
+                "datetime",
                 default,
                 max_length=max_length,
                 NOT_NULL=not_null,
@@ -509,7 +550,7 @@ class Models(object):
         ):
             super().__init__(
                 name,
-                "DATE",
+                "date",
                 default,
                 max_length=max_length,
                 NOT_NULL=not_null,
