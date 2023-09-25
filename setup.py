@@ -10,6 +10,8 @@ import sys
 from shutil import rmtree
 
 from setuptools import find_packages, setup, Command
+from importlib.machinery import SourceFileLoader
+version = SourceFileLoader("__version__", "cloudoll/__init__.py").load_module()
 
 # Package meta-data.
 NAME = "cloudoll"
@@ -18,7 +20,7 @@ URL = "https://gitee.com/chuchur/cloudoll-py"
 EMAIL = "chuchur@qq.com"
 AUTHOR = "chuchur"
 REQUIRES_PYTHON = ">=3.6.0"
-VERSION = "2.0.12"
+VERSION = version.__version__
 
 # What packages are required for this module to be executed?
 REQUIRED = [
@@ -126,7 +128,7 @@ setup(
     install_requires=REQUIRED,
     entry_points={
         'console_scripts': [
-            'cloudoll = cloudoll.cli:main'
+            'cloudoll = cloudoll.cli:cli'
         ]
     },
     extras_require=EXTRAS,

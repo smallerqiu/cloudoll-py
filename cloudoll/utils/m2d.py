@@ -27,11 +27,7 @@ async def create_model(pool, table_name) -> str:
         if fields["max_length"] and column_type != 'tinyint':
             values.append(
                 f"max_length=({fields['max_length']})" if ',' in fields['max_length'] else f"max_length={fields['max_length']}")
-        if (
-            fields["default"]
-            and not fields["created_generated"]
-            and not fields["update_generated"]
-        ):
+        if fields["default"]:
             values.append(f"default='{fields['default']}'")
         if fields["auto_increment"]:
             values.append("auto_increment=True")
@@ -89,14 +85,14 @@ async def create_table(pool, models: list, tables: list = None):
         if model.__name__ == 'Model':
             continue
         tb = model.__table__
-        
+
         if tables and tb not in tables:
             continue
-        
+
         if tb.startswith('v_'):
             warning(f'{tb} look like a view so skip.')
             continue
-        
+
         # sql = f"DROP TABLE IF EXISTS `{tb}`;\n"
         sql = ""
         sql += f"CREATE TABLE `{tb}` (\n"
@@ -170,12 +166,11 @@ def get_col(field):
         "max_length": None,
         "auto_increment": field["Extra"] == "auto_increment",
         "NOT_NULL": field["Null"] == "NO",
-        "created_generated": "DEFAULT_GENERATED on" in field["Extra"],
-        "update_generated": "on update CURRENT_TIMESTAMP" == field["Extra"],
+        "created_generated": "DEFAULT_GENERATED" == field["Extra"],
+        "update_generated": "on update" in field["Extra"],
         "comment": field["Comment"],
     }
     field_type = field["Type"]
-    print(field_type)
     t = re.match(r"(\w+)[(](.*?)[)]", field_type)
     if not t:
         fields["column_type"] = field_type
@@ -189,8 +184,9 @@ def get_col_sql(field):
     sql = f"`{field.name}` {field.column_type}"
 
     if field.max_length:
-        sql += f"{field.max_length}" if ',' in field.max_length else f'({field.max_length})'
-        
+        sql += f"{field.max_length}" if isinstance(
+            field.max_length, tuple) else f'({field.max_length})'
+
     if field.charset:
         # _ci 不区分大小写 _cs Yes
         cs = field.charset.split("_")[0]
@@ -202,11 +198,14 @@ def get_col_sql(field):
     if field.NOT_NULL:
         sql += " NOT NULL"
     if field.default:
-        sql += f" DEFAULT '{field.default}'"
+        sql += (" DEFAULT " +
+                (field.default if '(' in field.default else f"'{field.default}'"))
     # else:
         # sql += " DEFAULT NULL"
+    print(field.name, field.update_generated)
     if field.update_generated:
-        sql += " ON UPDATE CURRENT_TIMESTAMP"
+        sql += " ON UPDATE " + \
+            (field.default if '(' in field.default else f"'{field.default}'")
     if field.comment:
         sql += f" COMMENT '{field.comment}'"
 

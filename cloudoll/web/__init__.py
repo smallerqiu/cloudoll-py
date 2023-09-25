@@ -30,12 +30,13 @@ from aiohttp_session import (
 from setuptools import find_packages
 from .settings import get_config
 
-from ..logging import warning
+from ..logging import warning, info
 from ..orm.mysql import Mysql
 from ..orm.postgres import Postgres
 from . import jwt
 from decimal import Decimal
 from datetime import datetime, date
+from ..utils.common import chainMap
 
 
 class _Handler(object):
@@ -145,23 +146,23 @@ class Application(object):
         self._route_table = web.RouteTableDef()
         self._middleware = []
         self.config = {}
-        self._args = None
+        # self._args = None
 
-    def create(self):
+    def create(self, env: str):
         loop = asyncio.get_event_loop()
         if loop is None:
             loop = asyncio.new_event_loop()
         self._loop = loop
 
-        parser = argparse.ArgumentParser(description="cloudoll app.")
-        parser.add_argument("--env", default="local")
-        parser.add_argument("--host", default=None)
-        parser.add_argument("--port", default=None)
-        parser.add_argument("--path", default=None)
-        args, extra_argv = parser.parse_known_args()
-        config = get_config(args.env)
+        # parser = argparse.ArgumentParser(description="cloudoll app.")
+        # parser.add_argument("--env", default="local")
+        # parser.add_argument("--host", default=None)
+        # parser.add_argument("--port", default=None)
+        # parser.add_argument("--path", default=None)
+        # args, extra_argv = parser.parse_known_args()
+        config = get_config(env or 'local')
 
-        self._args = args
+        # self._args = args
         self.config = config
 
         # middlewares
@@ -319,29 +320,29 @@ class Application(object):
         # for route in self._routes:
         #     self.app.router.add_route(**route)
 
-    def run(self, *args, **kw):
+    def run(self, **kw):
         """
         run app
         :params prot default  9001
         :params host default 127.0.0.1
         """
+        defaults = {
+            "host": "127.0.0.1",
+            "port": 9001,
+            "path": None
+        }
         conf = self.config.get("server", {})
-        conf.update(args)
-        args = {k: v for k, v in vars(self._args).items() if v is not None}
-        conf.update(args)
-        host = conf.get("host", "127.0.0.1")
-        port = conf.get("port", 9001)
-        path = conf.get("path")
-        _check_address(host, port)
-        # logging.info(f"Server run at http://{host}:{port}")
+        conf = chainMap(defaults, conf, kw)
+        # print(conf)
+        _check_address(conf['host'], conf['port'])
+        # info(f"Server run at http://{host}:{port}")
         web.run_app(
             self.app,
             loop=self._loop,
-            host=host,
-            port=port,
-            path=path,
+            host=conf['host'],
+            port=conf['port'],
+            path=conf['path'],
             access_log=None,
-            **kw,
         )
         # # old
         # if self.loop is None:
