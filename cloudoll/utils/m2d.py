@@ -107,9 +107,9 @@ async def create_table(pool, models: list, tables: list = None):
         sql += ") ENGINE=InnoDB;"
 
         info(f"create table {tb} ...\n\n")
-        print(sql)
-        # rs = await pool.query(sql, None)
-        # await rs.release()
+        # print(sql)
+        rs = await pool.query(sql, None)
+        await rs.release()
 
 
 async def create_tables(pool, model_name: str = None, tables: list = None):

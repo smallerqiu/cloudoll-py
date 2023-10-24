@@ -10,8 +10,11 @@ from .logging import error
 import traceback
 from cloudoll.web import app
 import importlib
+from pathlib import Path
 from . import __version__
 import traceback
+import logging
+from .utils.watch import AppTask, Config
 
 
 @click.group()
@@ -85,12 +88,29 @@ def start(environment, host, port, path, model) -> None:
         App = app.create(env=environment)
         for cycle in life_cycle:
             if hasattr(entry, cycle):
-                app[cycle].append(entry[cycle])
+                cy = getattr(App, cycle)
+                cy.append(getattr(entry, cycle))
+        config = Config(host=host, port=port, path=path, env=environment)
+        task = AppTask(Path('.').resolve(), config)
+        App.cleanup_ctx.append(task.cleanup_ctx)
         App.run(host=host, port=port, path=path)
     except Exception as e:
         error(e)
         print(traceback.format_exc())
         sys.exit(2)
+
+
+_project_existing = click.Path(dir_okay=True)
+
+
+@cli.command()
+@click.argument('project-name', type=_project_existing, required=True)
+def create(project_name) -> None:
+    full_path = os.path.join(os.path.abspath('.'), project_name)
+    # log = logging.getLogger('cloudoll.create')
+    if os.path.exists(full_path):
+        logging.exception(f'Project name `{project_name}` already exist.')
+        # return None
 
 
 if __name__ == '__main__':

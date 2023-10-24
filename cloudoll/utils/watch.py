@@ -1,6 +1,6 @@
 from typing import AsyncIterator, Iterable, Optional, Tuple, Union
 from pathlib import Path
-from ..web import Application
+from ..web import Application, app
 import asyncio
 import os
 import signal
@@ -8,8 +8,9 @@ import sys
 from multiprocessing import Process
 from watchfiles import awatch
 from ..logging import debug, info, warning, exception
-from aiohttp import ClientSession
-from aiohttp.client_exceptions import ClientError, ClientConnectionError
+import contextlib
+from typing import Any, Iterator, Optional, NoReturn
+
 
 class WatchTask:
     _app: Application
@@ -40,40 +41,62 @@ class WatchTask:
         await self.close(app)
 
 
+@contextlib.contextmanager
+def set_tty(tty_path: Optional[str]) -> Iterator[None]:
+    try:
+        if not tty_path:
+            # to match OSError from open
+            raise OSError()
+        with open(tty_path) as tty:
+            sys.stdin = tty
+            yield
+    except OSError:
+        # either tty_path is None (windows) or opening it fails (eg. on pycharm)
+        yield
+
+
+class Config:
+    def __init__(self, host, port, path, env):
+        self.host = host
+        self.port = port
+        self.path = path
+        self.env = env
+
+
+def App(tty_path, config: Config):
+    with set_tty(tty_path):
+        # app.create(env=config.env).run(**config.__dict__)
+        pass
+
+
 class AppTask(WatchTask):
 
-    def __init__(self, config: Config):
+    def __init__(self, watch_path: str, config: Config):
         self._config = config
         self._reloads = 0
-        self._session: Optional[ClientSession] = None
-        self._runner = None
-        assert self._config.watch_path
-        super().__init__(self._config.watch_path)
+        assert watch_path
+        super().__init__(watch_path)
 
     async def _run(self) -> None:
         assert self._app is not None
-
-        self._session = ClientSession()
         try:
             self._start_dev_server()
 
             async for changes in self._awatch:
                 self._reloads += 1
                 if any(f.endswith('.py') for _, f in changes):
+                    print('www')
                     debug('%d changes, restarting server', len(changes))
                     await self._stop_dev_server()
                     self._start_dev_server()
                     await asyncio.sleep(1)
         except Exception as exc:
             exception(exc)
-            await self._session.close()
             raise Exception('error running dev server')
-
 
     def _start_dev_server(self) -> None:
         act = 'Start' if self._reloads == 0 else 'Restart'
-        info('%sing dev server at http://%s:%s ●', act,
-             self._config.host, self._config.main_port)
+        info(f'{act}ing dev server')
 
         try:
             tty_path = os.ttyname(sys.stdin.fileno())
@@ -84,8 +107,8 @@ class AppTask(WatchTask):
             # on windows, without a windows machine I've no idea what else to do here
             tty_path = None
 
-        self._process = Process(target=serve_main_app,
-                                args=(self._config, tty_path))
+        self._process = Process(target=App,
+                                args=(tty_path, self._config))
         self._process.start()
 
     async def _stop_dev_server(self) -> None:
@@ -105,10 +128,7 @@ class AppTask(WatchTask):
             warning(
                 'server process already dead, exit code: %s', self._process.exitcode)
 
-    async def close(self, *args: object) -> None:
+    async def close(self) -> None:
         self.stopper.set()
         await self._stop_dev_server()
-        if self._session is None:
-            raise RuntimeError(
-                "Object not started correctly before calling .close()")
-        await asyncio.gather(super().close(), self._session.close())
+        await asyncio.gather(super().close())
