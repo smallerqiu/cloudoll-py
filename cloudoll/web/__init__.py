@@ -123,14 +123,15 @@ def _check_address(host, port):
 
 
 def _reg_middleware():
-    fd = "middlewares"
-    temp = os.path.join(os.path.abspath("."), fd)
-    if not os.path.exists(temp):
+    root = "middlewares"
+    mid_dir = os.path.join(os.path.abspath("."), root)
+    if not os.path.exists(mid_dir):
         return
-    for f in os.listdir(temp):
+    for f in os.listdir(mid_dir):
         if not f.startswith("__"):
-            module_name = f"{fd}.{os.path.basename(f)[:-3]}"
-            importlib.import_module(module_name, fd)
+            module_name = f"{root}.{os.path.basename(f)[:-3]}"
+            # print(module_name)
+            importlib.import_module(module_name, root)
 
 
 def _int(num):
@@ -148,7 +149,23 @@ class Application(object):
         self.config = {}
         # self._args = None
 
-    def create(self, env: str):
+    def _load_life_cycle(self, entry_model=None):
+        try:
+            if not entry_model:
+                return
+            entry = importlib.import_module(entry_model)
+
+            life_cycle = ['on_startup', 'on_shutdown',
+                          'on_cleanup', 'cleanup_ctx']
+            for cycle in life_cycle:
+                if hasattr(entry, cycle):
+                    cy = getattr(self, cycle)
+                    cy.append(getattr(entry, cycle))
+        except ImportError:
+            warning(f'Entry model:{entry_model} can not find.')
+
+    def create(self, env: str, entry_model: str):
+        sys.path.append('.')
         loop = asyncio.get_event_loop()
         if loop is None:
             loop = asyncio.new_event_loop()
@@ -192,6 +209,9 @@ class Application(object):
         #  router:
         self._reg_router()
 
+        # load life
+        # self._load_life_cycle(entry_model)
+
         # static
         if conf_server is not None:
             conf_st = conf_server.get("static")
@@ -222,9 +242,11 @@ class Application(object):
             for db in conf_db:
                 db_type = conf_db[db].get('type', 'mysql')
                 if db_type == 'mysql':
-                    apps.db[db] = await Mysql().create_engine(**conf_db[db])
+                    db_context = await Mysql().create_engine(**conf_db[db])
+                    apps.db[db] = db_context
                 elif db_type == 'postgres':
-                    apps.db[db] = await Postgres().create_engine(**conf_db[db])
+                    db_context = await Postgres().create_engine(**conf_db[db])
+                    apps.db[db] = db_context
                 else:
                     raise (f'sorry, {db_type} is not supported.')
             # self.mysql = await sa.create_engine(**conf_mysql)
@@ -313,7 +335,7 @@ class Application(object):
         fd = "controllers"
         modules = _get_modules(fd)
         for module in modules:
-            # print(module, router)
+            # print(module)
             importlib.import_module(module, fd)
 
         self.app.add_routes(self._route_table)

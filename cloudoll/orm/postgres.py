@@ -6,7 +6,7 @@ from cloudoll.orm.postgres import Postgres
 # for config folder conf.{env}.yaml
 
 database:
-  mysql:
+  pg:
     type: postgres  # important ,default mysql
     host: 127.0.0.1
     port: 3306

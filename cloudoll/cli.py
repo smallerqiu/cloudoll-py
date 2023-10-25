@@ -8,13 +8,12 @@ import os
 import sys
 from .logging import error
 import traceback
-from cloudoll.web import app
-import importlib
 from pathlib import Path
 from . import __version__
 import traceback
 import logging
 from .utils.watch import AppTask, Config
+from aiohttp import web
 
 
 @click.group()
@@ -75,25 +74,20 @@ def gen(path, create, table, environment, database) -> None:
 
 @cli.command()
 @click.option('-env', '--environment', help="Environment, local / test / prod", default="local")
-@click.option('-p', '--port', help="Server's port", default=None)
+@click.option('-p', '--port', help="Server's port", default=9001)
 @click.option('-h', '--host', help="Server's host", default=None)
 @click.option('-path', '--path', help="Unix file system path to serve on. Specifying a path will cause hostname and port arguments to be ignored.")
 @click.option('-m', '--model', help="Entry point model name. delfault name app", default='app')
 def start(environment, host, port, path, model) -> None:
     """Start a services."""
     try:
-        sys.path.append('.')
-        entry = importlib.import_module(model)
-
-        App = app.create(env=environment)
-        for cycle in life_cycle:
-            if hasattr(entry, cycle):
-                cy = getattr(App, cycle)
-                cy.append(getattr(entry, cycle))
-        config = Config(host=host, port=port, path=path, env=environment)
+        app = web.Application(logger=None,)
+        config = Config(host=host, port=port, path=path,
+                        env=environment, entry=model)
         task = AppTask(Path('.').resolve(), config)
-        App.cleanup_ctx.append(task.cleanup_ctx)
-        App.run(host=host, port=port, path=path)
+        app.cleanup_ctx.append(task.cleanup_ctx)
+        aux_port = port+1
+        web.run_app(app, access_log=None, host=host, port=aux_port, print=None)
     except Exception as e:
         error(e)
         print(traceback.format_exc())

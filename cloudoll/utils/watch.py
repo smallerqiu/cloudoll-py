@@ -28,7 +28,7 @@ class WatchTask:
     async def _run(self) -> None:
         raise NotImplementedError()
 
-    async def close(self, *args: object) -> None:
+    async def close(self) -> None:
         if self._task:
             self.stopper.set()
             if self._task.done():
@@ -38,7 +38,7 @@ class WatchTask:
     async def cleanup_ctx(self, app: Application) -> AsyncIterator[None]:
         await self.start(app)
         yield
-        await self.close(app)
+        await self.close()
 
 
 @contextlib.contextmanager
@@ -56,17 +56,26 @@ def set_tty(tty_path: Optional[str]) -> Iterator[None]:
 
 
 class Config:
-    def __init__(self, host, port, path, env):
+    def __init__(self, host, port, path, env, entry):
         self.host = host
         self.port = port
         self.path = path
         self.env = env
+        self.entry = entry
 
 
-def App(tty_path, config: Config):
+def mian_app(tty_path, config: Config):
     with set_tty(tty_path):
         # app.create(env=config.env).run(**config.__dict__)
-        pass
+        # with asyncio.Runner() as runner:
+            App = app.create(config.env, config.entry)
+            try:
+                App.run(**config.__dict__)
+            except KeyboardInterrupt:
+                pass
+            # finally:
+            #     with contextlib.suppress(asyncio.TimeoutError, KeyboardInterrupt):
+            #         runner.run(App.app.cleanup())
 
 
 class AppTask(WatchTask):
@@ -85,7 +94,6 @@ class AppTask(WatchTask):
             async for changes in self._awatch:
                 self._reloads += 1
                 if any(f.endswith('.py') for _, f in changes):
-                    print('www')
                     debug('%d changes, restarting server', len(changes))
                     await self._stop_dev_server()
                     self._start_dev_server()
@@ -107,7 +115,7 @@ class AppTask(WatchTask):
             # on windows, without a windows machine I've no idea what else to do here
             tty_path = None
 
-        self._process = Process(target=App,
+        self._process = Process(target=mian_app,
                                 args=(tty_path, self._config))
         self._process.start()
 
