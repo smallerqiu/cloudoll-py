@@ -215,7 +215,7 @@ class Application(object):
         self._reg_router()
 
         # load life
-        # self._load_life_cycle(entry_model)
+        self._load_life_cycle(entry_model)
 
         # static
         if conf_server is not None:

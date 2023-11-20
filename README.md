@@ -119,11 +119,11 @@ $ vi controllers/home/index.py
 
 ```python
 # /controllers/home/index.py
-from cloudoll.web import get, jsons
+from cloudoll.web import get
 
 @get('/')
 async def home():
-    return jsons({"name": "chuchur" ,"msg": "ok"})
+    return {"name": "chuchur" ,"msg": "ok"}
 ```
 
 运行:
@@ -181,12 +181,12 @@ $ vi templates/index.html
 
 ```python
 # /controllers/home/index.py
-from cloudoll.web import get, view
+from cloudoll.web import get, render_view
 
 @get('/')
 async def home():
     data = {"name": "chuchur" ,"msg": "ok"}
-    return view("index.html",data)
+    return render_view("index.html",data)
 ```
 
 这时 页面正常渲染 ,可以看到  `“My name is chuchur”`
@@ -281,7 +281,7 @@ $ vi middlewares/robot.py
 
 ```python
 # /middlewares/robot.py
-from cloudoll.web import middleware, render
+from cloudoll.web import middleware, render_json
 import re
 
 @middleware()
@@ -289,7 +289,7 @@ def mid_robot():
     async def robot(request, handler):
         ua = request.headers.get('user-agent')
         if re.match('Baiduspider', ua):
-            return render(status=403, text="Go away , robot.")
+            return render_json(status=403, text="Go away , robot.")
         return await handler(request)
 
     return robot
