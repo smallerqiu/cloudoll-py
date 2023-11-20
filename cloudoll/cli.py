@@ -4,6 +4,7 @@ from .orm.mysql import Mysql
 from .orm.postgres import Postgres
 from .utils.m2d import create_models, create_tables
 import asyncio
+import nest_asyncio
 import os
 import sys
 from .logging import error
@@ -14,6 +15,8 @@ import traceback
 import logging
 from .utils.watch import AppTask, Config
 from aiohttp import web
+
+nest_asyncio.apply()
 
 
 @click.group()

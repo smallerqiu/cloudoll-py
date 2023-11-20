@@ -237,7 +237,7 @@ class Application(object):
         for db in apps.db:
             await apps.db[db].close()
 
-        if apps.redis:
+        if 'redis' in apps:
             await apps.redis.close()
 
     async def _init_database(self, apps):
