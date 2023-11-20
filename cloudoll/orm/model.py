@@ -1,7 +1,6 @@
 from .field import Field, Function, Expression
 from ..logging import warning
 from functools import reduce
-from ..utils.m2d import _get_key_args
 import operator
 
 
@@ -45,7 +44,7 @@ class ModelMetaclass(type):
         attrs["__where__"] = None
         attrs["__having__"] = None
         attrs["__params__"] = None
-        attrs["__cols__"] = None
+        attrs["__cols__"] = "*"
         attrs["__order_by__"] = None
         attrs["__group_by__"] = None
         attrs["__limit__"] = None
@@ -102,82 +101,116 @@ class Model(dict, metaclass=ModelMetaclass):
         pkv = self.get_value(self, pk)
         return pk, pkv
 
+    @classmethod
     def _clear(self):
         self.__join__ = None
         self.__where__ = None
         self.__having__ = None
         self.__params__ = None
-        self.__cols__ = None
+        self.__cols__ = "*"
         self.__order_by__ = None
         self.__group_by__ = None
         self.__limit__ = None
         self.__offset__ = None
 
     @classmethod
-    def select(cls, *args):
+    def use(self, pool=None):
+        # model = self()
+        self.__pool__ = pool
+        # self['__pool__'] = pool
+        return self
+
+    @classmethod
+    def select(self, *args):
         cols = []
         for col in args:
             if isinstance(col, Field):
                 cols.append(col.full_name)
             elif isinstance(col, Function):
                 cols.append(col.sql())
-        cls.__cols__ = ",".join(cols) if len(cols) else "*"
-        return cls
+        self.__cols__ = ",".join(cols) if len(cols) else "*"
+        return self
 
     @classmethod
-    def join(cls, table, *exp):
+    def join(self, table, *exp):
         exp = reduce(operator.and_, exp).sql()
         join = f"JOIN {table.__table__} ON {exp}"
-        if cls.__join__ is None:
-            cls.__join__ = join
+        if self.__join__ is None:
+            self.__join__ = join
         else:
-            cls.__join__ += join
-        return cls
+            self.__join__ += join
+        return self
 
     @classmethod
-    def where(cls, *exp):
-        if cls.__where__ is not None:
-            exp = (cls.__where__,) + exp
-        cls.__where__ = reduce(operator.and_, exp)
-        return cls
+    def where(self, *exp):
+        if self.__where__ is not None:
+            exp = (self.__where__,) + exp
+        self.__where__ = reduce(operator.and_, exp)
+        return self
 
     @classmethod
-    def having(cls, *exp):
-        if cls.__having__ is not None:
-            exp = (cls.__having__,) + exp
-        cls.__having__ = reduce(operator.and_, exp)
-        return cls
+    def having(self, *exp):
+        if self.__having__ is not None:
+            exp = (self.__having__,) + exp
+        self.__having__ = reduce(operator.and_, exp)
+        return self
 
     @classmethod
-    def order_by(cls, *args):
+    def order_by(self, *args):
         by = []
         for f in args:
             by.append(f"{f.lhs.full_name} {f.op}")
-        if cls.__order_by__ is not None:
-            by = cls.__order_by__ + by
-        cls.__order_by__ = by
-        return cls
+        if self.__order_by__ is not None:
+            by = self.__order_by__ + by
+        self.__order_by__ = by
+        return self
 
     @classmethod
-    def group_by(cls, *args):
+    def group_by(self, *args):
         by = []
         for f in args:
             by.append(f.full_name)
-        if cls.__group_by__ is not None:
-            by = cls.__group_by__ + by
-        cls.__group_by__ = by
-        return cls
+        if self.__group_by__ is not None:
+            by = self.__group_by__ + by
+        self.__group_by__ = by
+        return self
 
+    @classmethod
+    def _get_key_args(self, args):
+        data = dict()
+        md = None
+        if args is None or not args:
+            for f in self.__fields__:
+                data[f] = self.get_value(f)
+        else:
+            for item in args:
+                md = item
+                for k in dict(item):
+                    data[k] = item[k]
+        keys = []
+        params = []
+        for k, v in data.items():
+            # if v is not None:
+            keys.append("`%s`=?" % k)
+            params.append(v)
+        return ",".join(keys), params, md
+
+    @classmethod
     def _literal(self, op, exp):
         if exp is not None:
             if isinstance(exp, list):
                 return f'{op} {",".join(exp)}'
             elif isinstance(exp, Expression):
-                return f"{op} {exp.sql()}"
+                q, p = exp.sql()
+                if self.__params__ is not None:
+                    p = self.__params__ + p
+                self.__params__ = p
+                return f"{op} {q}"
             else:
                 return exp
         return ""
 
+    @classmethod
     def sql(self):
         JOIN = self._literal("JOIN", self.__join__)
         WHERE = self._literal("WHERE", self.__where__)
@@ -188,79 +221,85 @@ class Model(dict, metaclass=ModelMetaclass):
         OFFSET = self._literal("OFFSET", self.__offset__)
         aft = " ".join([JOIN, WHERE, GROUPBY, HAVING, ORDERBY, LIMIT, OFFSET])
         return f"SELECT {self.__cols__} FROM {self.__table__} {aft}"
-        # return self._build_sql(cls)
+        # return self._build_sql(self)
 
     @classmethod
-    def test(cls):
-        return cls.sql(cls)
+    def test(self):
+        return self.sql()
 
     @classmethod
-    async def one(cls):
-        sql = cls._build_sql(cls)
-        cls.limit(1)
-        args = cls.__params__
-        rs = await cls.__pool__.query(sql, args)
-        cls._clear(cls)
+    async def __query(self, sql, args):
+        # print(sql,  args)
+        try:
+            rs = await self.__pool__.query(sql, args)
+        finally:
+            self._clear()
+        return rs
+
+    @classmethod
+    async def one(self):
+        sql = self.sql()
+        self.limit(1)
+        args = self.__params__
+        rs = await self.__query(sql, args)
         item = await rs.one()
-        return cls(**item)
+        return self(**item)
 
     @classmethod
-    def limit(cls, limit: int):
-        cls.__limit__ = f"LIMIT {limit}"
-        return cls
+    def limit(self, limit: int):
+        self.__limit__ = f"LIMIT {limit}"
+        return self
 
     @classmethod
-    def offset(cls, offset: int):
-        cls.__offset__ = f"OFFSET {offset}"
-        return cls
+    def offset(self, offset: int):
+        self.__offset__ = f"OFFSET {offset}"
+        return self
 
     @classmethod
-    async def all(cls):
-        sql = cls._build_sql(cls)
-        args = cls.__params__
-        rs = await cls.__pool__.query(sql, args)
-        cls._clear(cls)
+    async def all(self):
+        sql = self.sql()
+        args = self.__params__
+        rs = await self.__query(sql, args)
         return await rs.all()
 
     @classmethod
-    async def update(cls, *args) -> bool:
+    async def update(self, *args) -> bool:
         """
         Update data
         """
-        table = cls.__table__
-        where = cls.__where__
+        table = self.__table__
+        where = self.__where__
 
-        keys, params, md = _get_key_args(cls, args)
+        keys, params, md = self._get_key_args(args)
 
         sql = f"update `{table}` set {keys}"
 
-        pk, pkv = cls.get_primary(cls)
+        pk, pkv = self.get_primary()
         if where is not None:
             sql += f' where {" and ".join(f for f in where)}'
-            params += cls.__params__
+            params += self.__params__
         elif pkv is not None:
             sql += f" where `{pk}`=?"
             params.append(pkv)
         else:
             raise "Need where or primary key"
 
-        rs = await cls.__pool__.query(sql, params)
+        rs = await self.__query(sql, params)
         result = rs.cursor.rowcount > 0
         await rs.release()
-        cls._clear(cls)
         return result
 
     @classmethod
-    async def delete(cls) -> bool:
+    async def delete(self) -> bool:
         """
         Delete data
         """
-        table = cls.__table__
-        where = cls.__where__
-        args = cls.__params__
+        table = self.__table__
+        where = self.__where__
+        args = self.__params__
         sql = f"delete from `{table}`"
 
-        pk, pkv = cls.get_primary(cls)
+        pk, pkv = self.get_primary()
         if where is not None:
             sql += f' where {" and ".join(f for f in where)}'
         elif pkv is not None:
@@ -269,29 +308,27 @@ class Model(dict, metaclass=ModelMetaclass):
         else:
             raise "need where or primary"
         # return await sa.query(sql, args)
-        rs = await cls.__pool__.query(sql, args)
+        rs = await self.__query(sql, args)
         result = rs.cursor.rowcount > 0
         await rs.release()
-        cls._clear(cls)
         return result
 
     @classmethod
-    async def insert(cls, *args):
-        table = cls.__table__
-        keys, params, md = _get_key_args(cls, args)
+    async def insert(self, *args):
+        table = self.__table__
+        keys, params, md = self._get_key_args(args)
         sql = f"insert into `{table}` set {keys}"
-        rs = await cls.__pool__.query(sql, params)
+        rs = await self.__query(sql, params)
         result = rs.cursor.rowcount > 0
         id = rs.cursor.lastrowid
         await rs.release()
         return result, id
 
     @classmethod
-    async def count(cls):
-        sql = cls._build_sql(cls)
-        args = cls.__params__
-        rs = await cls.__pool__.query(sql, args)
-        cls._clear(cls)
+    async def count(self):
+        sql = self.sql()
+        args = self.__params__
+        rs = await self.__query(sql, args)
         return await rs.count()
 
 

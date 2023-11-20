@@ -52,7 +52,7 @@ class _Handler(object):
             await _set_session_route(request)
             multipart = await request.multipart()
             field = await multipart.next()
-            return await self.fn(request, field)
+            result = await self.fn(request, field)
         elif len(props.args) == 1:
             await _set_session_route(request)
             if c_type == "multipart/form-data":
@@ -71,9 +71,14 @@ class _Handler(object):
                     qs[k] = v[0]
             request.qs = Object(qs)
             request.body = Object(body)
-            return await self.fn(request)
+            result = await self.fn(request)
         else:
-            return await self.fn()
+            result = await self.fn()
+
+        if "content_type" in result and "text/html" in result['content_type']:
+            return result
+        else:
+            return render_json(result)
 
 
 async def _set_session_route(request):
@@ -242,23 +247,25 @@ class Application(object):
             for db in conf_db:
                 db_type = conf_db[db].get('type', 'mysql')
                 if db_type == 'mysql':
-                    db_context = await Mysql().create_engine(**conf_db[db])
-                    apps.db[db] = db_context
+                    apps.db[db] = await Mysql().create_engine(**conf_db[db])
                 elif db_type == 'postgres':
-                    db_context = await Postgres().create_engine(**conf_db[db])
-                    apps.db[db] = db_context
+                    apps.db[db] = await Postgres().create_engine(**conf_db[db])
+                elif db_type == 'redis':
+                    apps.db[db] = await aioredis.from_url(conf_db[db]['url'])
                 else:
                     raise (f'sorry, {db_type} is not supported.')
-            # self.mysql = await sa.create_engine(**conf_mysql)
-            # self.app.mysql = self.mysql
-            # apps.mysql = self.mysql
 
     async def _init_session(self, apps):
-        config = self.config
+        config = self.config or {}
+        sess = config.get("session", {})
+        max_age = sess.get("max_age")
+        httponly = sess.get("httponly")
+        session_key = sess.get("key", "CLOUDOLL_SESSION")
+
         # redis
-        redis_conf = config.get("redis")
-        mcache_conf = config.get("memcached")
-        _SESSION_KEY = "CLOUDOLL_SESSION"
+
+        redis_conf = sess.get("redis")
+        mcache_conf = sess.get("memcached")
 
         if redis_conf:
             redis_url = redis_conf.get("url")
@@ -281,7 +288,7 @@ class Application(object):
             max_age = redis_conf.get("max_age")
             secure = redis_conf.get("secure")
             httponly = redis_conf.get("httponly")
-            cookie_name = redis_conf.get("key", _SESSION_KEY)
+            cookie_name = redis_conf.get("key", session_key)
 
             redis = await aioredis.from_url(redis_url)
             apps.redis = redis
@@ -299,7 +306,7 @@ class Application(object):
             max_age = mcache_conf.get("max_age")
             secure = mcache_conf.get("secure")
             httponly = mcache_conf.get("httponly")
-            cookie_name = mcache_conf.get("key", _SESSION_KEY)
+            cookie_name = mcache_conf.get("key", session_key)
             mc = aiomcache.Client(host, port)
             apps.memcached = mc
             storage = memcached_storage.MemcachedStorage(
@@ -311,21 +318,17 @@ class Application(object):
             )
             setup(apps, storage)
         else:
-            sess = config.get("session", {})
-            sess_name = sess.get("key", _SESSION_KEY)
 
-            dig = hashlib.sha256(sess_name.encode()).digest()
+            dig = hashlib.sha256(session_key.encode()).digest()
             fernet_key = base64.urlsafe_b64encode(dig)
             secret_key = base64.urlsafe_b64decode(fernet_key)
 
             # fernet_key = fernet.Fernet.generate_key()
             # secret_key = base64.urlsafe_b64decode(fernet_key)
 
-            max_age = sess.get("max_age")
-            httponly = sess.get("httponly")
             storage = cookie_storage.EncryptedCookieStorage(
                 secret_key,
-                cookie_name=sess_name,
+                cookie_name=session_key,
                 max_age=_int(max_age),
                 httponly=httponly,
             )
@@ -477,7 +480,7 @@ def all(path: str):
     return app.route_table.view(path)
 
 
-def jsons(data, **kw) -> web.Response:
+def render_json(data, **kw) -> web.Response:
     res = {}
     if isinstance(data, list):
         res["data"] = data
@@ -487,7 +490,7 @@ def jsons(data, **kw) -> web.Response:
         data = dict(data)
         res.update(data)
     else:
-        raise ValueError("data must be list , dict or tuple.")
+        res['text'] = str(data)
     res["timestamp"] = int(datetime.now().timestamp() * 1000)
     text = json.dumps(res, ensure_ascii=False, cls=JsonEncoder)
     return web.json_response(text=text, **kw)
@@ -501,7 +504,7 @@ def render(**kw):
     return web.Response(**kw)
 
 
-def view(template=None, *args, **kw):
+def render_view(template=None, *args, **kw):
     body = None
     if app.env is not None:
         body = app.env.get_template(template).render(*args)

@@ -71,6 +71,5 @@ class Mysql(MeteBase):
                 loop=loop,
             )
         except Exception as e:
-            error(e)
-
+            error(f"Database connection failed,the instance : {kw.get('db')}")
         return self

@@ -53,6 +53,7 @@ class Postgres(MeteBase):
                 minsize=kw.get("pool_size", 5),
             )
         except Exception as e:
-            error(e)
+            # error(e)
+            error(f"Database connection failed,the instance : {kw.get('db')}")
 
         return self

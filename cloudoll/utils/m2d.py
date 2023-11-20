@@ -136,26 +136,6 @@ async def create_tables(pool, model_name: str = None, tables: list = None):
     await create_table(pool, models=module_classes, tables=tables)
 
 
-def _get_key_args(cls, args):
-    data = dict()
-    md = None
-    if args is None or not args:
-        for f in cls.__fields__:
-            data[f] = cls.get_value(cls, f)
-    else:
-        for item in args:
-            md = item
-            for k in dict(item):
-                data[k] = item[k]
-    keys = []
-    params = []
-    for k, v in data.items():
-        # if v is not None:
-        keys.append("`%s`=?" % k)
-        params.append(v)
-    return ",".join(keys), params, md
-
-
 def get_col(field):
     fields = {
         "name": field["Field"],

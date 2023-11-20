@@ -132,7 +132,27 @@ class ExpList(FieldBase):
     def sql(self):
         lpt = self.lpt
         rpt = self.rpt
-        return f"{lpt.sql() if isinstance(lpt,Expression) else lpt} {self.op} {rpt.sql() if isinstance(rpt,Expression) else rpt}"
+
+        p = []
+        q = []
+        if isinstance(lpt, Exception):
+            _q, _p = lpt.sql()
+            q = q+_q
+            p = p+_p
+        else:
+            q.append("?")
+            p.append(lpt)
+        q.append(f" {self.op} ")
+        if isinstance(rpt, Exception):
+            _q, _p = lpt.sql()
+            q = q+_q
+            p = p+_p
+        else:
+            q.append("?")
+            p.append(lpt)
+
+        return "".join(q), p
+        # return f"{lpt.sql() if isinstance(lpt,Expression) else lpt} {self.op} {rpt.sql() if isinstance(rpt,Expression) else rpt}"
 
 
 class Function(FieldBase):
@@ -155,7 +175,28 @@ class Expression(FieldBase):
     def sql(self):
         l = self.lhs
         r = self.rhs
-        return f"({l.full_name if isinstance(l,Field) else l.sql()} {self.op} {r.full_name if isinstance(r,Field) else (r.sql() if isinstance(r,FieldBase) else str(r))})"
+        p = []
+        q = ["("]
+        if isinstance(l, Field):
+            q.append(l.full_name)
+        elif isinstance(l, Expression):
+            _q, _p = l.sql()
+            q.append(_q)
+            p = p+_p
+        q.append(f" {self.op} ")
+
+        if isinstance(r, Field):
+            q.append(r.full_name)
+        elif isinstance(r, FieldBase):
+            _q, _p = r.sql()
+            q.append(_q)
+            p = p+_p
+        else:
+            q.append('?')
+            p.append(r)
+        q.append(')')
+        return "".join(q), p
+        # return f"({l.full_name if isinstance(l,Field) else l.sql()} {self.op} {r.full_name if isinstance(r,Field) else (r.sql() if isinstance(r,FieldBase) else str(r))})"
 
 
 class Field(FieldBase):
@@ -204,4 +245,3 @@ class Field(FieldBase):
 
     def get_value(self):
         return self._value
-

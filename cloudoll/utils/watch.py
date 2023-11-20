@@ -68,14 +68,14 @@ def mian_app(tty_path, config: Config):
     with set_tty(tty_path):
         # app.create(env=config.env).run(**config.__dict__)
         # with asyncio.Runner() as runner:
-            App = app.create(config.env, config.entry)
-            try:
-                App.run(**config.__dict__)
-            except KeyboardInterrupt:
-                pass
-            # finally:
-            #     with contextlib.suppress(asyncio.TimeoutError, KeyboardInterrupt):
-            #         runner.run(App.app.cleanup())
+        App = app.create(config.env, config.entry)
+        try:
+            App.run(**config.__dict__)
+        except KeyboardInterrupt:
+            pass
+        # finally:
+        #     with contextlib.suppress(asyncio.TimeoutError, KeyboardInterrupt):
+        #         runner.run(App.app.cleanup())
 
 
 class AppTask(WatchTask):
@@ -99,7 +99,7 @@ class AppTask(WatchTask):
                     self._start_dev_server()
                     await asyncio.sleep(1)
         except Exception as exc:
-            exception(exc)
+            # exception(exc)
             raise Exception('error running dev server')
 
     def _start_dev_server(self) -> None:
