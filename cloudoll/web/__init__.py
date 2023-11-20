@@ -202,7 +202,7 @@ class Application(object):
             client_max_size=_int(client_max_size),
         )
         # database
-        self.app.db = {}
+        self.app.db = Object()
         self.app.on_startup.append(self._init_database)
         self.app.on_cleanup.append(self._close_database)
         self.app.config = config
@@ -244,16 +244,17 @@ class Application(object):
         conf_db = self.config.get("database")
         if conf_db:
             # print(conf_db)
-            for db in conf_db:
-                db_type = conf_db[db].get('type', 'mysql')
+            for db_key in conf_db:
+                db_type = conf_db[db_key].get('type', 'mysql')
+
                 if db_type == 'mysql':
-                    apps.db[db] = await Mysql().create_engine(**conf_db[db])
+                    apps.db[db_key] = await Mysql().create_engine(**conf_db[db_key])
                 elif db_type == 'postgres':
-                    apps.db[db] = await Postgres().create_engine(**conf_db[db])
+                    apps.db[db_key] = await Postgres().create_engine(**conf_db[db_key])
                 elif db_type == 'redis':
-                    apps.db[db] = await aioredis.from_url(conf_db[db]['url'])
+                    apps.db[db_key] = await aioredis.from_url(conf_db[db_key]['url'])
                 else:
-                    raise (f'sorry, {db_type} is not supported.')
+                    TypeError(f'sorry, {db_type} is not supported.')
 
     async def _init_session(self, apps):
         config = self.config or {}
@@ -432,7 +433,7 @@ app = Application()
 
 
 class Object(dict):
-    def __init__(self, obj: dict):
+    def __init__(self, obj: dict = {}):
         super().__init__()
         for k, v in obj.items():
             self[k] = v
