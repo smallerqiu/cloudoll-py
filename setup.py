@@ -10,6 +10,8 @@ import sys
 from shutil import rmtree
 
 from setuptools import find_packages, setup, Command
+from importlib.machinery import SourceFileLoader
+version = SourceFileLoader("__version__", "cloudoll/__init__.py").load_module()
 
 # Package meta-data.
 NAME = "cloudoll"
@@ -18,7 +20,7 @@ URL = "https://gitee.com/chuchur/cloudoll-py"
 EMAIL = "chuchur@qq.com"
 AUTHOR = "chuchur"
 REQUIRES_PYTHON = ">=3.6.0"
-VERSION = "2.0.13"
+VERSION = version.__version__
 
 # What packages are required for this module to be executed?
 REQUIRED = [
@@ -34,6 +36,7 @@ REQUIRED = [
     "pyjwt",
     "aiohttp_session[secure]",
     "PyYAML",
+    "click"
 ]
 
 # What packages are optional?
@@ -91,7 +94,8 @@ class UploadCommand(Command):
             pass
 
         self.status("Building Source and Wheel (universal) distribution…")
-        os.system("{0} setup.py sdist bdist_wheel --universal".format(sys.executable))
+        os.system(
+            "{0} setup.py sdist bdist_wheel --universal".format(sys.executable))
 
         self.status("Uploading the package to PyPI via Twine…")
         os.system("twine upload dist/*")
@@ -114,13 +118,19 @@ setup(
     author_email=EMAIL,
     python_requires=REQUIRES_PYTHON,
     url=URL,
-    packages=find_packages(exclude=["tests", "*.tests", "*.tests.*", "tests.*"]),
+    packages=find_packages(
+        exclude=["tests", "*.tests", "*.tests.*", "tests.*"]),
     # If your package is a single module, use this instead of 'packages':
     # py_modules=['mypackage'],
     # entry_points={
     #     'console_scripts': ['mycli=mymodule:cli'],
     # },
     install_requires=REQUIRED,
+    entry_points={
+        'console_scripts': [
+            'cloudoll = cloudoll.cli:cli'
+        ]
+    },
     extras_require=EXTRAS,
     include_package_data=True,
     license="MIT",

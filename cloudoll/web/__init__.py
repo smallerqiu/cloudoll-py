@@ -6,7 +6,8 @@ __author__ = "chuchur/chuchur.com"
 import argparse
 import asyncio
 import hashlib
-import os, base64
+import os
+import base64
 import importlib
 import inspect
 import json
@@ -14,6 +15,8 @@ import pkgutil
 import sys
 import socket
 from urllib import parse
+import aiomcache
+from redis import asyncio as aioredis
 from aiohttp import web
 from aiohttp.web_exceptions import *
 from aiohttp.web_ws import WebSocketResponse as WebSocket, WSMsgType
@@ -24,15 +27,16 @@ from aiohttp_session import (
     memcached_storage,
     cookie_storage,
 )
-from jinja2 import Environment, FileSystemLoader
 from setuptools import find_packages
 from .settings import get_config
 
-from ..logging import warning
-from ..orm.mysql import sa
+from ..logging import warning, info
+from ..orm.mysql import Mysql
+from ..orm.postgres import Postgres
 from . import jwt
 from decimal import Decimal
 from datetime import datetime, date
+from ..utils.common import chainMap
 
 
 class _Handler(object):
@@ -48,7 +52,7 @@ class _Handler(object):
             await _set_session_route(request)
             multipart = await request.multipart()
             field = await multipart.next()
-            return await self.fn(request, field)
+            result = await self.fn(request, field)
         elif len(props.args) == 1:
             await _set_session_route(request)
             if c_type == "multipart/form-data":
@@ -67,9 +71,14 @@ class _Handler(object):
                     qs[k] = v[0]
             request.qs = Object(qs)
             request.body = Object(body)
-            return await self.fn(request)
+            result = await self.fn(request)
         else:
-            return await self.fn()
+            result = await self.fn()
+
+        if "content_type" in result and "text/html" in result['content_type']:
+            return result
+        else:
+            return render_json(result)
 
 
 async def _set_session_route(request):
@@ -119,14 +128,15 @@ def _check_address(host, port):
 
 
 def _reg_middleware():
-    fd = "middlewares"
-    temp = os.path.join(os.path.abspath("."), fd)
-    if not os.path.exists(temp):
+    root = "middlewares"
+    mid_dir = os.path.join(os.path.abspath("."), root)
+    if not os.path.exists(mid_dir):
         return
-    for f in os.listdir(temp):
+    for f in os.listdir(mid_dir):
         if not f.startswith("__"):
-            module_name = f"{fd}.{os.path.basename(f)[:-3]}"
-            importlib.import_module(module_name, fd)
+            module_name = f"{root}.{os.path.basename(f)[:-3]}"
+            # print(module_name)
+            importlib.import_module(module_name, root)
 
 
 def _int(num):
@@ -142,23 +152,39 @@ class Application(object):
         self._route_table = web.RouteTableDef()
         self._middleware = []
         self.config = {}
-        self._args = None
+        # self._args = None
 
-    def create(self):
+    def _load_life_cycle(self, entry_model=None):
+        try:
+            if not entry_model:
+                return
+            entry = importlib.import_module(entry_model)
+
+            life_cycle = ['on_startup', 'on_shutdown',
+                          'on_cleanup', 'cleanup_ctx']
+            for cycle in life_cycle:
+                if hasattr(entry, cycle):
+                    cy = getattr(self, cycle)
+                    cy.append(getattr(entry, cycle))
+        except ImportError:
+            warning(f'Entry model:{entry_model} can not find.')
+
+    def create(self, env: str, entry_model: str):
+        sys.path.append('.')
         loop = asyncio.get_event_loop()
         if loop is None:
             loop = asyncio.new_event_loop()
         self._loop = loop
 
-        parser = argparse.ArgumentParser(description="cloudoll app.")
-        parser.add_argument("--env", default="local")
-        parser.add_argument("--host", default=None)
-        parser.add_argument("--port", default=None)
-        parser.add_argument("--path", default=None)
-        args, extra_argv = parser.parse_known_args()
-        config = get_config(args.env)
+        # parser = argparse.ArgumentParser(description="cloudoll app.")
+        # parser.add_argument("--env", default="local")
+        # parser.add_argument("--host", default=None)
+        # parser.add_argument("--port", default=None)
+        # parser.add_argument("--path", default=None)
+        # args, extra_argv = parser.parse_known_args()
+        config = get_config(env or 'local')
 
-        self._args = args
+        # self._args = args
         self.config = config
 
         # middlewares
@@ -167,7 +193,8 @@ class Application(object):
         conf_server = config.get("server")
         client_max_size = 1024**2 * 2
         if conf_server is not None:
-            client_max_size = conf_server.get("client_max_size", client_max_size)
+            client_max_size = conf_server.get(
+                "client_max_size", client_max_size)
         self.app = web.Application(
             logger=None,
             loop=loop,
@@ -175,6 +202,7 @@ class Application(object):
             client_max_size=_int(client_max_size),
         )
         # database
+        self.app.db = {}
         self.app.on_startup.append(self._init_database)
         self.app.on_cleanup.append(self._close_database)
         self.app.config = config
@@ -186,6 +214,9 @@ class Application(object):
         #  router:
         self._reg_router()
 
+        # load life
+        # self._load_life_cycle(entry_model)
+
         # static
         if conf_server is not None:
             conf_st = conf_server.get("static")
@@ -196,27 +227,45 @@ class Application(object):
 
         temp = os.path.join(os.path.abspath("."), "templates")
         if os.path.exists(temp):
-            self.env = Environment(loader=FileSystemLoader(temp), autoescape=True)
+            from jinja2 import Environment, FileSystemLoader
+            self.env = Environment(
+                loader=FileSystemLoader(temp), autoescape=True)
 
         return self
 
     async def _close_database(self, apps):
-        if self.mysql:
-            await self.mysql.close()
+        for db in apps.db:
+            await apps.db[db].close()
+
+        if apps.redis:
+            await apps.redis.close()
 
     async def _init_database(self, apps):
-        conf_mysql = self.config.get("mysql")
-        if conf_mysql is not None:
-            self.mysql = await sa.create_engine(**conf_mysql)
-            self.app.mysql = self.mysql
-            apps.mysql = self.mysql
+        conf_db = self.config.get("database")
+        if conf_db:
+            # print(conf_db)
+            for db in conf_db:
+                db_type = conf_db[db].get('type', 'mysql')
+                if db_type == 'mysql':
+                    apps.db[db] = await Mysql().create_engine(**conf_db[db])
+                elif db_type == 'postgres':
+                    apps.db[db] = await Postgres().create_engine(**conf_db[db])
+                elif db_type == 'redis':
+                    apps.db[db] = await aioredis.from_url(conf_db[db]['url'])
+                else:
+                    raise (f'sorry, {db_type} is not supported.')
 
     async def _init_session(self, apps):
-        config = self.config
+        config = self.config or {}
+        sess = config.get("session", {})
+        max_age = sess.get("max_age")
+        httponly = sess.get("httponly")
+        session_key = sess.get("key", "CLOUDOLL_SESSION")
+
         # redis
-        redis_conf = config.get("redis")
-        mcache_conf = config.get("memcached")
-        _SESSION_KEY = "CLOUDOLL_SESSION"
+
+        redis_conf = sess.get("redis")
+        mcache_conf = sess.get("memcached")
 
         if redis_conf:
             redis_url = redis_conf.get("url")
@@ -239,9 +288,8 @@ class Application(object):
             max_age = redis_conf.get("max_age")
             secure = redis_conf.get("secure")
             httponly = redis_conf.get("httponly")
-            cookie_name = redis_conf.get("key", _SESSION_KEY)
+            cookie_name = redis_conf.get("key", session_key)
 
-            from redis import asyncio as aioredis
             redis = await aioredis.from_url(redis_url)
             apps.redis = redis
             storage = redis_storage.RedisStorage(
@@ -258,8 +306,7 @@ class Application(object):
             max_age = mcache_conf.get("max_age")
             secure = mcache_conf.get("secure")
             httponly = mcache_conf.get("httponly")
-            cookie_name = mcache_conf.get("key", _SESSION_KEY)
-            import aiomcache
+            cookie_name = mcache_conf.get("key", session_key)
             mc = aiomcache.Client(host, port)
             apps.memcached = mc
             storage = memcached_storage.MemcachedStorage(
@@ -271,21 +318,17 @@ class Application(object):
             )
             setup(apps, storage)
         else:
-            sess = config.get("session", {})
-            sess_name = sess.get("key", _SESSION_KEY)
 
-            dig = hashlib.sha256(sess_name.encode()).digest()
+            dig = hashlib.sha256(session_key.encode()).digest()
             fernet_key = base64.urlsafe_b64encode(dig)
             secret_key = base64.urlsafe_b64decode(fernet_key)
 
             # fernet_key = fernet.Fernet.generate_key()
             # secret_key = base64.urlsafe_b64decode(fernet_key)
 
-            max_age = sess.get("max_age")
-            httponly = sess.get("httponly")
             storage = cookie_storage.EncryptedCookieStorage(
                 secret_key,
-                cookie_name=sess_name,
+                cookie_name=session_key,
                 max_age=_int(max_age),
                 httponly=httponly,
             )
@@ -295,36 +338,36 @@ class Application(object):
         fd = "controllers"
         modules = _get_modules(fd)
         for module in modules:
-            # print(module, router)
+            # print(module)
             importlib.import_module(module, fd)
 
         self.app.add_routes(self._route_table)
         # for route in self._routes:
         #     self.app.router.add_route(**route)
 
-    def run(self, *args, **kw):
+    def run(self, **kw):
         """
         run app
         :params prot default  9001
         :params host default 127.0.0.1
         """
+        defaults = {
+            "host": "127.0.0.1",
+            "port": 9001,
+            "path": None
+        }
         conf = self.config.get("server", {})
-        conf.update(args)
-        args = {k: v for k, v in vars(self._args).items() if v is not None}
-        conf.update(args)
-        host = conf.get("host", "127.0.0.1")
-        port = conf.get("port", 9001)
-        path = conf.get("path")
-        _check_address(host, port)
-        # logging.info(f"Server run at http://{host}:{port}")
+        conf = chainMap(defaults, conf, kw)
+        # print(conf)
+        _check_address(conf['host'], conf['port'])
+        # info(f"Server run at http://{host}:{port}")
         web.run_app(
             self.app,
             loop=self._loop,
-            host=host,
-            port=port,
-            path=path,
+            host=conf['host'],
+            port=conf['port'],
+            path=conf['path'],
             access_log=None,
-            **kw,
         )
         # # old
         # if self.loop is None:
@@ -437,7 +480,7 @@ def all(path: str):
     return app.route_table.view(path)
 
 
-def jsons(data, **kw) -> web.Response:
+def render_json(data, **kw) -> web.Response:
     res = {}
     if isinstance(data, list):
         res["data"] = data
@@ -447,7 +490,7 @@ def jsons(data, **kw) -> web.Response:
         data = dict(data)
         res.update(data)
     else:
-        raise ValueError("data must be list , dict or tuple.")
+        res['text'] = str(data)
     res["timestamp"] = int(datetime.now().timestamp() * 1000)
     text = json.dumps(res, ensure_ascii=False, cls=JsonEncoder)
     return web.json_response(text=text, **kw)
@@ -461,7 +504,7 @@ def render(**kw):
     return web.Response(**kw)
 
 
-def view(template=None, *args, **kw):
+def render_view(template=None, *args, **kw):
     body = None
     if app.env is not None:
         body = app.env.get_template(template).render(*args)

@@ -3,7 +3,7 @@
 
 __author__ = "chuchur/chuchur.com"
 
-import logging
+import logging as loger
 import os
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
@@ -44,7 +44,8 @@ class HandleLog:
         # log_path = os.path.join(os.path.normpath(os.getcwd() + os.sep + os.pardir), 'logs')
         # self.__logger = logging.getLogger()
         self.getLogger()
-        log_path = os.path.join(os.path.normpath(os.getcwd() + os.sep), "../logs")
+        log_path = os.path.join(os.path.normpath(
+            os.getcwd() + os.sep), "../logs")
         # now_time = datetime.now().strftime("%Y-%m-%d")  # 当前日期格式化
         if not os.path.exists(log_path):
             os.mkdir(log_path)  # 若不存在logs文件夹，则自动创建
@@ -66,8 +67,8 @@ class HandleLog:
     def setLevel(self, level):
         self.__logger.setLevel(level)
 
-    def getLogger(self, __file=None):
-        self.__logger = logging.getLogger(__file)  # 创建日志记录器
+    def getLogger(self, name=None):
+        self.__logger = loger.getLogger('cloudoll')  # 创建日志记录器
         self.__logger.setLevel(INFO)
         # self._set_handle()
         return self.__logger
@@ -79,7 +80,7 @@ class HandleLog:
             backupCount=_LOG_FILES_COUNT,
             encoding="utf-8",
         )
-        formatter = logging.Formatter(
+        formatter = loger.Formatter(
             _FORMATS["log_format"], datefmt="%Y-%m-%d %H:%M-%S"
         )
         handler.setFormatter(formatter)
@@ -102,7 +103,8 @@ class HandleLog:
             self.log_path_prefix = log_path_prefix
             self.__free()
             # 收集所有日志信息文件
-            all_log_path = os.path.join(self.log_path, "%s-all.log" % log_path_prefix)
+            all_log_path = os.path.join(
+                self.log_path, "%s-all.log" % log_path_prefix)
             # 收集错误日志信息文件
             error_log_path = os.path.join(
                 self.log_path, "%s-error.log" % log_path_prefix
@@ -143,5 +145,7 @@ info = _get_handle().log("info")
 warning = _get_handle().log("warning")
 
 error = _get_handle().log("error")
+
+exception = _get_handle().log('exception')
 
 critical = _get_handle().log("critical")
