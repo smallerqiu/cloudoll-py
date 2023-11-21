@@ -169,19 +169,11 @@ class Application(object):
         except ImportError:
             warning(f'Entry model:{entry_model} can not find.')
 
-    def create(self, env: str, entry_model: str):
-        sys.path.append('.')
+    def create(self, env: str = None, entry_model: str = None):
         loop = asyncio.get_event_loop()
         if loop is None:
             loop = asyncio.new_event_loop()
         self._loop = loop
-
-        # parser = argparse.ArgumentParser(description="cloudoll app.")
-        # parser.add_argument("--env", default="local")
-        # parser.add_argument("--host", default=None)
-        # parser.add_argument("--port", default=None)
-        # parser.add_argument("--path", default=None)
-        # args, extra_argv = parser.parse_known_args()
         config = get_config(env or 'local')
 
         # self._args = args

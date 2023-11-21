@@ -12,4 +12,3 @@ hiredis~=2.2.3
 aiomcache~=0.8.1
 aiohttp-session[secure]~=2.12.0
 watchfiles~=0.21.0
-nest_asyncio~=1.5.8
