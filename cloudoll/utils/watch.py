@@ -58,7 +58,7 @@ def set_tty(tty_path: Optional[str]) -> Iterator[None]:
 class Config:
     def __init__(self, host, port, path, env, entry):
         self.host = host
-        self.port = port
+        self.port: int = port
         self.path = path
         self.env = env
         self.entry = entry

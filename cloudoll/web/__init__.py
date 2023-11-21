@@ -36,7 +36,7 @@ from ..orm.postgres import Postgres
 from . import jwt
 from decimal import Decimal
 from datetime import datetime, date
-from ..utils.common import chainMap
+from ..utils.common import chainMap, Object
 
 
 class _Handler(object):
@@ -97,6 +97,7 @@ def _get_modules(fd):
     modules = set()
     temp = os.path.join(os.path.abspath("."), fd)
     if not os.path.exists(temp):
+        info('Routers not detected')
         return modules
     s = find_packages(temp)
     for pkg in s:
@@ -130,12 +131,14 @@ def _check_address(host, port):
 def _reg_middleware():
     root = "middlewares"
     mid_dir = os.path.join(os.path.abspath("."), root)
+    # print(mid_dir)
     if not os.path.exists(mid_dir):
+        info('Middlewares not detected')
         return
     for f in os.listdir(mid_dir):
         if not f.startswith("__"):
             module_name = f"{root}.{os.path.basename(f)[:-3]}"
-            # print(module_name)
+            # print(module_name, root)
             importlib.import_module(module_name, root)
 
 
@@ -175,7 +178,7 @@ class Application(object):
             loop = asyncio.new_event_loop()
         self._loop = loop
         config = get_config(env or 'local')
-
+        # print(config)
         # self._args = args
         self.config = config
 
@@ -350,6 +353,7 @@ class Application(object):
             "path": None
         }
         conf = self.config.get("server", {})
+        # print(conf)
         conf = chainMap(defaults, conf, kw)
         # print(conf)
         _check_address(conf['host'], conf['port'])
@@ -422,22 +426,6 @@ class Application(object):
 
 
 app = Application()
-
-
-class Object(dict):
-    def __init__(self, obj: dict = {}):
-        super().__init__()
-        for k, v in obj.items():
-            self[k] = v
-
-    def __getattr__(self, key):
-        return self[key] if key in self else ""
-
-    def __setattr__(self, key, value):
-        self[key] = value
-
-    def __str__(self):
-        return self.key
 
 
 class JsonEncoder(json.JSONEncoder):

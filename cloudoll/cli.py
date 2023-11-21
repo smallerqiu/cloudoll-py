@@ -14,8 +14,10 @@ import traceback
 import logging
 from .utils.watch import AppTask, Config
 from aiohttp import web
+from .utils.common import chainMap, Object
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+# os.chdir(os.path.dirname(os.path.abspath('.')))
+sys.path.append(os.path.abspath('.'))
 
 
 @click.group()
@@ -76,7 +78,7 @@ def gen(path, create, table, environment, database) -> None:
 
 @cli.command()
 @click.option('-env', '--environment', help="Environment, local / test / prod", default="local")
-@click.option('-p', '--port', help="Server's port", default=9001)
+@click.option('-p', '--port', help="Server's port", default=None)
 @click.option('-h', '--host', help="Server's host", default=None)
 @click.option('-path', '--path', help="Unix file system path to serve on. Specifying a path will cause hostname and port arguments to be ignored.")
 @click.option('-m', '--model', help="Entry point model name. delfault name app", default='app')
@@ -84,11 +86,15 @@ def start(environment, host, port, path, model) -> None:
     """Start a services."""
     try:
         app = web.Application(logger=None,)
-        config = Config(host=host, port=port, path=path,
-                        env=environment, entry=model)
-        task = AppTask(Path('.').resolve(), config)
+        config = get_config(environment).get('server', {})
+        config = chainMap(config, {'host': host, 'port': port, 'path': path})
+        config = Object(config)
+        env_config = Config(host=config.host, port=config.port, path=config.path,
+                            env=environment, entry=model)
+        # print(config)
+        aux_port = env_config.port+1
+        task = AppTask(Path('.').resolve(), env_config)
         app.cleanup_ctx.append(task.cleanup_ctx)
-        aux_port = port+1
         web.run_app(app, access_log=None, host=host, port=aux_port, print=None)
     except Exception as e:
         error(e)
