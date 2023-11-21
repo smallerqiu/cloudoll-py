@@ -357,14 +357,16 @@ class Application(object):
         conf = chainMap(defaults, conf, kw)
         # print(conf)
         _check_address(conf['host'], conf['port'])
-        # info(f"Server run at http://{host}:{port}")
+        print(f"Server running on http://{conf['host']}:{conf['port']}")
+        print('(Press CTRL+C to quit)')
         web.run_app(
             self.app,
             loop=self._loop,
-            host=conf['host'],
+            host='0.0.0.0',
             port=conf['port'],
             path=conf['path'],
             access_log=None,
+            print=None
         )
         # # old
         # if self.loop is None:
