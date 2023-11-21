@@ -15,10 +15,11 @@ import logging
 from .utils.watch import AppTask, Config
 from aiohttp import web
 from .utils.common import chainMap, Object
+import nest_asyncio
 
 # os.chdir(os.path.dirname(os.path.abspath('.')))
 sys.path.append(os.path.abspath('.'))
-
+nest_asyncio.apply()
 
 @click.group()
 @click.version_option(__version__, "-V", "--version", prog_name="cloudoll")
@@ -92,7 +93,7 @@ def start(environment, host, port, path, model) -> None:
         env_config = Config(host=config.host, port=config.port, path=config.path,
                             env=environment, entry=model)
         # print(config)
-        aux_port = env_config.port+1
+        aux_port = int(env_config.port)+1
         task = AppTask(Path('.').resolve(), env_config)
         app.cleanup_ctx.append(task.cleanup_ctx)
         web.run_app(app, access_log=None, host=host, port=aux_port, print=None)
