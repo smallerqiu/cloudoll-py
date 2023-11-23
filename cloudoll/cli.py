@@ -21,6 +21,7 @@ import nest_asyncio
 sys.path.append(os.path.abspath('.'))
 nest_asyncio.apply()
 
+
 @click.group()
 @click.version_option(__version__, "-V", "--version", prog_name="cloudoll")
 def cli() -> None:
@@ -92,9 +93,9 @@ def start(environment, host, port, path, model) -> None:
         config = Object(config)
         env_config = Config(host=config.host, port=config.port, path=config.path,
                             env=environment, entry=model)
-        # print(config)
         aux_port = int(env_config.port)+1
         task = AppTask(Path('.').resolve(), env_config)
+        app.config = config
         app.cleanup_ctx.append(task.cleanup_ctx)
         web.run_app(app, access_log=None, host=host, port=aux_port, print=None)
     except Exception as e:

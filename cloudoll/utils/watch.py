@@ -6,10 +6,21 @@ import os
 import signal
 import sys
 from multiprocessing import Process
-from watchfiles import awatch
+from watchfiles import awatch, DefaultFilter
 from ..logging import debug, info, warning, exception
 import contextlib
 from typing import Any, Iterator, Optional, NoReturn
+from typing import TYPE_CHECKING, Optional, Sequence, Union
+
+
+class CloudollFilter(DefaultFilter):
+
+    def __init__(self, ignore_dirs: tuple = None) -> None:
+        self.ignore_dirs = self.ignore_dirs+('logs')
+        if ignore_dirs:
+            self.ignore_dirs = self.ignore_dirs+ignore_dirs
+
+        super().__init__()
 
 
 class WatchTask:
@@ -22,7 +33,9 @@ class WatchTask:
     async def start(self, app: Application) -> None:
         self._app = app
         self.stopper = asyncio.Event()
-        self._awatch = awatch(self._path, stop_event=self.stopper)
+        ignore_dirs = app.config.get('ignore_dirs') or []
+        self._awatch = awatch(
+            self._path, stop_event=self.stopper, watch_filter=CloudollFilter(tuple(ignore_dirs)))
         self._task = asyncio.create_task(self._run())
 
     async def _run(self) -> None:

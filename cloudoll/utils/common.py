@@ -1,17 +1,6 @@
 class Object(dict):
-    def __init__(self, obj: dict = {}):
-        super().__init__()
-        for k, v in obj.items():
-            self[k] = v
-
-    def __getattr__(self, key):
-        return self[key] if key in self else ""
-
-    def __setattr__(self, key, value):
-        self[key] = value
-
-    def __str__(self):
-        return self.key
+    __setattr__ = dict.__setitem__
+    __getattr__ = dict.__getitem__
 
 
 def chainMap(*dicts):
