@@ -45,7 +45,7 @@ class HandleLog:
         # self.__logger = logging.getLogger()
         self.getLogger()
         log_path = os.path.join(os.path.normpath(
-            os.getcwd() + os.sep), "../logs")
+            os.getcwd() + os.sep), "logs")
         # now_time = datetime.now().strftime("%Y-%m-%d")  # 当前日期格式化
         if not os.path.exists(log_path):
             os.mkdir(log_path)  # 若不存在logs文件夹，则自动创建
