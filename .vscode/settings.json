@@ -5,7 +5,7 @@
     // "editor.defaultFormatter": "ms-python.autopep8",
     "editor.wordWrap": "on",
     "editor.wordWrapColumn": 1000,
-    "editor.defaultFormatter": "ms-python.autopep8"
+    "editor.defaultFormatter": "ms-python.black-formatter"
   },
   "python.formatting.provider": "autopep8",
   // "python.formatting.provider": "none"

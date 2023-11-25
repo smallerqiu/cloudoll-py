@@ -161,7 +161,7 @@ class Application(object):
         try:
             if not entry_model:
                 return
-            entry = importlib.import_module(entry_model)
+            entry = importlib.import_module(entry_model,'.')
 
             life_cycle = ['on_startup', 'on_shutdown',
                           'on_cleanup', 'cleanup_ctx']
@@ -171,6 +171,7 @@ class Application(object):
                     cy.append(getattr(entry, cycle))
         except ImportError:
             warning(f'Entry model:{entry_model} can not find.')
+        
 
     def create(self, env: str = None, entry_model: str = None):
         loop = asyncio.get_event_loop()

@@ -14,11 +14,10 @@ from typing import TYPE_CHECKING, Optional, Sequence, Union
 
 
 class CloudollFilter(DefaultFilter):
-
     def __init__(self, ignore_dirs: tuple = None) -> None:
-        self.ignore_dirs = self.ignore_dirs+('logs')
+        self.ignore_dirs = self.ignore_dirs + tuple("logs")
         if ignore_dirs:
-            self.ignore_dirs = self.ignore_dirs+ignore_dirs
+            self.ignore_dirs = self.ignore_dirs + ignore_dirs
 
         super().__init__()
 
@@ -33,9 +32,12 @@ class WatchTask:
     async def start(self, app: Application) -> None:
         self._app = app
         self.stopper = asyncio.Event()
-        ignore_dirs = app.config.get('ignore_dirs') or []
+        ignore_dirs = app.config.get("ignore_dirs") or []
         self._awatch = awatch(
-            self._path, stop_event=self.stopper, watch_filter=CloudollFilter(tuple(ignore_dirs)))
+            self._path,
+            stop_event=self.stopper,
+            watch_filter=CloudollFilter(tuple(ignore_dirs)),
+        )
         self._task = asyncio.create_task(self._run())
 
     async def _run(self) -> None:
@@ -92,7 +94,6 @@ def mian_app(tty_path, config: Config):
 
 
 class AppTask(WatchTask):
-
     def __init__(self, watch_path: str, config: Config):
         self._config = config
         self._reloads = 0
@@ -106,48 +107,48 @@ class AppTask(WatchTask):
 
             async for changes in self._awatch:
                 self._reloads += 1
-                if any(f.endswith('.py') for _, f in changes):
-                    debug('%d changes, restarting server', len(changes))
+                if any(f.endswith(".py") for _, f in changes):
+                    debug("%d changes, restarting server", len(changes))
                     await self._stop_dev_server()
                     self._start_dev_server()
                     await asyncio.sleep(1)
         except Exception as exc:
             # exception(exc)
-            raise Exception('error running dev server')
+            raise Exception("error running dev server")
 
     def _start_dev_server(self) -> None:
-        act = 'Start' if self._reloads == 0 else 'Restart'
-        info(f'{act}ing dev server')
+        act = "Start" if self._reloads == 0 else "Restart"
+        info(f"{act}ing dev server")
 
         try:
             tty_path = os.ttyname(sys.stdin.fileno())
         except OSError:  # pragma: no branch
             # fileno() always fails with pytest
-            tty_path = '/dev/tty'
+            tty_path = "/dev/tty"
         except AttributeError:
             # on windows, without a windows machine I've no idea what else to do here
             tty_path = None
 
-        self._process = Process(target=mian_app,
-                                args=(tty_path, self._config))
+        self._process = Process(target=mian_app, args=(tty_path, self._config))
         self._process.start()
 
     async def _stop_dev_server(self) -> None:
         if self._process.is_alive():
-            debug('stopping server process...')
+            debug("stopping server process...")
             if self._process.pid:
                 debug("sending SIGINT")
                 os.kill(self._process.pid, signal.SIGINT)
             self._process.join(5)
             if self._process.exitcode is None:
-                warning('process has not terminated, sending SIGKILL')
+                warning("process has not terminated, sending SIGKILL")
                 self._process.kill()
                 self._process.join(1)
             else:
-                debug('process stopped')
+                debug("process stopped")
         else:
             warning(
-                'server process already dead, exit code: %s', self._process.exitcode)
+                "server process already dead, exit code: %s", self._process.exitcode
+            )
 
     async def close(self) -> None:
         self.stopper.set()

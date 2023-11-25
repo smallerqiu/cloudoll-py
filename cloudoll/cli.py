@@ -7,7 +7,6 @@ import asyncio
 import os
 import sys
 from .logging import error
-import traceback
 from pathlib import Path
 from . import __version__
 import traceback
@@ -15,11 +14,11 @@ import logging
 from .utils.watch import AppTask, Config
 from aiohttp import web
 from .utils.common import chainMap, Object
-import nest_asyncio
+# import nest_asyncio
 
 # os.chdir(os.path.dirname(os.path.abspath('.')))
 sys.path.append(os.path.abspath('.'))
-nest_asyncio.apply()
+# nest_asyncio.apply()
 
 
 @click.group()
