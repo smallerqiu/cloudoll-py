@@ -18,6 +18,7 @@ from urllib import parse
 import aiomcache
 from redis import asyncio as aioredis
 from aiohttp import web
+from aiohttp.web import Response as Response
 from aiohttp.web_exceptions import *
 from aiohttp.web_ws import WebSocketResponse as WebSocket, WSMsgType
 from aiohttp_session import (
@@ -75,7 +76,10 @@ class _Handler(object):
         else:
             result = await self.fn()
 
-        if "content_type" in result and "text/html" in result['content_type']:
+        if isinstance(result, Response):
+            return result
+
+        if "content_type" in result and "text/html" in result["content_type"]:
             return result
         else:
             return render_json(result)
@@ -97,7 +101,7 @@ def _get_modules(fd):
     modules = set()
     temp = os.path.join(os.path.abspath("."), fd)
     if not os.path.exists(temp):
-        info('Routers not detected')
+        info("Routers not detected")
         return modules
     s = find_packages(temp)
     for pkg in s:
@@ -133,7 +137,7 @@ def _reg_middleware():
     mid_dir = os.path.join(os.path.abspath("."), root)
     # print(mid_dir)
     if not os.path.exists(mid_dir):
-        info('Middlewares not detected')
+        info("Middlewares not detected")
         return
     for f in os.listdir(mid_dir):
         if not f.startswith("__"):
@@ -161,24 +165,22 @@ class Application(object):
         try:
             if not entry_model:
                 return
-            entry = importlib.import_module(entry_model,'.')
+            entry = importlib.import_module(entry_model, ".")
 
-            life_cycle = ['on_startup', 'on_shutdown',
-                          'on_cleanup', 'cleanup_ctx']
+            life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "cleanup_ctx"]
             for cycle in life_cycle:
                 if hasattr(entry, cycle):
                     cy = getattr(self, cycle)
                     cy.append(getattr(entry, cycle))
         except ImportError:
-            warning(f'Entry model:{entry_model} can not find.')
-        
+            warning(f"Entry model:{entry_model} can not find.")
 
     def create(self, env: str = None, entry_model: str = None):
         loop = asyncio.get_event_loop()
         if loop is None:
             loop = asyncio.new_event_loop()
         self._loop = loop
-        config = get_config(env or 'local')
+        config = get_config(env or "local")
         # print(config)
         # self._args = args
         self.config = config
@@ -189,8 +191,7 @@ class Application(object):
         conf_server = config.get("server")
         client_max_size = 1024**2 * 2
         if conf_server is not None:
-            client_max_size = conf_server.get(
-                "client_max_size", client_max_size)
+            client_max_size = conf_server.get("client_max_size", client_max_size)
         self.app = web.Application(
             logger=None,
             loop=loop,
@@ -224,8 +225,8 @@ class Application(object):
         temp = os.path.join(os.path.abspath("."), "templates")
         if os.path.exists(temp):
             from jinja2 import Environment, FileSystemLoader
-            self.env = Environment(
-                loader=FileSystemLoader(temp), autoescape=True)
+
+            self.env = Environment(loader=FileSystemLoader(temp), autoescape=True)
 
         return self
 
@@ -233,7 +234,7 @@ class Application(object):
         for db in apps.db:
             await apps.db[db].close()
 
-        if 'redis' in apps:
+        if "redis" in apps:
             await apps.redis.close()
 
     async def _init_database(self, apps):
@@ -241,16 +242,16 @@ class Application(object):
         if conf_db:
             # print(conf_db)
             for db_key in conf_db:
-                db_type = conf_db[db_key].get('type', 'mysql')
+                db_type = conf_db[db_key].get("type", "mysql")
 
-                if db_type == 'mysql':
+                if db_type == "mysql":
                     apps.db[db_key] = await Mysql().create_engine(**conf_db[db_key])
-                elif db_type == 'postgres':
+                elif db_type == "postgres":
                     apps.db[db_key] = await Postgres().create_engine(**conf_db[db_key])
-                elif db_type == 'redis':
-                    apps.db[db_key] = await aioredis.from_url(conf_db[db_key]['url'])
+                elif db_type == "redis":
+                    apps.db[db_key] = await aioredis.from_url(conf_db[db_key]["url"])
                 else:
-                    TypeError(f'sorry, {db_type} is not supported.')
+                    TypeError(f"sorry, {db_type} is not supported.")
 
     async def _init_session(self, apps):
         config = self.config or {}
@@ -315,7 +316,6 @@ class Application(object):
             )
             setup(apps, storage)
         else:
-
             dig = hashlib.sha256(session_key.encode()).digest()
             fernet_key = base64.urlsafe_b64encode(dig)
             secret_key = base64.urlsafe_b64decode(fernet_key)
@@ -348,26 +348,22 @@ class Application(object):
         :params prot default  9001
         :params host default 127.0.0.1
         """
-        defaults = {
-            "host": "127.0.0.1",
-            "port": 9001,
-            "path": None
-        }
+        defaults = {"host": "127.0.0.1", "port": 9001, "path": None}
         conf = self.config.get("server", {})
         # print(conf)
         conf = chainMap(defaults, conf, kw)
         # print(conf)
-        _check_address(conf['host'], conf['port'])
+        _check_address(conf["host"], conf["port"])
         print(f"Server running on http://{conf['host']}:{conf['port']}")
-        print('(Press CTRL+C to quit)')
+        print("(Press CTRL+C to quit)")
         web.run_app(
             self.app,
             loop=self._loop,
-            host='0.0.0.0',
-            port=conf['port'],
-            path=conf['path'],
+            host="0.0.0.0",
+            port=conf["port"],
+            path=conf["path"],
             access_log=None,
-            print=None
+            print=None,
         )
         # # old
         # if self.loop is None:
@@ -464,7 +460,7 @@ def all(path: str):
     return app.route_table.view(path)
 
 
-def render_json(data, **kw) -> web.Response:
+def render_json(data, **kw) -> Response:
     res = {}
     if isinstance(data, list):
         res["data"] = data
@@ -474,7 +470,7 @@ def render_json(data, **kw) -> web.Response:
         data = dict(data)
         res.update(data)
     else:
-        res['text'] = str(data)
+        res["text"] = str(data)
     res["timestamp"] = int(datetime.now().timestamp() * 1000)
     text = json.dumps(res, ensure_ascii=False, cls=JsonEncoder)
     return web.json_response(text=text, **kw)
@@ -484,17 +480,17 @@ def middleware():
     return app.add_middleware()
 
 
-def render(**kw):
-    return web.Response(**kw)
+def render(**kw) -> Response:
+    return Response(**kw)
 
 
-def render_view(template=None, *args, **kw):
+def render_view(template=None, *args, **kw) -> Response:
     body = None
     if app.env is not None:
         body = app.env.get_template(template).render(*args)
-    _view = render(body=body, **kw)
-    _view.content_type = "text/html;charset=utf-8"
-    return _view
+    view = render(body=body, **kw)
+    view.content_type = "text/html;charset=utf-8"
+    return view
 
 
 def redirect(urlpath):
