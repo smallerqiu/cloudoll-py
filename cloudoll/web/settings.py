@@ -6,8 +6,7 @@ from ..logging import error
 def get_config(env):
     if env is None:
         return {}
-    conf_path = os.path.join(os.path.abspath(
-        "."), 'config', f'conf.{env}.yaml')
+    conf_path = os.path.join(os.path.abspath("."), "config", f"conf.{env}.yaml")
     if not os.path.exists(conf_path):
         error(f"Configuration file does not exist: {conf_path}")
         return {}

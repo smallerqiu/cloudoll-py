@@ -75,14 +75,15 @@ class _Handler(object):
             result = await self.fn(request)
         else:
             result = await self.fn()
+        try:
+            if isinstance(result, Response):
+                return result
+            if "content_type" in result and "text/html" in result["content_type"]:
+                return result
+        except:
+            pass
 
-        if isinstance(result, Response):
-            return result
-
-        if "content_type" in result and "text/html" in result["content_type"]:
-            return result
-        else:
-            return render_json(result)
+        return render_json(result)
 
 
 async def _set_session_route(request):
@@ -470,7 +471,7 @@ def render_json(data, **kw) -> Response:
         data = dict(data)
         res.update(data)
     else:
-        res["text"] = str(data)
+        res["data"] = data
     res["timestamp"] = int(datetime.now().timestamp() * 1000)
     text = json.dumps(res, ensure_ascii=False, cls=JsonEncoder)
     return web.json_response(text=text, **kw)
