@@ -78,6 +78,8 @@ class _Handler(object):
         try:
             if isinstance(result, Response):
                 return result
+            if isinstance(result, WebSocket):
+                return result
             if "content_type" in result and "text/html" in result["content_type"]:
                 return result
         except:
