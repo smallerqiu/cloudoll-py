@@ -7,45 +7,47 @@ class objdict(dict):
 
 
 OP = objdict(
-    AND='AND',
-    OR='OR',
-    ADD='+',
-    SUB='-',
-    MUL='*',
-    DIV='/',
-    BIN_AND='&',
-    BIN_OR='|',
-    XOR='#',
-    MOD='%',
-    EQ='=',
-    LT='<',
-    LTE='<=',
-    GT='>',
-    GTE='>=',
-    NE='!=',
-    IN='IN',
-    NOT_IN='NOT IN',
-    IS='IS',
-    DESC='DESC',
-    ASC='ASC',
-    AVG='AVG',
-    AS='AS',
-    SUM='SUM',
-    COUNT='COUNT',
-    IS_NOT='IS NOT',
-    IS_NOT_NULL='IS NOT NULL',
-    IS_NULL='IS NULL',
-    LIKE='LIKE',
-    NOT_LIKE='NOT LIKE',
-    ILIKE='ILIKE',
-    BETWEEN='BETWEEN',
-    CONTAINS='CONTAINS',
-    NOT_BETWEEN='NOT BETWEEN',
-    REGEXP='REGEXP',
-    IREGEXP='IREGEXP',
-    DISTINCT='DISTINCT',
-    CONCAT='||',
-    BITWISE_NEGATION='~')
+    AND="AND",
+    OR="OR",
+    ADD="+",
+    SUB="-",
+    MUL="*",
+    DIV="/",
+    BIN_AND="&",
+    BIN_OR="|",
+    XOR="#",
+    MOD="%",
+    EQ="=",
+    LT="<",
+    LTE="<=",
+    GT=">",
+    GTE=">=",
+    NE="!=",
+    IN="IN",
+    NOT_IN="NOT IN",
+    IS="IS",
+    DESC="DESC",
+    ASC="ASC",
+    AVG="AVG",
+    AS="AS",
+    SUM="SUM",
+    DATE_FORMAT="DATE_FORMAT",
+    COUNT="COUNT",
+    IS_NOT="IS NOT",
+    IS_NOT_NULL="IS NOT NULL",
+    IS_NULL="IS NULL",
+    LIKE="LIKE",
+    NOT_LIKE="NOT LIKE",
+    ILIKE="ILIKE",
+    BETWEEN="BETWEEN",
+    CONTAINS="CONTAINS",
+    NOT_BETWEEN="NOT BETWEEN",
+    REGEXP="REGEXP",
+    IREGEXP="IREGEXP",
+    DISTINCT="DISTINCT",
+    CONCAT="||",
+    BITWISE_NEGATION="~",
+)
 
 
 class FieldBase:
@@ -54,6 +56,7 @@ class FieldBase:
             if inverse:
                 return Expression(rhs, op, self)
             return Expression(self, op, rhs)
+
         return inner
 
     def __eq__(self, rhs):
@@ -73,7 +76,7 @@ class FieldBase:
     __add__ = _op(OP.ADD)  # +
     __radd__ = _op(OP.ADD, True)  # +=
     __sub__ = _op(OP.SUB)  # -
-    __sub__ = _op(OP.SUB, True)  # -=
+    __rsub__ = _op(OP.SUB, True)  # -=
     __mul__ = _op(OP.MUL)  # *
     __rmul__ = _op(OP.MUL, True)  # *=
     __div__ = _op(OP.DIV)  # /
@@ -102,6 +105,9 @@ class FieldBase:
 
     def avg(self):
         return Function(self, OP.AVG)
+
+    def date_format(self, args):
+        return Function(self, OP.DATE_FORMAT, args)
 
     def contains(self, args):
         return Function(self, OP.CONTAINS, args)
@@ -137,16 +143,16 @@ class ExpList(FieldBase):
         q = []
         if isinstance(lpt, Exception):
             _q, _p = lpt.sql()
-            q = q+_q
-            p = p+_p
+            q = q + _q
+            p = p + _p
         else:
             q.append("?")
             p.append(lpt)
         q.append(f" {self.op} ")
         if isinstance(rpt, Exception):
             _q, _p = lpt.sql()
-            q = q+_q
-            p = p+_p
+            q = q + _q
+            p = p + _p
         else:
             q.append("?")
             p.append(lpt)
@@ -163,7 +169,15 @@ class Function(FieldBase):
 
     def sql(self):
         # todo:
-        return f"{self.op}({self.col.full_name} {','+str(self.rpt) if self.rpt else ''})"
+        if self.op == OP.DATE_FORMAT:
+            fun_key = f",'{self.rpt.replace('%','%%')}'"
+        elif self.rpt:
+            fun_key = f"',' {str(self.rpt)}"
+        else:
+            fun_key = ''
+        return (
+            f"{self.op}({self.col.full_name} {fun_key})"
+        )
 
 
 class Expression(FieldBase):
@@ -175,28 +189,55 @@ class Expression(FieldBase):
     def sql(self):
         l = self.lhs
         r = self.rhs
+        is_fun = isinstance(l, Function)
         p = []
-        q = ["("]
+        q = []
+        if not is_fun:
+            q.append('(')
         if isinstance(l, Field):
             q.append(l.full_name)
         elif isinstance(l, Expression):
             _q, _p = l.sql()
             q.append(_q)
-            p = p+_p
+            p = p + _p
+        elif is_fun:
+            q.append(l.sql())
+            # return l.sql()
+
         q.append(f" {self.op} ")
 
         if isinstance(r, Field):
-            q.append(r.full_name)
+            q.append(r._value if r._value is not None else r.full_name)
         elif isinstance(r, FieldBase):
             _q, _p = r.sql()
             q.append(_q)
-            p = p+_p
-        else:
-            q.append('?')
+            p = p + _p
+        elif is_fun or (isinstance(r, str) and (self.op == OP.AND or self.op == OP.OR)):
+            q.append(r)
+        elif r is not None:
+            q.append("?")
+            # if self.op == OP.LIKE:
+            # r = r.replace('%', '%%')
             p.append(r)
-        q.append(')')
+        if not is_fun:
+            q.append(')')
+        # q.append(")")
+        q = [str(num) for num in q]
+        # print("".join(q))
         return "".join(q), p
         # return f"({l.full_name if isinstance(l,Field) else l.sql()} {self.op} {r.full_name if isinstance(r,Field) else (r.sql() if isinstance(r,FieldBase) else str(r))})"
+
+    def __str__(self):
+        cal = f"{self.lhs._value}{self.op}"
+        if isinstance(self.rhs, FieldBase):
+            return str(eval(f"{cal}{self.rhs._value}"))
+        return str(eval(f"{cal}{self.rhs}"))
+
+    def __repr__(self):
+        cal = f"{self.lhs._value}{self.op}"
+        if isinstance(self.rhs, FieldBase):
+            return str(eval(f"{cal}{self.rhs._value}"))
+        return str(eval(f"{cal}{self.rhs}"))
 
 
 class Field(FieldBase):

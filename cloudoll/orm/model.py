@@ -90,6 +90,7 @@ class Model(dict, metaclass=ModelMetaclass):
         # self[key] = value
         self.set_value(key, value)
 
+    # @classmethod
     def get_value(self, key):
         return getattr(self, key, None).get_value()
 
@@ -128,13 +129,20 @@ class Model(dict, metaclass=ModelMetaclass):
                 cols.append(col.full_name)
             elif isinstance(col, Function):
                 cols.append(col.sql())
+            elif isinstance(col, Expression):
+                q, p = col.sql()
+                cols.append(q)
         self.__cols__ = ",".join(cols) if len(cols) else "*"
         return self
 
     @classmethod
     def join(self, table, *exp):
-        exp = reduce(operator.and_, exp).sql()
-        join = f"JOIN {table.__table__} ON {exp}"
+        ex = reduce(operator.and_, exp)
+        if isinstance(ex, Expression):
+            exp, q = ex.sql()
+        else:
+            exp = ex
+        join = f"{table.__table__} ON " + exp
         if self.__join__ is None:
             self.__join__ = join
         else:
@@ -159,7 +167,10 @@ class Model(dict, metaclass=ModelMetaclass):
     def order_by(self, *args):
         by = []
         for f in args:
-            by.append(f"{f.lhs.full_name} {f.op}")
+            if isinstance(f, str):
+                by.append(f)
+            else:
+                by.append(f"{f.lhs.full_name} {f.op}")
         if self.__order_by__ is not None:
             by = self.__order_by__ + by
         self.__order_by__ = by
@@ -181,7 +192,7 @@ class Model(dict, metaclass=ModelMetaclass):
         md = None
         if args is None or not args:
             for f in self.__fields__:
-                data[f] = self.get_value(f)
+                data[f] = self.get_value(self, f)
         else:
             for item in args:
                 md = item
@@ -207,12 +218,13 @@ class Model(dict, metaclass=ModelMetaclass):
                 self.__params__ = p
                 return f"{op} {q}"
             else:
-                return exp
+                # return exp
+                return f"{op} {exp}"
         return ""
 
     @classmethod
     def sql(self):
-        JOIN = self._literal("JOIN", self.__join__)
+        JOIN = self._literal("LEFT JOIN", self.__join__)
         WHERE = self._literal("WHERE", self.__where__)
         GROUPBY = self._literal("GROUP BY", self.__group_by__)
         HAVING = self._literal("HAVING", self.__having__)
@@ -229,11 +241,13 @@ class Model(dict, metaclass=ModelMetaclass):
 
     @classmethod
     async def __query(self, sql, args):
-        # print(sql,  args)
+        print(sql, args)
         try:
+            self._clear()
             rs = await self.__pool__.query(sql, args)
         finally:
-            self._clear()
+            pass
+            # self._clear()
         return rs
 
     @classmethod
@@ -243,16 +257,18 @@ class Model(dict, metaclass=ModelMetaclass):
         args = self.__params__
         rs = await self.__query(sql, args)
         item = await rs.one()
-        return self(**item)
+        if item:
+            return self(**item)
+        return None
 
     @classmethod
     def limit(self, limit: int):
-        self.__limit__ = f"LIMIT {limit}"
+        self.__limit__ = f"{limit}"
         return self
 
     @classmethod
     def offset(self, offset: int):
-        self.__offset__ = f"OFFSET {offset}"
+        self.__offset__ = f"{offset}"
         return self
 
     @classmethod
@@ -274,7 +290,7 @@ class Model(dict, metaclass=ModelMetaclass):
 
         sql = f"update `{table}` set {keys}"
 
-        pk, pkv = self.get_primary()
+        pk, pkv = self.get_primary(self)
         if where is not None:
             sql += f' where {" and ".join(f for f in where)}'
             params += self.__params__
@@ -286,6 +302,7 @@ class Model(dict, metaclass=ModelMetaclass):
 
         rs = await self.__query(sql, params)
         result = rs.cursor.rowcount > 0
+        await rs.conn.commit()
         await rs.release()
         return result
 
@@ -299,7 +316,7 @@ class Model(dict, metaclass=ModelMetaclass):
         args = self.__params__
         sql = f"delete from `{table}`"
 
-        pk, pkv = self.get_primary()
+        pk, pkv = self.get_primary(self)
         if where is not None:
             sql += f' where {" and ".join(f for f in where)}'
         elif pkv is not None:
@@ -310,6 +327,7 @@ class Model(dict, metaclass=ModelMetaclass):
         # return await sa.query(sql, args)
         rs = await self.__query(sql, args)
         result = rs.cursor.rowcount > 0
+        await rs.conn.commit()
         await rs.release()
         return result
 
@@ -321,6 +339,7 @@ class Model(dict, metaclass=ModelMetaclass):
         rs = await self.__query(sql, params)
         result = rs.cursor.rowcount > 0
         id = rs.cursor.lastrowid
+        await rs.conn.commit()
         await rs.release()
         return result, id
 
@@ -378,7 +397,9 @@ class Models(object):
             )
 
     class BooleanField(Field):
-        def __init__(self, name=None, default=False, not_null=False, comment=None, unsigned=False):
+        def __init__(
+            self, name=None, default=False, not_null=False, comment=None, unsigned=False
+        ):
             super().__init__(
                 name,
                 "boolean",

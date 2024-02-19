@@ -1,7 +1,7 @@
 from .model import Model
 
 
-class MeteBase():
+class MeteBase:
     def use(self, model: Model):
         model.__pool__ = self.pool
         return model
@@ -48,9 +48,16 @@ class MeteBase():
         # print('sql', sql, params)
         if not self.pool:
             raise ValueError("must be create_engine first.")
+        # async with self.pool.acquire() as coon:
+        # async with coon.cursor() as cur:
+        # current_cursor = getattr(cur, 'lastrowid', None)
         conn = await self.pool.acquire()
         cursor = await conn.cursor()
+        # try:
         await cursor.execute(sql, params)
+        # except Exception as e:
+            # error(e)
+            # pass
         self.cursor = cursor
         self.conn = conn
         return self
