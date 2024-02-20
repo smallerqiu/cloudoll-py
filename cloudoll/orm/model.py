@@ -62,6 +62,8 @@ class Model(dict, metaclass=ModelMetaclass):
         for k, v in kw.items():
             f = getattr(self, k, None)
             if isinstance(f, Field):
+                if v is None:
+                    v = f.default
                 self.set_value(k, v)
 
         super(Model, self).__init__(self, **kw)

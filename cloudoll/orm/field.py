@@ -185,6 +185,13 @@ class Expression(FieldBase):
         self.lhs = lhs
         self.op = op
         self.rhs = rhs
+        self.__value = ""
+        if op in "+-*/|&~" and lhs._value:
+            cal = f"{lhs._value}{op}"
+            if isinstance(rhs, FieldBase):
+                self.__value = str(eval(f"{cal}{rhs._value}"))
+            else:
+                self.__value = str(eval(f"{cal}{rhs}"))
 
     def sql(self):
         l = self.lhs
@@ -227,17 +234,19 @@ class Expression(FieldBase):
         return "".join(q), p
         # return f"({l.full_name if isinstance(l,Field) else l.sql()} {self.op} {r.full_name if isinstance(r,Field) else (r.sql() if isinstance(r,FieldBase) else str(r))})"
 
-    def __str__(self):
-        cal = f"{self.lhs._value}{self.op}"
-        if isinstance(self.rhs, FieldBase):
-            return str(eval(f"{cal}{self.rhs._value}"))
-        return str(eval(f"{cal}{self.rhs}"))
+    # def __str__(self):
+    #     return self.__value
+    #     cal = f"{self.lhs._value}{self.op}"
+    #     if isinstance(self.rhs, FieldBase):
+    #         return str(eval(f"{cal}{self.rhs._value}"))
+    #     return str(eval(f"{cal}{self.rhs}"))
 
     def __repr__(self):
-        cal = f"{self.lhs._value}{self.op}"
-        if isinstance(self.rhs, FieldBase):
-            return str(eval(f"{cal}{self.rhs._value}"))
-        return str(eval(f"{cal}{self.rhs}"))
+        return self.__value
+        # cal = f"{self.lhs.get_value()}{self.op}"
+        # if isinstance(self.rhs, FieldBase):
+        #     return str(eval(f"{cal}{self.rhs.get_value()}"))
+        # return str(eval(f"{cal}{self.rhs}"))
 
 
 class Field(FieldBase):
