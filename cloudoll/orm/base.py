@@ -40,8 +40,9 @@ class MeteBase:
         cursor = self.cursor
         if cursor:
             await cursor.close()
-        if self.pool:
-            self.pool.release(self.conn)
+            self.conn.close()
+        # if self.pool:
+            # self.pool.release(self.conn)
 
     async def query(self, sql, params=None):
         sql = sql.replace("?", "%s")
