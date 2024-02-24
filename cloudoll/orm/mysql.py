@@ -26,9 +26,11 @@ __author__ = "chuchur/chuchur.com"
 
 from aiomysql import create_pool, DictCursor
 from aiomysql.pool import Pool
-from aiomysql.cursors import Cursor
-from aiomysql.connection import Connection
-from cloudoll.logging import error,  warning
+
+# from aiomysql.cursors import Cursor
+# from aiomysql.connection import Connection
+from cloudoll.logging import error, warning
+
 # from inspect import isclass, isfunction
 from .base import MeteBase
 
@@ -50,9 +52,9 @@ class AttrDictCursor(DictCursor):
 class Mysql(MeteBase):
     def __init__(self):
         self.pool: Pool = None
-        self.cursor: Cursor = None
-        self.conn: Connection = None
-        self.__MODELS__ = []
+        # self.cursor: Cursor = None
+        # self.conn: Connection = None
+        # self.__MODELS__ = []
 
     async def create_engine(self, loop=None, **kw):
         try:
@@ -64,7 +66,7 @@ class Mysql(MeteBase):
                 db=kw.get("db"),
                 echo=kw.get("echo", False),
                 charset=kw.get("charset", "utf8"),
-                autocommit=kw.get("autocommit", False),
+                autocommit=False,  # kw.get("autocommit", False),
                 maxsize=kw.get("maxsize", 10),
                 minsize=kw.get("pool_size", 5),
                 cursorclass=AttrDictCursor,

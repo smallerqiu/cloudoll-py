@@ -32,6 +32,8 @@ OP = objdict(
     AS="AS",
     SUM="SUM",
     DATE_FORMAT="DATE_FORMAT",
+    JSON_CONTAINS_OBJECT="JSON_CONTAINS_OBJECT",
+    JSON_CONTAINS_ARRAY="JSON_CONTAINS_ARRAY",
     COUNT="COUNT",
     IS_NOT="IS NOT",
     IS_NOT_NULL="IS NOT NULL",
@@ -109,6 +111,12 @@ class FieldBase:
     def date_format(self, args):
         return Function(self, OP.DATE_FORMAT, args)
 
+    def json_contains_object(self, key, value):
+        return Function(self, OP.JSON_CONTAINS_OBJECT, (key, value))
+
+    def json_contains_array(self, args):
+        return Function(self, OP.JSON_CONTAINS_ARRAY, args)
+
     def contains(self, args):
         return Function(self, OP.CONTAINS, args)
         # return AO(f"contains({self.full_name},?)", args)
@@ -168,16 +176,25 @@ class Function(FieldBase):
         self.rpt = rpt
 
     def sql(self):
+        op = self.op
+        col_name = self.col.full_name
+        is_field = isinstance(self.rpt, Field)
         # todo:
-        if self.op == OP.DATE_FORMAT:
-            fun_key = f",'{self.rpt.replace('%','%%')}'"
-        elif self.rpt:
-            fun_key = f"',' {str(self.rpt)}"
-        else:
-            fun_key = ''
-        return (
-            f"{self.op}({self.col.full_name} {fun_key})"
-        )
+        if op == OP.DATE_FORMAT:
+            return f"{op}({col_name},?)", [self.rpt]
+        elif op == OP.JSON_CONTAINS_OBJECT:
+            _k, _v = self.rpt
+            key = _k.full_name if isinstance(_k, Field) else f"'{_k}'"
+            return f"json_contains({col_name},json_object({key},?))", [_v]
+        elif op == OP.JSON_CONTAINS_ARRAY:
+            if is_field:
+                return (
+                    f"json_contains({col_name},json_array({self.rpt.full_name}))",
+                    None,
+                )
+            return f"json_contains({col_name},json_array(?))", [self.rpt]
+        elif op == OP.COUNT:
+            return f"COUNT({col_name})", None
 
 
 class Expression(FieldBase):
@@ -200,7 +217,7 @@ class Expression(FieldBase):
         p = []
         q = []
         if not is_fun:
-            q.append('(')
+            q.append("(")
         if isinstance(l, Field):
             q.append(l.full_name)
         elif isinstance(l, Expression):
@@ -208,31 +225,38 @@ class Expression(FieldBase):
             q.append(_q)
             p = p + _p
         elif is_fun:
-            q.append(l.sql())
+            _q, _p = l.sql()
+            q.append(_q)
+            if _p:
+                p = p + _p
             # return l.sql()
 
         q.append(f" {self.op} ")
 
         if isinstance(r, Field):
-            q.append(r._value if r._value is not None else r.full_name)
+            if r._value is not None:
+                # _value = r._value if r._value is not None else r.full_name
+                q.append("?")
+                p.append(r._value)
+            else:
+                q.append(r.full_name)
+            # q.append(str(r._value) if r._value is not None else r.full_name)
         elif isinstance(r, FieldBase):
             _q, _p = r.sql()
             q.append(_q)
             p = p + _p
-        elif is_fun or (isinstance(r, str) and (self.op == OP.AND or self.op == OP.OR)):
+        elif self.op == OP.AS:
+            # is_fun or (isinstance(r, str) and (self.op == OP.AND or self.op == OP.OR)):
             q.append(r)
         elif r is not None:
             q.append("?")
-            # if self.op == OP.LIKE:
-            # r = r.replace('%', '%%')
             p.append(r)
         if not is_fun:
-            q.append(')')
+            q.append(")")
         # q.append(")")
         q = [str(num) for num in q]
         # print("".join(q))
         return "".join(q), p
-        # return f"({l.full_name if isinstance(l,Field) else l.sql()} {self.op} {r.full_name if isinstance(r,Field) else (r.sql() if isinstance(r,FieldBase) else str(r))})"
 
     # def __str__(self):
     #     return self.__value

@@ -119,7 +119,7 @@ class Model(dict, metaclass=ModelMetaclass):
     @classmethod
     def use(self, pool=None):
         # model = self()
-        self.__pool__ = pool
+        self.db = pool
         # self['__pool__'] = pool
         return self
 
@@ -130,18 +130,21 @@ class Model(dict, metaclass=ModelMetaclass):
             if isinstance(col, Field):
                 cols.append(col.full_name)
             elif isinstance(col, Function):
-                cols.append(col.sql())
+                q, p = col.sql()
+                cols.append(q)
             elif isinstance(col, Expression):
                 q, p = col.sql()
                 cols.append(q)
+                self._merge_params(self, p)
         self.__cols__ = ",".join(cols) if len(cols) else "*"
         return self
 
     @classmethod
     def join(self, table, *exp):
         ex = reduce(operator.and_, exp)
-        if isinstance(ex, Expression):
+        if isinstance(ex, Expression) or isinstance(ex, Function):
             exp, q = ex.sql()
+            self._merge_params(self, q)
         else:
             exp = ex
         join = f"{table.__table__} ON " + exp
@@ -208,16 +211,20 @@ class Model(dict, metaclass=ModelMetaclass):
             params.append(v)
         return ",".join(keys), params, md
 
+    def _merge_params(self, p):
+        if p is not None:
+            if self.__params__ is not None:
+                p = self.__params__ + p
+            self.__params__ = p
+
     @classmethod
     def _literal(self, op, exp):
         if exp is not None:
             if isinstance(exp, list):
                 return f'{op} {",".join(exp)}'
-            elif isinstance(exp, Expression):
+            elif isinstance(exp, Expression) or isinstance(exp, Function):
                 q, p = exp.sql()
-                if self.__params__ is not None:
-                    p = self.__params__ + p
-                self.__params__ = p
+                self._merge_params(self, p)
                 return f"{op} {q}"
             else:
                 # return exp
@@ -238,32 +245,6 @@ class Model(dict, metaclass=ModelMetaclass):
         # return self._build_sql(self)
 
     @classmethod
-    def test(self):
-        return self.sql()
-
-    @classmethod
-    async def __query(self, sql, args):
-        print(sql, args)
-        try:
-            self._clear()
-            rs = await self.__pool__.query(sql, args)
-        finally:
-            pass
-            # self._clear()
-        return rs
-
-    @classmethod
-    async def one(self):
-        sql = self.sql()
-        self.limit(1)
-        args = self.__params__
-        rs = await self.__query(sql, args)
-        item = await rs.one()
-        if item:
-            return self(**item)
-        return None
-
-    @classmethod
     def limit(self, limit: int):
         self.__limit__ = f"{limit}"
         return self
@@ -274,11 +255,26 @@ class Model(dict, metaclass=ModelMetaclass):
         return self
 
     @classmethod
+    def test(self):
+        return self.sql()
+
+    @classmethod
+    async def one(self):
+        self.limit(1)
+        sql = self.sql()
+        args = self.__params__
+        self._clear()
+        rs = await self.db.one(sql, args)
+        if rs:
+            return self(**rs)
+        return None
+
+    @classmethod
     async def all(self):
         sql = self.sql()
         args = self.__params__
-        rs = await self.__query(sql, args)
-        return await rs.all()
+        self._clear()
+        return await self.db.all(sql, args)
 
     @classmethod
     async def update(self, *args) -> bool:
@@ -302,11 +298,8 @@ class Model(dict, metaclass=ModelMetaclass):
         else:
             raise "Need where or primary key"
 
-        rs = await self.__query(sql, params)
-        result = rs.cursor.rowcount > 0
-        await rs.conn.commit()
-        await rs.release()
-        return result
+        self._clear()
+        return await self.db.update(sql, params)
 
     @classmethod
     async def delete(self) -> bool:
@@ -326,31 +319,23 @@ class Model(dict, metaclass=ModelMetaclass):
             args = [pkv]
         else:
             raise "need where or primary"
-        # return await sa.query(sql, args)
-        rs = await self.__query(sql, args)
-        result = rs.cursor.rowcount > 0
-        await rs.conn.commit()
-        await rs.release()
-        return result
+        self._clear()
+        return await self.db.delete(sql, args)
 
     @classmethod
     async def insert(self, *args):
         table = self.__table__
         keys, params, md = self._get_key_args(args)
         sql = f"insert into `{table}` set {keys}"
-        rs = await self.__query(sql, params)
-        result = rs.cursor.rowcount > 0
-        id = rs.cursor.lastrowid
-        await rs.conn.commit()
-        await rs.release()
-        return result, id
+        self._clear()
+        return await self.db.create(sql, params)
 
     @classmethod
     async def count(self):
         sql = self.sql()
         args = self.__params__
-        rs = await self.__query(sql, args)
-        return await rs.count()
+        self._clear()
+        return await self.db.count(sql, args)
 
 
 class Models(object):

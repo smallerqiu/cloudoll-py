@@ -156,7 +156,6 @@ def _int(num):
 class Application(object):
     def __init__(self):
         self._loop = None
-        self.mysql = None
         self.env = None
         self.app = None
         self._route_table = web.RouteTableDef()
@@ -237,6 +236,7 @@ class Application(object):
         for db in apps.db:
             await apps.db[db].close()
 
+        # close for session
         if "redis" in apps:
             await apps.redis.close()
 
