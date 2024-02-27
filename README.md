@@ -331,20 +331,36 @@ server:
     show_index: true
     append_version: true
     follow_symlinks: true
-mysql:
-  host: 127.0.0.1
-  port: 3306
-  user: root
-  password: abcd
-  db: blog
-  charset: utf8mb4
+database:
+	mysql:
+		host: 127.0.0.1
+		port: 3306
+		user: root
+		password: abcd
+		db: blog
+		charset: utf8mb4
 ```
 
 默认开发会使用默认的`local`作为配置。 启动时 通过 `env` 加载对应的配置。 如 `python3 app.py --env=prod` 会加载 `conf.prod.yaml`
 
+# cli 
 
-# 开发模式
+## 生成模型
+
+从数据库导出 `users` 表模型
+```sh
+cloudoll gen -t users 
+```
+更多参数 :
+- -p (--path) 导出的模型路径
+- -c (--create) 值 model(默认) 生成模型, 值table 建表
+- -t (--table) 要生的模型或要建的表名,以`,`分开, `ALL` 所有表
+- -env (--environment) 读取配置名 ,值 local(默认) / test / prod 
+- -db (--database) 数据库实例名,取决于配置文件,如果有多个数据库
+- -h (--help) 帮助
+
+## 开发调试
 
 ```sh
-adev runserver app.py
+cloudoll start
 ```

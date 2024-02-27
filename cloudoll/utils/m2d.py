@@ -10,9 +10,8 @@ async def create_model(pool, table_name) -> str:
     Create table
     :params table name
     """
-    print(f'create model from {table_name}')
-    rs = await pool.query(f"show full COLUMNS from `{table_name}`")
-    rows = await rs.all()
+    print(f"create model from {table_name}")
+    rows = await pool.all(f"show full COLUMNS from `{table_name}`", None)
     tb = f"\nclass {table_name.capitalize()}(Model):\n\n"
     tb += f"\t__table__ = '{table_name}'\n\n"
     for f in rows:
@@ -24,9 +23,12 @@ async def create_model(pool, table_name) -> str:
             values.append("primary_key=True")
         if fields["charset"]:
             values.append(f"charset='{fields['charset']}'")
-        if fields["max_length"] and column_type != 'tinyint':
+        if fields["max_length"] and column_type != "tinyint":
             values.append(
-                f"max_length=({fields['max_length']})" if ',' in fields['max_length'] else f"max_length={fields['max_length']}")
+                f"max_length=({fields['max_length']})"
+                if "," in fields["max_length"]
+                else f"max_length={fields['max_length']}"
+            )
         if fields["default"]:
             values.append(f"default='{fields['default']}'")
         if fields["auto_increment"]:
@@ -42,7 +44,7 @@ async def create_model(pool, table_name) -> str:
         if "unsigned" in column_type:
             column_type = column_type.replace(" unsigned", "")
             values.append("unsigned=True")
-        name = re.sub(r'\s', '', name)
+        name = re.sub(r"\s", "", name)
         tb += f"\t{name} = models.{ColTypes[column_type].value}Field({', '.join(values)})\n"
     tb += "\n"
     return tb
@@ -58,8 +60,7 @@ async def create_models(pool, save_path: str = None, tables: list = None):
         tbs = tables
     else:
         # SELECT table_name,table_type,data_length FROM information_schema.tables WHERE table_schema = 'db'
-        rs = await pool.query("show tables")
-        result = await rs.all()
+        result = await pool.all("show tables", None)
         tbs = [list(c.values())[0] for c in result]
     content = ""
     import_line = "from cloudoll.orm.model import models, Model\n\n"
@@ -68,12 +69,12 @@ async def create_models(pool, save_path: str = None, tables: list = None):
     if save_path:
         first_append = True
         if os.path.exists(save_path):
-            with open(save_path, 'r', encoding="utf-8")as f:
+            with open(save_path, "r", encoding="utf-8") as f:
                 t = f.readlines(5)
                 first_append = import_line not in t
         with open(save_path, "a", encoding="utf-8") as f:
             if first_append:
-                content = import_line+content
+                content = import_line + content
             f.write(content)
     else:
         return content
@@ -82,15 +83,15 @@ async def create_models(pool, save_path: str = None, tables: list = None):
 async def create_table(pool, models: list, tables: list = None):
     for model in models:
         # print(table.__name__)
-        if model.__name__ == 'Model':
+        if model.__name__ == "Model":
             continue
         tb = model.__table__
 
         if tables and tb not in tables:
             continue
 
-        if tb.startswith('v_'):
-            warning(f'{tb} look like a view so skip.')
+        if tb.startswith("v_"):
+            warning(f"{tb} look like a view so skip.")
             continue
 
         # sql = f"DROP TABLE IF EXISTS `{tb}`;\n"
@@ -108,8 +109,7 @@ async def create_table(pool, models: list, tables: list = None):
 
         info(f"create table {tb} ...\n\n")
         # print(sql)
-        rs = await pool.query(sql, None)
-        await rs.release()
+        await pool.query(sql, None)
 
 
 async def create_tables(pool, model_name: str = None, tables: list = None):
@@ -129,8 +129,7 @@ async def create_tables(pool, model_name: str = None, tables: list = None):
     # 执行模块并加载其内容
     module_spec.loader.exec_module(module)
     # 获取模块中的所有实体
-    module_classes = [cls for cls in vars(
-        module).values() if isinstance(cls, type)]
+    module_classes = [cls for cls in vars(module).values() if isinstance(cls, type)]
 
     # print(module_classes)
     await create_table(pool, models=module_classes, tables=tables)
@@ -164,8 +163,11 @@ def get_col_sql(field):
     sql = f"`{field.name}` {field.column_type}"
 
     if field.max_length:
-        sql += f"{field.max_length}" if isinstance(
-            field.max_length, tuple) else f'({field.max_length})'
+        sql += (
+            f"{field.max_length}"
+            if isinstance(field.max_length, tuple)
+            else f"({field.max_length})"
+        )
 
     if field.charset:
         # _ci 不区分大小写 _cs Yes
@@ -178,14 +180,16 @@ def get_col_sql(field):
     if field.NOT_NULL:
         sql += " NOT NULL"
     if field.default:
-        sql += (" DEFAULT " +
-                (field.default if '(' in field.default else f"'{field.default}'"))
+        sql += " DEFAULT " + (
+            field.default if "(" in field.default else f"'{field.default}'"
+        )
     # else:
-        # sql += " DEFAULT NULL"
+    # sql += " DEFAULT NULL"
     print(field.name, field.update_generated)
     if field.update_generated:
-        sql += " ON UPDATE " + \
-            (field.default if '(' in field.default else f"'{field.default}'")
+        sql += " ON UPDATE " + (
+            field.default if "(" in field.default else f"'{field.default}'"
+        )
     if field.comment:
         sql += f" COMMENT '{field.comment}'"
 

@@ -310,7 +310,8 @@ class Field(FieldBase):
         return str(self._value)
         # "<%s, %s:%s>" % (self.__class__.__name__, self.column_type, self.name)
         # return self.name
-
+    def __repr__(self):
+        return str(self._value)
     # def __getattr__(self, item):
     #     return self[item]
 
@@ -319,3 +320,4 @@ class Field(FieldBase):
 
     def get_value(self):
         return self._value
+    

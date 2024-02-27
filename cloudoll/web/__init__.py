@@ -18,9 +18,9 @@ from urllib import parse
 import aiomcache
 from redis import asyncio as aioredis
 from aiohttp import web
-from aiohttp.web import Response as Response
-from aiohttp.web_exceptions import *
-from aiohttp.web_ws import WebSocketResponse as WebSocket, WSMsgType
+from aiohttp.web import Response
+from aiohttp.web_ws import WebSocketResponse, StreamResponse, WSMsgType
+from aiohttp.web_response import LooseHeaders
 from aiohttp_session import (
     get_session,
     setup,
@@ -38,6 +38,24 @@ from . import jwt
 from decimal import Decimal
 from datetime import datetime, date
 from ..utils.common import chainMap, Object
+
+from typing import Optional, Iterable
+
+__ALL__ = (
+    "app",
+    "WebSocket",
+    "Response",
+    "WebStream",
+    "WSMsgType",
+    "get",
+    "put",
+    "delete",
+    "render_json",
+    "middleware",
+    "render_view",
+    "redirect",
+    "jwt",
+)
 
 
 class _Handler(object):
@@ -78,7 +96,9 @@ class _Handler(object):
         try:
             if isinstance(result, Response):
                 return result
-            if isinstance(result, WebSocket):
+            if isinstance(result, StreamResponse):
+                return result
+            if isinstance(result, WebSocketResponse):  # maybe catch error
                 return result
             if "content_type" in result and "text/html" in result["content_type"]:
                 return result
@@ -440,6 +460,42 @@ class JsonEncoder(json.JSONEncoder):
             return list(obj)
         else:
             return super(JsonEncoder, self).default(obj)
+
+
+async def WebSocket(
+    request,
+    timeout: float = 10.0,
+    receive_timeout: Optional[float] = None,
+    autoclose: bool = True,
+    autoping: bool = True,
+    heartbeat: Optional[float] = None,
+    protocols: Iterable[str] = (),
+    compress: bool = True,
+    max_msg_size: int = 4 * 1024 * 1024,
+) -> WebSocketResponse:
+    ws = WebSocketResponse(
+        timeout=timeout,
+        receive_timeout=receive_timeout,
+        autoclose=autoclose,
+        autoping=autoping,
+        heartbeat=heartbeat,
+        protocols=protocols,
+        compress=compress,
+        max_msg_size=max_msg_size,
+    )
+    await ws.prepare(request)
+    return ws
+
+
+async def WebStream(
+    request,
+    status: int = 200,
+    reason: Optional[str] = None,
+    headers: Optional[LooseHeaders] = None,
+):
+    stream = StreamResponse(status=status, reason=reason, headers=headers)
+    await stream.prepare(request)
+    return stream
 
 
 def get(path: str, name=None):
