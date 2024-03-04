@@ -28,6 +28,7 @@ __author__ = "chuchur/chuchur.com"
 from aiopg import create_pool, Pool, Cursor, Connection
 from ..logging import error
 from .base import MeteBase
+from typing import Any
 
 
 class Postgres(MeteBase):
@@ -35,19 +36,24 @@ class Postgres(MeteBase):
         self.pool: Pool = None
         self.cursor: Cursor = None
         self.conn: Connection = None
-        self.__MODELS__ = []
+        # self.__MODELS__ = []
 
-    async def create_engine(self, loop=None, **kw):
+    def __call__(cls, *args: Any, **kwds: Any) -> Any:
+        cls.__init__(*args, **kwds)
+        return cls()
+
+    @classmethod
+    async def create_engine(self, **kw):
         try:
-            host = kw.get("host", "localhost"),
-            port = kw.get("port", 5432),
-            user = kw.get("user"),
-            password = str(kw.get("password", "")),
-            db = kw.get("db"),
-            dsn = f'dbname={db[0]} user={user[0]} password={password[0]} host={host[0]} port={port[0]}'
+            host = (kw.get("host", "localhost"),)
+            port = (kw.get("port", 5432),)
+            user = (kw.get("user"),)
+            password = (str(kw.get("password", "")),)
+            db = (kw.get("db"),)
+            dsn = f"dbname={db[0]} user={user[0]} password={password[0]} host={host[0]} port={port[0]}"
             self.pool = await create_pool(
                 dsn=dsn,
-                timeout=kw.get('timeout'),
+                timeout=kw.get("timeout"),
                 echo=kw.get("echo", False),
                 maxsize=kw.get("maxsize", 10),
                 minsize=kw.get("pool_size", 5),

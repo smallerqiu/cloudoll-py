@@ -1,6 +1,4 @@
-from .model import Model
 from enum import Enum
-import re
 
 
 class QueryTypes(Enum):
@@ -14,9 +12,6 @@ class QueryTypes(Enum):
 
 
 class MeteBase:
-    def use(self, model: Model):
-        model.__pool__ = self.pool
-        return model
 
     async def __aexit__(self):
         await self.close()
@@ -47,67 +42,10 @@ class MeteBase:
     #             if cursor:
     #                 await cursor.close()
     #         self.pool.release(conn)
-
-    # async def release(self):
-    #     cursor = self.cursor
-    #     if cursor:
-    #         await cursor.close()
-    #         # self.conn.close()
-    #     if self.pool:
-    #         self.pool.release(self.conn)
-
-    async def query(self, sql, params=None, query_type: QueryTypes = 2, size: int = 10):
-        sql = sql.replace("?", "%s")
-        # if params:
-        #     params = [
-        #         (
-        #             re.sub(r"(%{2,})", "%", x.replace("'", "\\'"))
-        #             if isinstance(x, str)
-        #             else x
-        #         )
-        #         for x in params
-        #     ]
-        print("sql", sql, params)
-        if not self.pool:
-            raise ValueError("must be create_engine first.")
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cursor:
-                # current_cursor = getattr(cur, 'lastrowid', None)
-                # conn = await self.pool.acquire()
-                # cursor = await conn.cursor()
-                # try:
-                await cursor.execute(sql, params)
-
-                # if query_type.value > 4:
-                await conn.commit()
-
-                if query_type == QueryTypes.ALL:
-                    return await cursor.fetchall()
-                elif query_type == QueryTypes.ONE:
-                    return await cursor.fetchone()
-                elif query_type == QueryTypes.MANY:
-                    return await cursor.fetchmany(size)
-                elif query_type == QueryTypes.COUNT:
-                    rs = await cursor.fetchone()
-                    value = 0
-                    for r in rs:
-                        value = rs[r]
-                    return value
-                elif query_type == QueryTypes.CREATE:
-                    result = cursor.rowcount > 0
-                    id = cursor.lastrowid
-                    return result, id
-                elif query_type == QueryTypes.UPDATE:
-                    return cursor.rowcount > 0
-                elif query_type == QueryTypes.DELETE:
-                    return cursor.rowcount > 0
-                # except Exception as e:
-                # error(e)
-                # pass
-                # self.cursor = cursor
-                # self.conn = conn
-                # return self
-
+    async def query(
+        self, sql, params=None, query_type: QueryTypes = 2, size: int = 10
+    ): ...
+   
     async def all(self, sql, params):
         return await self.query(sql, params, QueryTypes.ALL)
 

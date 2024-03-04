@@ -24,6 +24,7 @@ result = await pool.query("sql")
 """
 __author__ = "chuchur/chuchur.com"
 
+from typing import Any
 from aiomysql import create_pool, DictCursor
 from aiomysql.pool import Pool
 
@@ -56,6 +57,11 @@ class Mysql(MeteBase):
         # self.conn: Connection = None
         # self.__MODELS__ = []
 
+    # def __call__(cls, *args: Any, **kwds: Any) -> Any:
+    #     cls.__init__(*args, **kwds)
+    #     return cls()
+
+    # @classmethod
     async def create_engine(self, loop=None, **kw):
         try:
             self.pool = await create_pool(

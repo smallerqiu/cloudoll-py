@@ -43,7 +43,7 @@ class ModelMetaclass(type):
         attrs["__table__"] = table_name
         attrs["__primary_key__"] = primary_key
         attrs["__fields__"] = fields
-        attrs["__poll__"] = None
+        attrs["__pool__"] = None
         attrs["__join__"] = None
         attrs["__where__"] = None
         attrs["__having__"] = None
@@ -73,7 +73,7 @@ class Model(metaclass=ModelMetaclass):
             if isinstance(f, Field):
                 if v is None:
                     v = f.default
-                f.set_value(v)
+                f.value = v
             else:
                 setattr(self, k, v)
 
@@ -85,6 +85,15 @@ class Model(metaclass=ModelMetaclass):
     def __repr__(self):
         return "<Model: %s>" % self.__class__.__name__
 
+    @property
+    def __dict__(self):
+        fields = self.__fields__
+        _dict = {}
+        for key in fields:
+            f = getattr(self, key)
+            _dict[key] = f.value
+        return _dict
+
     # class to fun for cls(**)
     def __call__(self, **kw):
         self.__init__(**kw)
@@ -92,78 +101,35 @@ class Model(metaclass=ModelMetaclass):
         return self
 
     def __getitem__(self, name):
-        return self.__getattribute__(name)
+        return getattr(self, name)
 
-    # .['x']
+    # # .['x']
     def __setitem__(self, name, value):
-        # self[key] = value
-        # print(f"{name}----{value}---")
-        # f = getattr(self, key)
+        setattr(self, name, value)
+
+    def __setattr__(self, name, value):
         if hasattr(self, name):
             f = getattr(self, name)
             if isinstance(f, Field):
-                f.set_value(value)
+                f.value = value
+            else:
+                super().__setattr__(name, value)
         else:
-            setattr(self, name, value)
-            # super().__setattr__(name, value)
-
-    # .x
-    def __getattribute__(self, __name: str):
-        f = super().__getattribute__(__name)
-        if isinstance(f, Field):
-            return f.get_value()
-        else:
-            return f
+            super().__setattr__(name, value)
 
     # for get
     def get(self, k, d=None):
-        value = self.__getattribute__(k)
-        return value or d
-
-    # for in .
-    # def __iter__(self):
-    #     self.keys = iter(self.__fields__)
-    #     return self
-
-    # def __next__(self):
-    #     try:
-    #         key = next(self.keys)
-    #         return key, self.__fields__[key]
-    #     except StopIteration:
-    #         raise StopIteration
-    # def __getattr__(self, name):
-    #     if name in self.__fields__:
-    #         f = super().__getattribute__(name)
-    #         if isinstance(f, Field):
-    #             return f.get_value(name)
-    #     else:
-    #         # raise AttributeError(f"'Model' object has no attribute '{name}'")
-    #         return super().__getattribute__(name)
-
-    #         return super().__
-
-    # def __setattr__(self, name, value):
-    #     # getattr(self, key, None).set_value(value)
-    #     # self[key] = value
-    #     field = getattr(self, name, None)
-    #     if isinstance(field, Field):
-    #         field.set_value(name, value)
-    #     else:
-    #         super().__setattr__(name, value)
-    #         # self[name] = value
-
-    # def _get_value(self, key):
-    #     return getattr(self, key, None)
-
-    # def _set_value(self, key, value):
-    # return getattr(self, key, None).set_value(value)
+        f = getattr(self, k)
+        if isinstance(f, Field):
+            return f.value or d
+        return f or d
 
     def _get_primary(self):
         pk = self.__primary_key__
-        pkv = self.__getattr__(self, pk)
+        pkv = getattr(self, pk)
         return pk, pkv
 
-    def _clear(self):
+    def _reset(self):
         self.__join__ = None
         self.__where__ = None
         self.__having__ = None
@@ -177,13 +143,14 @@ class Model(metaclass=ModelMetaclass):
     @classmethod
     def use(cls, pool=None):
         cls.__pool__ = pool
-        return cls()
+        return cls()  # () if isinstance(cls, type) else cls
 
     def select(cls, *args):
         cols = []
+        is_pg = cls.__pool__.driver == "postgres"
         for col in args:
             if isinstance(col, Field):
-                cols.append(col.full_name)
+                cols.append(col.name if is_pg else col.full_name)
             elif isinstance(col, Function):
                 q, p = col.sql()
                 cols.append(q)
@@ -208,45 +175,47 @@ class Model(metaclass=ModelMetaclass):
             cls.__join__ += join
         return cls
 
-    def where(cls, *exp):
-        if cls.__where__ is not None:
-            exp = (cls.__where__,) + exp
-        cls.__where__ = reduce(operator.and_, exp)
-        return cls
+    def where(self, *exp):
+        if self.__where__ is not None:
+            exp = (self.__where__,) + exp
+        self.__where__ = reduce(operator.and_, exp)
+        return self
 
-    def having(cls, *exp):
-        if cls.__having__ is not None:
-            exp = (cls.__having__,) + exp
-        cls.__having__ = reduce(operator.and_, exp)
-        return cls
+    def having(self, *exp):
+        if self.__having__ is not None:
+            exp = (self.__having__,) + exp
+        self.__having__ = reduce(operator.and_, exp)
+        return self
 
-    def order_by(cls, *args):
+    def order_by(self, *args):
         by = []
+        is_pg = self.__pool__.driver == "postgres"
         for f in args:
             if isinstance(f, str):
                 by.append(f)
             else:
-                by.append(f"{f.lhs.full_name} {f.op}")
-        if cls.__order_by__ is not None:
-            by = cls.__order_by__ + by
-        cls.__order_by__ = by
-        return cls
+                by.append(f"{f.lhs.name if is_pg else f.lhs.full_name} {f.op}")
+        if self.__order_by__ is not None:
+            by = self.__order_by__ + by
+        self.__order_by__ = by
+        return self
 
-    def group_by(cls, *args):
+    def group_by(self, *args):
         by = []
+        is_pg = self.__pool__.driver == "postgres"
         for f in args:
-            by.append(f.full_name)
-        if cls.__group_by__ is not None:
-            by = cls.__group_by__ + by
-        cls.__group_by__ = by
-        return cls
+            by.append(f.name if is_pg else f.full_name)
+        if self.__group_by__ is not None:
+            by = self.__group_by__ + by
+        self.__group_by__ = by
+        return self
 
     def _get_key_args(self, args):
         data = dict()
         md = None
         if args is None or not args:
             for f in self.__fields__:
-                data[f] = self.__getattr__(self, f)
+                data[f] = getattr(self, f).value
         else:
             for item in args:
                 md = item
@@ -255,9 +224,9 @@ class Model(metaclass=ModelMetaclass):
         keys = []
         params = []
         for k, v in data.items():
-            # if v is not None:
-            keys.append("`%s`=?" % k)
-            params.append(v)
+            if v is not None:  # fix sql format %s
+                keys.append("`%s`=?" % k)
+                params.append(v)
         return ",".join(keys), params, md
 
     def _merge_params(self, p):
@@ -290,64 +259,67 @@ class Model(metaclass=ModelMetaclass):
         aft = " ".join([JOIN, WHERE, GROUPBY, HAVING, ORDERBY, LIMIT, OFFSET])
         return f"SELECT {self.__cols__} FROM {self.__table__} {aft}"
 
-    def limit(cls, limit: int):
-        cls.__limit__ = f"{limit}"
-        return cls
+    def limit(self, limit: int):
+        self.__limit__ = f"{limit}"
+        return self
 
-    def offset(cls, offset: int):
-        cls.__offset__ = f"{offset}"
-        return cls
+    def offset(self, offset: int):
+        self.__offset__ = f"{offset}"
+        return self
 
     def test(self):
         return self._sql()
 
-    async def one(cls):
-        cls.limit(1)
-        sql = cls._sql()
-        args = cls.__params__
-        rs = await cls.__pool__.one(sql, args)
+    async def one(self):
+        self.limit(1)
+        sql = self._sql()
+        args = self.__params__
+        rs = await self.__pool__.one(sql, args)
         if rs:
-            return cls(**rs)
+            self._reset()
+            return self(**rs)
+            # return cls(**rs)
         return None
 
-    async def all(cls):
-        sql = cls._sql()
-        args = cls.__params__
-        return await cls.__pool__.all(sql, args)
+    async def all(self):
+        sql = self._sql()
+        args = self.__params__
+        self._reset()
+        return await self.__pool__.all(sql, args)
 
-    async def update(cls, *args) -> bool:
+    async def update(self, *args) -> bool:
         """
         Update data
         """
-        table = cls.__table__
-        where = cls.__where__
+        table = self.__table__
+        where = self.__where__
 
-        keys, params, md = cls._get_key_args(args)
+        keys, params, md = self._get_key_args(args)
 
         sql = f"update `{table}` set {keys}"
 
-        pk, pkv = cls._get_primary()
+        pk, pkv = self._get_primary()
         if where is not None:
             sql += f' where {" and ".join(f for f in where)}'
-            params += cls.__params__
+            params += self.__params__
         elif pkv is not None:
             sql += f" where `{pk}`=?"
             params.append(pkv)
         else:
             raise "Need where or primary key"
 
-        return await cls.__pool__.update(sql, params)
+        return await self.__pool__.update(sql, params)
 
-    async def delete(cls) -> bool:
+    async def delete(self) -> bool:
         """
         Delete data
         """
-        table = cls.__table__
-        where = cls.__where__
-        args = cls.__params__
+        table = self.__table__
+        where = self.__where__
+        args = self.__params__
         sql = f"delete from `{table}`"
 
-        pk, pkv = cls._get_primary()
+        pk, pkv = self._get_primary()
         if where is not None:
             sql += f' where {" and ".join(f for f in where)}'
         elif pkv is not None:
@@ -355,18 +327,22 @@ class Model(metaclass=ModelMetaclass):
             args = [pkv]
         else:
             raise "need where or primary"
-        return await cls.db.delete(sql, args)
+        self._reset()
+        return await self.__pool__.delete(sql, args)
 
-    async def insert(cls, *args):
-        table = cls.__table__
-        keys, params, md = cls._get_key_args(args)
+    async def insert(self, *args):
+        table = self.__table__
+        keys, params, md = self._get_key_args(args)
         sql = f"insert into `{table}` set {keys}"
-        return await cls.__pool__.create(sql, params)
+        self._reset()
+        return await self.__pool__.create(sql, params)
 
-    async def count(cls):
-        cls = copy.deepcopy(cls)
-        JOIN = cls._literal("LEFT JOIN", cls.__join__)
-        WHERE = cls._literal("WHERE", cls.__where__)
+    async def count(self):
+        __where__ = copy.copy(self.__where__)
+        __join__ = copy.copy(self.__join__)
+        cls = copy.deepcopy(self)
+        JOIN = cls._literal("LEFT JOIN", __join__)
+        WHERE = cls._literal("WHERE", __where__)
         aft = " ".join([JOIN, WHERE])
         sql = f"SELECT COUNT(*) FROM {cls.__table__} {aft}"
         args = cls.__params__
@@ -441,6 +417,7 @@ class Models(object):
             not_null=False,
             unsigned=False,
             comment=None,
+            max_length=None,
         ):
             super().__init__(
                 name,
@@ -451,6 +428,7 @@ class Models(object):
                 not_null=not_null,
                 unsigned=unsigned,
                 comment=comment,
+                max_length=max_length,
             )
 
     class BigIntegerField(Field):
@@ -463,6 +441,7 @@ class Models(object):
             not_null=False,
             unsigned=False,
             comment=None,
+            max_length=None,
         ):
             super().__init__(
                 name,
@@ -473,6 +452,7 @@ class Models(object):
                 NOT_NULL=not_null,
                 unsigned=unsigned,
                 comment=comment,
+                max_length=max_length,
             )
 
     class DoubleField(Field):

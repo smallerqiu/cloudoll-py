@@ -15,8 +15,6 @@ import pkgutil
 import sys
 import socket
 from urllib import parse
-import aiomcache
-from redis import asyncio as aioredis
 from aiohttp import web
 from aiohttp.web import Response
 from aiohttp.web_ws import WebSocketResponse, StreamResponse, WSMsgType
@@ -30,15 +28,16 @@ from aiohttp_session import (
 )
 from setuptools import find_packages
 from .settings import get_config
-
+import aiomcache
+from redis import asyncio as aioredis
 from ..logging import warning, info
-from ..orm.mysql import Mysql
-from ..orm.postgres import Postgres
+from ..orm.model import Model
 from . import jwt
 from decimal import Decimal
 from datetime import datetime, date
 from ..utils.common import chainMap, Object
-
+from ..orm import create_engine, parse_coon
+# from ..orm.mysql import Mysql
 from typing import Optional, Iterable
 
 __ALL__ = (
@@ -259,59 +258,48 @@ class Application(object):
         # close for session
         if "redis" in apps:
             await apps.redis.close()
+        if "memcached" in apps:
+            apps.memcached.close()
 
     async def _init_database(self, apps):
         conf_db = self.config.get("database")
         if conf_db:
             # print(conf_db)
             for db_key in conf_db:
-                db_type = conf_db[db_key].get("type", "mysql")
-
-                if db_type == "mysql":
-                    apps.db[db_key] = await Mysql().create_engine(**conf_db[db_key])
-                elif db_type == "postgres":
-                    apps.db[db_key] = await Postgres().create_engine(**conf_db[db_key])
-                elif db_type == "redis":
-                    apps.db[db_key] = await aioredis.from_url(conf_db[db_key]["url"])
-                else:
-                    TypeError(f"sorry, {db_type} is not supported.")
+                # pass
+                apps.db[db_key] = await create_engine(**conf_db[db_key])
+                
+                # db_type = conf_db[db_key].get("type", "mysql")
+                # if db_type == 'mysql':
+                #     apps.db[db_key] = await Mysql().create_engine(**conf_db[db_key])
+                # # elif db_type == "postgres":
+                #     # apps.db[db_key] = await create_engine(**conf_db[db_key])
+                # elif db_type == "redis":
+                #     apps.db[db_key] = await aioredis.from_url(conf_db[db_key])
+                # else:
+                #     TypeError(f"sorry, {db_type} is not supported.")
 
     async def _init_session(self, apps):
         config = self.config or {}
         sess = config.get("session", {})
+
         max_age = sess.get("max_age")
         httponly = sess.get("httponly")
-        session_key = sess.get("key", "CLOUDOLL_SESSION")
+        cookie_name = sess.get("key", "CLOUDOLL_SESSION")
+        secure = sess.get("secure")
 
         # redis
-
         redis_conf = sess.get("redis")
         mcache_conf = sess.get("memcached")
 
         if redis_conf:
             redis_url = redis_conf.get("url")
+            qs = {}
             if not redis_url:
-                protocol = redis_conf.get("protocol", "redis")
-                host = redis_conf.get("host")
-                port = redis_conf.get("port", 6379)
-                username = redis_conf.get("username")
-                password = redis_conf.get("password")
-                db = redis_conf.get("db", 0)
-                path = redis_conf.get("path")
-                if not path:
-                    path = f"{host}:{port}/{db}"
-                else:
-                    path = f"{path}?db={db}"
-                if password and username:
-                    path = f"{username}:{password}@{path}"
-                redis_url = f"{protocol}://{path}"
+                cfg, qs = parse_coon(redis_url)
+                redis_url = f"{cfg['type']}://{cfg['username']}:{cfg['password']}@{cfg['host']}:{cfg['port']}/{cfg['db']}"
 
-            max_age = redis_conf.get("max_age")
-            secure = redis_conf.get("secure")
-            httponly = redis_conf.get("httponly")
-            cookie_name = redis_conf.get("key", session_key)
-
-            redis = await aioredis.from_url(redis_url)
+            redis = await aioredis.from_url(redis_url, **qs)
             apps.redis = redis
             storage = redis_storage.RedisStorage(
                 redis,
@@ -324,10 +312,7 @@ class Application(object):
         elif mcache_conf:
             host = mcache_conf.get("host")
             port = mcache_conf.get("port", 11211)
-            max_age = mcache_conf.get("max_age")
-            secure = mcache_conf.get("secure")
-            httponly = mcache_conf.get("httponly")
-            cookie_name = mcache_conf.get("key", session_key)
+
             mc = aiomcache.Client(host, port)
             apps.memcached = mc
             storage = memcached_storage.MemcachedStorage(
@@ -339,7 +324,7 @@ class Application(object):
             )
             setup(apps, storage)
         else:
-            dig = hashlib.sha256(session_key.encode()).digest()
+            dig = hashlib.sha256(cookie_name.encode()).digest()
             fernet_key = base64.urlsafe_b64encode(dig)
             secret_key = base64.urlsafe_b64decode(fernet_key)
 
@@ -348,7 +333,7 @@ class Application(object):
 
             storage = cookie_storage.EncryptedCookieStorage(
                 secret_key,
-                cookie_name=session_key,
+                cookie_name=cookie_name,
                 max_age=_int(max_age),
                 httponly=httponly,
             )
@@ -458,6 +443,8 @@ class JsonEncoder(json.JSONEncoder):
             return str(obj)
         elif isinstance(obj, set):
             return list(obj)
+        elif isinstance(obj, Model):
+            return obj.__dict__
         else:
             return super(JsonEncoder, self).default(obj)
 

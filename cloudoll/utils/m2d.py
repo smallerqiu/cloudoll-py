@@ -5,17 +5,28 @@ from ..logging import info, warning
 import importlib
 
 
+def snake_to_camel(snake_str):
+    components = snake_str.split('_')
+    # camel_str = components[0] + ''.join(x.title() for x in components[1:])
+    # x.capitalize() //first
+    # x.title() //all
+    # return camel_str[0].upper() + camel_str[1:]
+    return ''.join(x.title() for x in components[0:])
+
+
 async def create_model(pool, table_name) -> str:
     """
     Create table
     :params table name
     """
     print(f"create model from {table_name}")
-    rows = await pool.all(f"show full COLUMNS from `{table_name}`", None)
-    tb = f"\nclass {table_name.capitalize()}(Model):\n\n"
+    # rows = await pool.all(f"show full COLUMNS from `{table_name}`", None)
+    rows = await get_table_cols(pool, table_name)
+    # print(rows)
+    tb = f"\nclass {snake_to_camel(table_name)}(Model):\n\n"
     tb += f"\t__table__ = '{table_name}'\n\n"
     for f in rows:
-        fields = get_col(f)
+        fields = get_col(f, pool.driver)
         name = fields["name"]
         column_type = fields["column_type"]
         values = []
@@ -26,7 +37,7 @@ async def create_model(pool, table_name) -> str:
         if fields["max_length"] and column_type != "tinyint":
             values.append(
                 f"max_length=({fields['max_length']})"
-                if "," in fields["max_length"]
+                if isinstance(fields["max_length"], str) and "," in fields["max_length"]
                 else f"max_length={fields['max_length']}"
             )
         if fields["default"]:
@@ -50,6 +61,37 @@ async def create_model(pool, table_name) -> str:
     return tb
 
 
+async def get_table_cols(pool, table_name):
+    if pool.driver == "mysql":
+        return await pool.all(f"show full COLUMNS from `{table_name}`", None)
+    elif pool.driver == "postgres":
+        sql = f"""SELECT column_name Field, 
+            column_default Default,
+            data_type column_type, 
+            is_nullable Null,
+            numeric_precision num_length,
+            character_maximum_length str_length,
+            datetime_precision date_length,
+            col_description('{table_name}'::regclass, ordinal_position) Comment
+            FROM information_schema.columns WHERE table_name ='{table_name}'"""
+        return await pool.all(sql, None)
+    else:
+        raise ValueError("Database not support.")
+
+
+async def get_all_tables(pool):
+    if pool.driver == "mysql":
+        return await pool.all("show tables", None)
+    elif pool.driver == "postgres":
+        return await pool.all(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'",
+            None,
+        )
+    else:
+        raise ValueError("Database not support.")
+
+
+
 async def create_models(pool, save_path: str = None, tables: list = None):
     """
     Create models
@@ -59,9 +101,9 @@ async def create_models(pool, save_path: str = None, tables: list = None):
     if tables and len(tables) > 0:
         tbs = tables
     else:
-        # SELECT table_name,table_type,data_length FROM information_schema.tables WHERE table_schema = 'db'
-        result = await pool.all("show tables", None)
-        tbs = [list(c.values())[0] for c in result]
+        # result = await pool.all("show tables", None)
+        all_tables = await get_all_tables(pool)
+        tbs = [list(c.values())[0] for c in all_tables]
     content = ""
     import_line = "from cloudoll.orm.model import models, Model\n\n"
     for t in tbs:
@@ -98,7 +140,8 @@ async def create_table(pool, models: list, tables: list = None):
         sql = ""
         sql += f"CREATE TABLE `{tb}` (\n"
 
-        labels = get_filed(model)
+        # labels = get_filed(model)
+        labels = model.__fields__
         sqls = []
         for f in labels:
             lb = getattr(model, f)
@@ -135,28 +178,46 @@ async def create_tables(pool, model_name: str = None, tables: list = None):
     await create_table(pool, models=module_classes, tables=tables)
 
 
-def get_col(field):
-    fields = {
-        "name": field["Field"],
-        "column_type": None,
-        "primary_key": field["Key"] == "PRI",
-        "default": field["Default"],
-        "charset": field["Collation"],
-        "max_length": None,
-        "auto_increment": field["Extra"] == "auto_increment",
-        "NOT_NULL": field["Null"] == "NO",
-        "created_generated": "DEFAULT_GENERATED" == field["Extra"],
-        "update_generated": "on update" in field["Extra"],
-        "comment": field["Comment"],
-    }
-    field_type = field["Type"]
-    t = re.match(r"(\w+)[(](.*?)[)]", field_type)
-    if not t:
-        fields["column_type"] = field_type
-    else:
-        fields["column_type"] = t.groups()[0]
-        fields["max_length"] = t.groups()[1]
-    return fields
+def get_col(field, driver="mysql"):
+    if driver == "mysql":
+        fields = {
+            "name": field["Field"],
+            "column_type": None,
+            "primary_key": field["Key"] == "PRI",
+            "default": field["Default"],
+            "charset": field["Collation"],
+            "max_length": None,
+            "auto_increment": field["Extra"] == "auto_increment",
+            "NOT_NULL": field["Null"] == "NO",
+            "created_generated": "DEFAULT_GENERATED" == field["Extra"],
+            "update_generated": "on update" in field["Extra"],
+            "comment": field["Comment"],
+        }
+        field_type = field["Type"]
+        t = re.match(r"(\w+)[(](.*?)[)]", field_type)
+        if not t:
+            fields["column_type"] = field_type
+        else:
+            fields["column_type"] = t.groups()[0]
+            fields["max_length"] = t.groups()[1]
+        return fields
+    elif driver == "postgres":
+        fields = {
+            "name": field["field"],
+            "column_type": field["column_type"].replace(" ", "_"),
+            "primary_key": False,
+            "default": field["default"],
+            "charset": None,
+            "max_length": field["num_length"]
+            or field["str_length"]
+            or field["date_length"],
+            "auto_increment": None,
+            "NOT_NULL": field["null"] == "NO",
+            "created_generated": None,
+            "update_generated": None,
+            "comment": field["comment"],
+        }
+        return fields
 
 
 def get_col_sql(field):
@@ -222,3 +283,10 @@ class ColTypes(enum.Enum):
     datetime = "Datetime"
     timestamp = "Timestamp"
     json = "Json"
+    # pg
+    timestamp_with_time_zone = "Timestamp"
+    character_varying = "VarChar"
+    integer = "Integer"
+    boolean = "Boolean"
+    
+    

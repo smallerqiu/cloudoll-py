@@ -35,6 +35,7 @@ OP = objdict(
     JSON_CONTAINS_OBJECT="JSON_CONTAINS_OBJECT",
     JSON_CONTAINS_ARRAY="JSON_CONTAINS_ARRAY",
     COUNT="COUNT",
+    COUNT_WHEN="COUNT_WHEN",
     IS_NOT="IS NOT",
     IS_NOT_NULL="IS NOT NULL",
     IS_NULL="IS NULL",
@@ -101,6 +102,9 @@ class FieldBase:
 
     def count(self):
         return Function(self, OP.COUNT)
+
+    def count_when(self, value):
+        return Function(self, OP.COUNT_WHEN, value)
 
     def sum(self):
         return Function(self, OP.SUM)
@@ -195,6 +199,8 @@ class Function(FieldBase):
             return f"json_contains({col_name},json_array(?))", [self.rpt]
         elif op == OP.COUNT:
             return f"COUNT({col_name})", None
+        elif op == OP.COUNT_WHEN:
+            return f"COUNT(CASE WHEN {col_name} = ? THEN 1 END)", [self.rpt]
 
 
 class Expression(FieldBase):
@@ -267,9 +273,9 @@ class Expression(FieldBase):
 
     def __repr__(self):
         # return self.__value
-        cal = f"{self.lhs.get_value()}{self.op}"
+        cal = f"{self.lhs.value}{self.op}"
         if isinstance(self.rhs, FieldBase):
-            return str(eval(f"{cal}{self.rhs.get_value()}"))
+            return str(eval(f"{cal}{self.rhs.value}"))
         return str(eval(f"{cal}{self.rhs}"))
 
 
@@ -310,14 +316,16 @@ class Field(FieldBase):
         return str(self._value)
         # "<%s, %s:%s>" % (self.__class__.__name__, self.column_type, self.name)
         # return self.name
+
     def __repr__(self):
         return str(self._value)
+
     # def __getattr__(self, item):
     #     return self[item]
-
-    def set_value(self, value):
-        self._value = value
-
-    def get_value(self):
+    @property
+    def value(self):
         return self._value
-    
+
+    @value.setter
+    def value(self, value):
+        self._value = value
