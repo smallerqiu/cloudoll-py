@@ -37,6 +37,7 @@ from decimal import Decimal
 from datetime import datetime, date
 from ..utils.common import chainMap, Object
 from ..orm import create_engine, parse_coon
+
 # from ..orm.mysql import Mysql
 from typing import Optional, Iterable
 
@@ -251,33 +252,30 @@ class Application(object):
 
         return self
 
+    async def release(self):
+        try:
+            await self._close_database(self.app)
+        except:
+            pass
+
     async def _close_database(self, apps):
         for db in apps.db:
+            print(f"release database {db}.")
             await apps.db[db].close()
 
         # close for session
         if "redis" in apps:
+            print(f"release redis session.")
             await apps.redis.close()
         if "memcached" in apps:
+            print(f"release memcached session")
             apps.memcached.close()
 
     async def _init_database(self, apps):
         conf_db = self.config.get("database")
         if conf_db:
-            # print(conf_db)
             for db_key in conf_db:
-                # pass
                 apps.db[db_key] = await create_engine(**conf_db[db_key])
-                
-                # db_type = conf_db[db_key].get("type", "mysql")
-                # if db_type == 'mysql':
-                #     apps.db[db_key] = await Mysql().create_engine(**conf_db[db_key])
-                # # elif db_type == "postgres":
-                #     # apps.db[db_key] = await create_engine(**conf_db[db_key])
-                # elif db_type == "redis":
-                #     apps.db[db_key] = await aioredis.from_url(conf_db[db_key])
-                # else:
-                #     TypeError(f"sorry, {db_type} is not supported.")
 
     async def _init_session(self, apps):
         config = self.config or {}
@@ -309,6 +307,7 @@ class Application(object):
                 secure=secure,
             )
             setup(apps, storage)
+            print("start redis session.")
         elif mcache_conf:
             host = mcache_conf.get("host")
             port = mcache_conf.get("port", 11211)
@@ -323,6 +322,7 @@ class Application(object):
                 secure=secure,
             )
             setup(apps, storage)
+            print("start memcached session.")
         else:
             dig = hashlib.sha256(cookie_name.encode()).digest()
             fernet_key = base64.urlsafe_b64encode(dig)
@@ -338,6 +338,7 @@ class Application(object):
                 httponly=httponly,
             )
             setup(apps, storage)
+            print("start local cookie.")
 
     def _reg_router(self):
         fd = "controllers"

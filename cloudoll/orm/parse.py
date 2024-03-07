@@ -24,7 +24,7 @@ def parse_coon(url: str):
                 )?
                 (?::(?P<port>[^/\?]*))?
             )?
-            (?:/(?P<database>[^\?]*))?
+            (?:/(?P<db>[^\?]*))?
             (?:\?(?P<query>.*))?
             """,
         re.X,

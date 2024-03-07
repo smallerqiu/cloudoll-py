@@ -3,7 +3,7 @@ from .parse import parse_coon
 import aiopg, aiomysql
 from .base import MeteBase, QueryTypes
 from typing import Any
-from ..logging import error
+from ..logging import error, print_info
 import traceback
 
 
@@ -19,6 +19,8 @@ async def create_engine(**kw):
     else:
         driver = kw.get("type")
         configs = kw
+
+    print_info("DB Config:", configs, query)
 
     if driver == "mysql":
         return await Mysql().create_engine(**configs, **query)

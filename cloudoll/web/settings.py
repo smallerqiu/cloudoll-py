@@ -1,13 +1,13 @@
 import yaml
 import os
-from ..logging import error,info
+from ..logging import error, print_info
 
 
 def get_config(env):
     if env is None:
         return {}
     conf_path = os.path.join(os.path.abspath("."), "config", f"conf.{env}.yaml")
-    info(f'loading config {conf_path}')
+    print_info(f"loading config {conf_path}")
     if not os.path.exists(conf_path):
         error(f"Configuration file does not exist: {conf_path}")
         return {}

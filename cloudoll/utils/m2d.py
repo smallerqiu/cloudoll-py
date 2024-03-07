@@ -1,7 +1,7 @@
 import enum
 import os
 import re
-from ..logging import info, warning
+from ..logging import print_info, warning
 import importlib
 
 
@@ -150,7 +150,7 @@ async def create_table(pool, models: list, tables: list = None):
         sql += ",\n".join(sqls)
         sql += ") ENGINE=InnoDB;"
 
-        info(f"create table {tb} ...\n\n")
+        print_info(f"create table {tb} ...\n\n")
         # print(sql)
         await pool.query(sql, None)
 

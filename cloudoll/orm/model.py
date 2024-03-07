@@ -2,7 +2,7 @@ from .field import Field, Function, Expression
 from ..logging import warning
 from functools import reduce
 import operator
-import copy
+import copy, datetime
 
 
 class ModelMetaclass(type):
@@ -126,8 +126,8 @@ class Model(metaclass=ModelMetaclass):
 
     def _get_primary(self):
         pk = self.__primary_key__
-        pkv = getattr(self, pk)
-        return pk, pkv
+        pkf = getattr(self, pk)
+        return pk, pkf.value
 
     def _reset(self):
         self.__join__ = None
@@ -219,12 +219,23 @@ class Model(metaclass=ModelMetaclass):
         else:
             for item in args:
                 md = item
-                for k in dict(item):
-                    data[k] = item[k]
+                if isinstance(item, Model):
+                    for k in item.__dict__:
+                        data[k] = item[k]
+                else: # for object
+                    for k, v in item.items():
+                        data[k] = v
         keys = []
         params = []
         for k, v in data.items():
-            if v is not None:  # fix sql format %s
+            if isinstance(v, Field):
+                value = v.value or v.default
+                if value is not None:
+                    if "CURRENT_TIMESTAMP" in str(value):
+                        value = datetime.datetime.now()
+                    keys.append("`%s`=?" % k)
+                    params.append(value)
+            elif v is not None:  # fix sql format %s
                 keys.append("`%s`=?" % k)
                 params.append(v)
         return ",".join(keys), params, md

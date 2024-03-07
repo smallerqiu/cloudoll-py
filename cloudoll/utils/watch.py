@@ -49,6 +49,7 @@ class WatchTask:
             if self._task.done():
                 self._task.result()
             self._task.cancel()
+        self._app.release()
 
     async def cleanup_ctx(self, app: Application) -> AsyncIterator[None]:
         await self.start(app)
@@ -90,7 +91,7 @@ def mian_app(tty_path, config: Config):
             pass
         # finally:
         #     with contextlib.suppress(asyncio.TimeoutError, KeyboardInterrupt):
-        #         runner.run(App.app.cleanup())
+        #         await App.release()
 
 
 class AppTask(WatchTask):
@@ -134,7 +135,7 @@ class AppTask(WatchTask):
 
     async def _stop_dev_server(self) -> None:
         if self._process.is_alive():
-            debug("stopping server process...")
+            print("stopping server process...")
             if self._process.pid:
                 debug("sending SIGINT")
                 os.kill(self._process.pid, signal.SIGINT)
@@ -144,7 +145,7 @@ class AppTask(WatchTask):
                 self._process.kill()
                 self._process.join(1)
             else:
-                debug("process stopped")
+                print("process stopped")
         else:
             warning(
                 "server process already dead, exit code: %s", self._process.exitcode
