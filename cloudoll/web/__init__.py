@@ -181,7 +181,7 @@ class Application(object):
         self._route_table = web.RouteTableDef()
         self._middleware = []
         self.config = {}
-        # self._args = None
+        # self.args = Object()
 
     def _load_life_cycle(self, entry_model=None):
         try:
@@ -198,21 +198,24 @@ class Application(object):
             warning(f"Entry model:{entry_model} can not find.")
 
     def init_parse(self):
-        parser = argparse.ArgumentParser(description="Cloudapp parse")
+        try:
+            parser = argparse.ArgumentParser(description="Cloudapp parse")
 
-        parser.add_argument("-host", type=str, help="Server Host", required=False)
-        parser.add_argument("-port", type=int, help="Server Port", required=False)
-        parser.add_argument("-env", type=str, help="Environment", required=False)
-        self.args = parser.parse_args()
+            parser.add_argument("-host", type=str, help="Server Host", required=False)
+            parser.add_argument("-port", type=int, help="Server Port", required=False)
+            parser.add_argument("-env", type=str, help="Environment", required=False)
+            self.args = parser.parse_args()
+        except:
+            pass
 
     def create(self, env: str = None, entry_model: str = None):
-        self.init_parse()
+        # self.init_parse()
         loop = asyncio.get_event_loop()
         if loop is None:
             loop = asyncio.new_event_loop()
         self._loop = loop
-        if env is None:
-            env = self.args.env
+        # if env is None:
+            # env = self.args.env
 
         config = get_config(env or "local")
         # print(config)
@@ -371,9 +374,9 @@ class Application(object):
         """
         defaults = {"host": "127.0.0.1", "port": 9001, "path": None}
         conf = self.config.get("server", {})
-        args_conf = {"host": self.args.host, "port": self.args.port}
+        # args_conf = {"host": self.args.host, "port": self.args.port}
         # print(conf)
-        conf = chainMap(defaults, conf, kw, args_conf)
+        conf = chainMap(defaults, conf, kw)
         # print(conf)
         _check_address(conf["host"], conf["port"])
         print(f"Server running on http://{conf['host']}:{conf['port']}")
