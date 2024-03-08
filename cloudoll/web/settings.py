@@ -13,4 +13,4 @@ def get_config(env):
         return {}
     with open(conf_path) as f:
         config = yaml.safe_load(f)
-    return config
+    return config or {}
