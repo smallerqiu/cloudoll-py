@@ -1,16 +1,18 @@
 from typing import AsyncIterator, Iterable, Optional, Tuple, Union
 from pathlib import Path
-from ..web import Application, app
+from ..web import Application, app, check_port_open
 import asyncio
 import os
 import signal
 import sys
+from contextlib import suppress
 from multiprocessing import Process
 from watchfiles import awatch, DefaultFilter
 from ..logging import debug, info, warning, exception
 import contextlib
 from typing import Any, Iterator, Optional, NoReturn
 from typing import TYPE_CHECKING, Optional, Sequence, Union
+from aiohttp import web
 
 
 class CloudollFilter(DefaultFilter):
@@ -32,7 +34,7 @@ class WatchTask:
     async def start(self, app: Application) -> None:
         self._app = app
         self.stopper = asyncio.Event()
-        ignore_dirs = app.config.get("ignore_dirs") or []
+        ignore_dirs = self._config["ignore_dirs"] or []
         self._awatch = awatch(
             self._path,
             stop_event=self.stopper,
@@ -43,13 +45,12 @@ class WatchTask:
     async def _run(self) -> None:
         raise NotImplementedError()
 
-    async def close(self) -> None:
+    async def close(self, *args) -> None:
         if self._task:
             self.stopper.set()
-            if self._task.done():
-                self._task.result()
             self._task.cancel()
-        self._app.release()
+            with suppress(asyncio.CancelledError):
+                await self._task
 
     async def cleanup_ctx(self, app: Application) -> AsyncIterator[None]:
         await self.start(app)
@@ -71,31 +72,58 @@ def set_tty(tty_path: Optional[str]) -> Iterator[None]:
         yield
 
 
-class Config:
-    def __init__(self, host, port, path, env, entry):
-        self.host = host
-        self.port: int = port
-        self.path = path
-        self.env = env
-        self.entry = entry
-
-
-def mian_app(tty_path, config: Config):
+def mian_app(tty_path, config):
     with set_tty(tty_path):
         # app.create(env=config.env).run(**config.__dict__)
         # with asyncio.Runner() as runner:
-        App = app.create(config.env, config.entry)
-        try:
-            App.run(**config.__dict__)
-        except KeyboardInterrupt:
-            pass
+        # App = app.create(config.env, config.entry)
+        # try:
+        #     App.run(**config.__dict__)
+        # except KeyboardInterrupt:
+        #     pass
         # finally:
         #     with contextlib.suppress(asyncio.TimeoutError, KeyboardInterrupt):
-        #         await App.release()
+        #         asyncio.run(App.release())
+
+        if sys.version_info >= (3, 11):
+            with asyncio.Runner() as runner:
+                app_runner = runner.run(create_main_app(config))
+                try:
+                    runner.run(start_main_app(app_runner, config["port"]))
+                    runner.get_loop().run_forever()
+                except KeyboardInterrupt:
+                    pass
+                finally:
+                    with contextlib.suppress(asyncio.TimeoutError, KeyboardInterrupt):
+                        runner.run(app_runner.cleanup())
+        else:
+            loop = asyncio.new_event_loop()
+            runner = loop.run_until_complete(create_main_app(config))
+            try:
+                loop.run_until_complete(start_main_app(runner, config["port"]))
+                loop.run_forever()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                with contextlib.suppress(asyncio.TimeoutError, KeyboardInterrupt):
+                    loop.run_until_complete(runner.cleanup())
+
+
+async def create_main_app(config):
+    await check_port_open(config.port)
+    App = app.create(config.env, config.entry)
+
+    return web.AppRunner(App.app, shutdown_timeout=0.1)
+
+
+async def start_main_app(runner, port):
+    await runner.setup()
+    site = web.TCPSite(runner, host="0.0.0.0", port=port)
+    await site.start()
 
 
 class AppTask(WatchTask):
-    def __init__(self, watch_path: str, config: Config):
+    def __init__(self, watch_path: str, config):
         self._config = config
         self._reloads = 0
         assert watch_path

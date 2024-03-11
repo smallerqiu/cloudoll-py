@@ -1,5 +1,6 @@
 import click
 from .web.settings import get_config
+from .web import app
 from .orm import create_engine
 from .utils.m2d import create_models, create_tables
 import asyncio
@@ -10,10 +11,10 @@ from pathlib import Path
 from . import __version__
 import traceback
 import logging
-from .utils.watch import AppTask, Config
+from .utils.watch import AppTask
 from aiohttp import web
 from .utils.common import chainMap, Object
-
+from .utils.patch_loop import apply
 # import nest_asyncio
 
 # os.chdir(os.path.dirname(os.path.abspath('.')))
@@ -31,30 +32,11 @@ life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "cleanup_ctx"]
 
 
 @cli.command()
-@click.option(
-    "-p",
-    "--path",
-    help="Model's relative path,save models or create tables",
-    default="models.py",
-)
-@click.option(
-    "-c", "--create", help="For create model or table, model / table", default="model"
-)
-@click.option(
-    "-t",
-    "--table",
-    help="Table's name or Model's name, split by `,` or 'ALL'",
-    required=True,
-)
-@click.option(
-    "-env", "--environment", help="Environment, local / test / prod", default="local"
-)
-@click.option(
-    "-db",
-    "--database",
-    help="Database name, pick the database in conf.{env}.yaml",
-    default="mysql",
-)
+@click.option("-p", "--path", help="Model's relative path,save models or create tables", default="models.py",)
+@click.option("-c", "--create", help="For create model or table, model / table", default="model")
+@click.option("-t", "--table", help="Table's name or Model's name, split by `,` or 'ALL'", required=True,)
+@click.option("-env", "--environment", help="Environment, local / test / prod", default="local")
+@click.option("-db", "--database", help="Database name, pick the database in conf.{env}.yaml", default="mysql",)
 def gen(path, create, table, environment, database) -> None:
     """Help to create models or tables."""
 
@@ -100,40 +82,27 @@ def gen(path, create, table, environment, database) -> None:
 
 
 @cli.command()
-@click.option(
-    "-env", "--environment", help="Environment, local / test / prod", default="local"
-)
+@click.option("-env", "--environment", help="Environment, local / test / prod", default="local")
 @click.option("-p", "--port", help="Server's port", default=None)
 @click.option("-h", "--host", help="Server's host", default=None)
-@click.option(
-    "-path",
-    "--path",
-    help="Unix file system path to serve on. Specifying a path will cause hostname and port arguments to be ignored.",
-)
-@click.option(
-    "-m", "--model", help="Entry point model name. delfault name app", default="app"
-)
+@click.option("-path", "--path", help="Unix file system path to serve on. Specifying a path will cause hostname and port arguments to be ignored.",)
+@click.option("-m", "--model", help="Entry point model name. delfault name app", default="app")
 def start(environment, host, port, path, model) -> None:
     """Start a services."""
     try:
-        app = web.Application(
+        aux_app = web.Application(
             logger=None,
         )
+        # server_app = app.create(env=environment,entry_model=)
         config = get_config(environment).get("server", {})
         config = chainMap(config, {"host": host, "port": port, "path": path})
-        config = Object(config)
-        env_config = Config(
-            host=config.host,
-            port=config.port,
-            path=config.path,
-            env=environment,
-            entry=model,
-        )
-        aux_port = int(env_config.port) + 1
-        task = AppTask(Path(".").resolve(), env_config)
-        app.config = config
-        app.cleanup_ctx.append(task.cleanup_ctx)
-        web.run_app(app, access_log=None, host=host, port=aux_port, print=None)
+       
+        aux_port = int(config.port) + 1
+        task = AppTask(Path(".").resolve(), config)
+        # aux_app.config = config
+        aux_app.cleanup_ctx.append(task.cleanup_ctx)
+        web.run_app(aux_app, access_log=None, host=host, port=aux_port,
+                    print=None, shutdown_timeout=0.1)
     except Exception as e:
         error(e)
         print(traceback.format_exc())
