@@ -150,17 +150,19 @@ async def check_port_open(port: int, delay: float = 1) -> None:
     # this approach replicates aiohttp so should always give the same answer
     for i in range(5, 0, -1):
         try:
-            server = await loop.create_server(asyncio.Protocol, host='0.0.0.0', port=port)
+            server = await loop.create_server(
+                asyncio.Protocol, host="0.0.0.0", port=port
+            )
         except OSError as e:
             if e.errno != EADDRINUSE:
                 raise
-            warning('port %d is already in use, waiting %d...', port, i)
+            warning("port %d is already in use, waiting %d...", port, i)
             await asyncio.sleep(delay)
         else:
             server.close()
             await server.wait_closed()
             return
-    raise Exception('The port {} is already is use'.format(port))
+    raise Exception("The port {} is already is use".format(port))
 
 
 def _reg_middleware():
@@ -197,8 +199,7 @@ class Application(object):
                 return
             entry = importlib.import_module(entry_model, ".")
 
-            life_cycle = ["on_startup", "on_shutdown",
-                          "on_cleanup", "cleanup_ctx"]
+            life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "cleanup_ctx"]
             for cycle in life_cycle:
                 if hasattr(entry, cycle):
                     cy = getattr(self, cycle)
@@ -210,17 +211,14 @@ class Application(object):
         try:
             parser = argparse.ArgumentParser(description="Cloudapp parse")
 
-            parser.add_argument("-host", type=str,
-                                help="Server Host", required=False)
-            parser.add_argument("-port", type=int,
-                                help="Server Port", required=False)
-            parser.add_argument(
-                "-env", type=str, help="Environment", required=False)
+            parser.add_argument("-host", type=str, help="Server Host", required=False)
+            parser.add_argument("-port", type=int, help="Server Port", required=False)
+            parser.add_argument("-env", type=str, help="Environment", required=False)
             self.args = parser.parse_args()
         except:
             pass
 
-    def create(self, env: str = None, entry_model: str = None):
+    def create(self, env: str = None, entry_model: str = None, config=None):
         # self.init_parse()
         loop = asyncio.get_event_loop()
         if loop is None:
@@ -228,8 +226,8 @@ class Application(object):
         self._loop = loop
         # if env is None:
         # env = self.args.env
-
-        config = get_config(env or "local")
+        if not config:
+            config = get_config(env or "local")
         # print(config)
         # self._args = args
         self.config = config
@@ -240,8 +238,7 @@ class Application(object):
         conf_server = config.get("server")
         client_max_size = 1024**2 * 2
         if conf_server is not None:
-            client_max_size = conf_server.get(
-                "client_max_size", client_max_size)
+            client_max_size = conf_server.get("client_max_size", client_max_size)
         self.app = web.Application(
             logger=None,
             loop=loop,
@@ -276,8 +273,7 @@ class Application(object):
         if os.path.exists(temp):
             from jinja2 import Environment, FileSystemLoader
 
-            self.env = Environment(
-                loader=FileSystemLoader(temp), autoescape=True)
+            self.env = Environment(loader=FileSystemLoader(temp), autoescape=True)
 
         return self
 

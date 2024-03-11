@@ -34,7 +34,7 @@ class WatchTask:
     async def start(self, app: Application) -> None:
         self._app = app
         self.stopper = asyncio.Event()
-        ignore_dirs = self._config["ignore_dirs"] or []
+        ignore_dirs = self._config["server"]["ignore_dirs"] or []
         self._awatch = awatch(
             self._path,
             stop_event=self.stopper,
@@ -72,24 +72,14 @@ def set_tty(tty_path: Optional[str]) -> Iterator[None]:
         yield
 
 
-def mian_app(tty_path, config):
+def mian_app(tty_path, config, entry):
     with set_tty(tty_path):
-        # app.create(env=config.env).run(**config.__dict__)
-        # with asyncio.Runner() as runner:
-        # App = app.create(config.env, config.entry)
-        # try:
-        #     App.run(**config.__dict__)
-        # except KeyboardInterrupt:
-        #     pass
-        # finally:
-        #     with contextlib.suppress(asyncio.TimeoutError, KeyboardInterrupt):
-        #         asyncio.run(App.release())
 
         if sys.version_info >= (3, 11):
             with asyncio.Runner() as runner:
-                app_runner = runner.run(create_main_app(config))
+                app_runner = runner.run(create_main_app(config, entry))
                 try:
-                    runner.run(start_main_app(app_runner, config["port"]))
+                    runner.run(start_main_app(app_runner, config["server"]["port"]))
                     runner.get_loop().run_forever()
                 except KeyboardInterrupt:
                     pass
@@ -98,9 +88,11 @@ def mian_app(tty_path, config):
                         runner.run(app_runner.cleanup())
         else:
             loop = asyncio.new_event_loop()
-            runner = loop.run_until_complete(create_main_app(config))
+            runner = loop.run_until_complete(create_main_app(config, entry))
             try:
-                loop.run_until_complete(start_main_app(runner, config["port"]))
+                loop.run_until_complete(
+                    start_main_app(runner, config["server"]["port"])
+                )
                 loop.run_forever()
             except KeyboardInterrupt:
                 pass
@@ -109,10 +101,9 @@ def mian_app(tty_path, config):
                     loop.run_until_complete(runner.cleanup())
 
 
-async def create_main_app(config):
-    await check_port_open(config.port)
-    App = app.create(config.env, config.entry)
-
+async def create_main_app(config, entry):
+    await check_port_open(config["server"]["port"])
+    App = app.create(config=config, entry_model=entry)
     return web.AppRunner(App.app, shutdown_timeout=0.1)
 
 
@@ -123,8 +114,9 @@ async def start_main_app(runner, port):
 
 
 class AppTask(WatchTask):
-    def __init__(self, watch_path: str, config):
+    def __init__(self, watch_path: str, config, entry: None):
         self._config = config
+        self._entry = entry
         self._reloads = 0
         assert watch_path
         super().__init__(watch_path)
@@ -158,7 +150,9 @@ class AppTask(WatchTask):
             # on windows, without a windows machine I've no idea what else to do here
             tty_path = None
 
-        self._process = Process(target=mian_app, args=(tty_path, self._config))
+        self._process = Process(
+            target=mian_app, args=(tty_path, self._config, self._entry)
+        )
         self._process.start()
 
     async def _stop_dev_server(self) -> None:

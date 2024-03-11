@@ -13,13 +13,9 @@ import traceback
 import logging
 from .utils.watch import AppTask
 from aiohttp import web
-from .utils.common import chainMap, Object
-from .utils.patch_loop import apply
-# import nest_asyncio
+from .utils.common import chainMap
 
-# os.chdir(os.path.dirname(os.path.abspath('.')))
 sys.path.append(os.path.abspath("."))
-# nest_asyncio.apply()
 
 
 @click.group()
@@ -32,11 +28,11 @@ life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "cleanup_ctx"]
 
 
 @cli.command()
-@click.option("-p", "--path", help="Model's relative path,save models or create tables", default="models.py",)
+@click.option("-p", "--path",help="Model's relative path,save models or create tables",default="models.py",)
 @click.option("-c", "--create", help="For create model or table, model / table", default="model")
-@click.option("-t", "--table", help="Table's name or Model's name, split by `,` or 'ALL'", required=True,)
+@click.option("-t", "--table",help="Table's name or Model's name, split by `,` or 'ALL'",required=True,)
 @click.option("-env", "--environment", help="Environment, local / test / prod", default="local")
-@click.option("-db", "--database", help="Database name, pick the database in conf.{env}.yaml", default="mysql",)
+@click.option("-db", "--database",help="Database name, pick the database in conf.{env}.yaml",default="mysql",)
 def gen(path, create, table, environment, database) -> None:
     """Help to create models or tables."""
 
@@ -85,7 +81,7 @@ def gen(path, create, table, environment, database) -> None:
 @click.option("-env", "--environment", help="Environment, local / test / prod", default="local")
 @click.option("-p", "--port", help="Server's port", default=None)
 @click.option("-h", "--host", help="Server's host", default=None)
-@click.option("-path", "--path", help="Unix file system path to serve on. Specifying a path will cause hostname and port arguments to be ignored.",)
+@click.option("-path", "--path",help="Unix file system path to serve on. Specifying a path will cause hostname and port arguments to be ignored.",)
 @click.option("-m", "--model", help="Entry point model name. delfault name app", default="app")
 def start(environment, host, port, path, model) -> None:
     """Start a services."""
@@ -93,16 +89,22 @@ def start(environment, host, port, path, model) -> None:
         aux_app = web.Application(
             logger=None,
         )
-        # server_app = app.create(env=environment,entry_model=)
-        config = get_config(environment).get("server", {})
-        config = chainMap(config, {"host": host, "port": port, "path": path})
-       
-        aux_port = int(config.port) + 1
-        task = AppTask(Path(".").resolve(), config)
-        # aux_app.config = config
+        config = get_config(environment)
+        server = config.get("server", {})
+        server = chainMap(server, {"host": host, "port": port, "path": path})
+        config["server"] = server
+
+        aux_port = int(server.port) + 1
+        task = AppTask(Path(".").resolve(), config, entry=model)
         aux_app.cleanup_ctx.append(task.cleanup_ctx)
-        web.run_app(aux_app, access_log=None, host=host, port=aux_port,
-                    print=None, shutdown_timeout=0.1)
+        web.run_app(
+            aux_app,
+            access_log=None,
+            host=host,
+            port=aux_port,
+            print=None,
+            shutdown_timeout=0.1,
+        )
     except Exception as e:
         error(e)
         print(traceback.format_exc())
