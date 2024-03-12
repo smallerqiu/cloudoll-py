@@ -14,7 +14,6 @@ import json
 from errno import EADDRINUSE
 import pkgutil
 import sys
-import socket
 from urllib import parse
 from aiohttp import web
 from aiohttp.web import Response
@@ -284,6 +283,10 @@ class Application(object):
             pass
 
     async def _close_database(self, apps):
+        if apps is None or self.clean_up:
+            return
+        self.clean_up = True
+
         for db in apps.db:
             print(f"release database {db}.")
             await apps.db[db].close()
@@ -388,7 +391,7 @@ class Application(object):
         # print(conf)
         conf = chainMap(defaults, conf, kw)
         # print(conf)
-        check_port_open(conf["host"], conf["port"])
+        # check_port_open(conf["host"], conf["port"])
         print(f"Server running on http://{conf['host']}:{conf['port']}")
         print("(Press CTRL+C to quit)")
         web.run_app(
