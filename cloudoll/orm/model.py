@@ -67,6 +67,9 @@ class ModelMetaclass(type):
 
 class Model(metaclass=ModelMetaclass):
     def __init__(self, **kw):
+        for k in self.__fields__:
+            f = getattr(self, k, None)
+            f.value = None
         for k, v in kw.items():
             # print(f"{k}----{v}")
             f = getattr(self, k, None)
@@ -77,7 +80,7 @@ class Model(metaclass=ModelMetaclass):
             else:
                 setattr(self, k, v)
 
-        # super(Model, self).__init__(self, **kw)
+        # super().__init__(self, **kw)
 
     def __str__(self):
         return "<Model: %s>" % self.__class__.__name__
@@ -143,7 +146,7 @@ class Model(metaclass=ModelMetaclass):
     @classmethod
     def use(cls, pool=None):
         cls.__pool__ = pool
-        return cls()  # () if isinstance(cls, type) else cls
+        return cls()
 
     def select(cls, *args):
         cols = []
@@ -215,14 +218,16 @@ class Model(metaclass=ModelMetaclass):
         md = None
         if args is None or not args:
             for f in self.__fields__:
-                data[f] = getattr(self, f).value
+                f = getattr(self, f)
+                x = f.value
+                data[f] = x
         else:
             for item in args:
                 md = item
                 if isinstance(item, Model):
                     for k in item.__dict__:
                         data[k] = item[k]
-                else: # for object
+                else:  # for object
                     for k, v in item.items():
                         data[k] = v
         keys = []

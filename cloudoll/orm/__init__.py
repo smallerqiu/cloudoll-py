@@ -88,7 +88,7 @@ class Postgres(MeteBase):
                     return cursor.rowcount > 0
 
         self.pool.release(conn)
-        
+
     async def create_engine(self, **kw):
         try:
             host = (kw.get("host", "localhost"),)
@@ -172,8 +172,9 @@ class Mysql(MeteBase):
                     return cursor.rowcount > 0
                 elif query_type == QueryTypes.DELETE:
                     return cursor.rowcount > 0
-        
+
         self.pool.release(conn)
+
     async def create_engine(self, loop=None, **kw):
         try:
             self.pool = await aiomysql.create_pool(
