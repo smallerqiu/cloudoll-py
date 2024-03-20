@@ -51,6 +51,7 @@ __ALL__ = (
     "put",
     "delete",
     "render_json",
+    "render_error",
     "middleware",
     "render_view",
     "redirect",
@@ -64,29 +65,29 @@ class _Handler(object):
         self.fn = fn
 
     async def __call__(self, request):
-        c_type = request.content_type
+        content_type = request.content_type
         # 获取函数参数的名称和默认值
         props = inspect.getfullargspec(self.fn)
-        if len(props.args) == 2 and c_type == "multipart/form-data":
+        if len(props.args) == 2 and content_type == "multipart/form-data":
             await _set_session_route(request)
             multipart = await request.multipart()
             field = await multipart.next()
             result = await self.fn(request, field)
         elif len(props.args) == 1:
             await _set_session_route(request)
-            if c_type == "multipart/form-data":
+            if content_type == "multipart/form-data":
                 data = await request.post()
-            elif c_type == "application/json":
+            elif content_type == "application/json":
                 data = await request.json()
             else:
                 data = await request.post()
-            q_s = request.query_string
+            query_string = request.query_string
             body = {}
             for k in data:
                 body[k] = data[k]
             qs = {}
-            if q_s:
-                for k, v in parse.parse_qs(q_s, True).items():
+            if query_string:
+                for k, v in parse.parse_qs(query_string, True).items():
                     qs[k] = v[0]
             request.qs = Object(qs)
             request.body = Object(body)
@@ -536,6 +537,10 @@ def all(path: str):
     return app.route_table.view(path)
 
 
+def render_error(msg, status=500) -> Response:
+    return render_json({"message": msg, "code": status}, status=status)
+
+
 def render_json(data, **kw) -> Response:
     res = {}
     if isinstance(data, list):
@@ -547,6 +552,11 @@ def render_json(data, **kw) -> Response:
         res.update(data)
     else:
         res["data"] = data
+    status = kw.get("status", 200)
+    if status == 200:
+        res["message"] = "OK"
+        res["code"] = 200
+
     res["timestamp"] = int(datetime.now().timestamp() * 1000)
     text = json.dumps(res, ensure_ascii=False, cls=JsonEncoder)
     return web.json_response(text=text, **kw)

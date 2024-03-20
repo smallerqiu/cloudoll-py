@@ -53,7 +53,7 @@ OP = objdict(
 )
 
 
-class FieldBase:
+class FieldBase(object):
     def _op(op, inverse=False):
         def inner(self, rhs):
             if inverse:

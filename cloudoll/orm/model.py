@@ -21,10 +21,12 @@ class ModelMetaclass(type):
         table_name = attrs.get("__table__", None) or name
         primary_key = None
         fields = []
+        # mappings = dict()
         for k, v in attrs.items():
             if isinstance(v, Field):
                 v.name = k
                 v.full_name = f"`{table_name}`.{k}"
+                # mappings[k] = v
                 if v.primary_key:
                     if primary_key:
                         warning(f"Duplicate primary key for {table_name}")
@@ -55,7 +57,6 @@ class ModelMetaclass(type):
         attrs["__offset__"] = None
 
         model = type.__new__(mcs, name, bases, attrs)
-        # sa.__MODELS__.append(model)
         return model
 
     def __repr__(self):
@@ -114,7 +115,9 @@ class Model(metaclass=ModelMetaclass):
         if hasattr(self, name):
             f = getattr(self, name)
             if isinstance(f, Field):
-                f.value = value
+                s = copy.copy(f)
+                s.value = value
+                super().__setattr__(name, s)
             else:
                 super().__setattr__(name, value)
         else:
@@ -314,15 +317,23 @@ class Model(metaclass=ModelMetaclass):
 
         sql = f"update `{table}` set {keys}"
 
-        pk, pkv = self._get_primary()
         if where is not None:
             sql += f' where {" and ".join(f for f in where)}'
             params += self.__params__
-        elif pkv is not None:
-            sql += f" where `{pk}`=?"
-            params.append(pkv)
         else:
-            raise "Need where or primary key"
+            pk, pkv = self._get_primary()
+            if pkv is None:
+                for arg in args:
+                    if isinstance(arg, dict) and pk in arg:
+                        pkv = arg[pk]
+                    elif isinstance(arg, Model):
+                        pkv = arg.get(pk)
+
+            if pkv is not None:
+                sql += f" where `{pk}`=?"
+                params.append(pkv)
+            else:
+                raise "Need where or primary key"
 
         return await self.__pool__.update(sql, params)
 

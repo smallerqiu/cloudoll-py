@@ -74,7 +74,6 @@ def set_tty(tty_path: Optional[str]) -> Iterator[None]:
 
 def mian_app(tty_path, config, entry):
     with set_tty(tty_path):
-
         if sys.version_info >= (3, 11):
             with asyncio.Runner() as runner:
                 app_runner = runner.run(create_main_app(config, entry))
