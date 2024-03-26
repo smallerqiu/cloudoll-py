@@ -5,6 +5,8 @@ from .base import MeteBase, QueryTypes
 from typing import Any
 from ..logging import print_info, print_error
 import traceback
+from aiomysql import Pool as MYPool
+from aiopg.pool import Pool as PGPool
 
 
 async def create_engine(**kw):
@@ -20,7 +22,7 @@ async def create_engine(**kw):
         driver = kw.get("type")
         configs = kw
 
-    print_info("DB Config:", configs, query)
+    # print_info("DB Config:", configs, query)
 
     if driver == "mysql":
         return await Mysql().create_engine(**configs, **query)
@@ -40,7 +42,7 @@ async def create_engine(**kw):
 
 class Postgres(MeteBase):
     def __init__(self, pool=None):
-        self.pool = pool
+        self.pool: PGPool = pool
         self.driver = "postgres"
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
@@ -51,6 +53,8 @@ class Postgres(MeteBase):
         print("sql", sql, params)
         if not self.pool:
             raise ValueError("must be create_engine first.")
+        if self.pool._closing or self.pool._closed:
+            return None
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 # current_cursor = getattr(cursor, 'lastrowid', None)
@@ -131,7 +135,7 @@ class AttrDictCursor(aiomysql.DictCursor):
 
 class Mysql(MeteBase):
     def __init__(self, pool=None):
-        self.pool = pool
+        self.pool: MYPool = pool
         self.driver = "mysql"
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
@@ -143,6 +147,8 @@ class Mysql(MeteBase):
         print("sql", sql, params)
         if not self.pool:
             raise ValueError("must be create_engine first.")
+        if self.pool._closing or self.pool._closed:
+            return None
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 # current_cursor = getattr(cursor, 'lastrowid', None)

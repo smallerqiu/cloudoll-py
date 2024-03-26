@@ -3,7 +3,8 @@
 
 __author__ = "chuchur/chuchur.com"
 
-import hashlib, hmac, time, base64, logging, requests as http
+import hashlib, hmac, time, base64, logging
+from curl_cffi import requests as http
 
 
 class Client(object):

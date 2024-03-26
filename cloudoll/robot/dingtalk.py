@@ -8,7 +8,7 @@ import base64
 import hashlib
 import hmac
 import logging
-import requests as http
+from curl_cffi import requests as http
 import time
 from urllib import parse
 

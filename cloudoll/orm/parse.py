@@ -49,7 +49,7 @@ def parse_coon(url: str):
         query = {}
         if configs["query"] is not None:
 
-            for key, value in parse_qsl(configs["query"]):
+            for key, value in parse_sql(configs["query"]):
                 if key in query:
                     query[key] = to_list(query[key])
                     cast("List[str]", query[key]).append(value)
@@ -72,7 +72,7 @@ def to_list(x: Any, default: Optional[List[Any]] = None) -> List[Any]:
         return list(x)
 
 
-def parse_qsl(
+def parse_sql(
     qs,
     keep_blank_values=False,
     strict_parsing=False,

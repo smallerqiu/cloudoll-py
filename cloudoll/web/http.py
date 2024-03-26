@@ -3,9 +3,10 @@
 
 __author__ = "chuchur/chuchur.com"
 
-import requests
+from curl_cffi import requests
 import time
-from requests import Response
+
+# from requests import Response
 from ..logging import error, info
 
 PROXIES = {
@@ -53,7 +54,7 @@ class Client(object):
         while try_times > 0:
             try:
                 fun = getattr(self.session, method, None)
-                result: Response = fun(url, **kw)
+                result: requests.Response = fun(url, **kw)
                 head = result.headers
                 ctype = head["Content-Type"]
                 if result.status_code == 200:
