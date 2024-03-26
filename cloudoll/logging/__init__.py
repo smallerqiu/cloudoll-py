@@ -19,6 +19,7 @@ __ALL__ = (
     "critical",
     "print_info",
     "print_error",
+    "print_warn",
 )
 _COLORS = {
     # 终端输出日志颜色配置
@@ -40,9 +41,11 @@ class ColorAnsi:
 
 _FORMATS = {
     # 终端输出格式
-    "console_format": "%(log_color)s[%(levelname)s]-%(asctime)s-%(pathname)s-%(module)s-%(funcName)s-[line:%(lineno)d]: %(message)s",
+    # "console_format": "%(log_color)s[%(levelname)s]-%(asctime)s-%(pathname)s-%(module)s-%(funcName)s-[line:%(lineno)d]: %(message)s",
+    "console_format": "%(log_color)s%(asctime)s %(levelname)s %(funcName)s %(message)s",
     # 日志输出格式
-    "log_format": "[%(levelname)s]-%(asctime)s-%(pathname)s-%(module)s-%(funcName)s-[line:%(lineno)d]: %(message)s",
+    # "log_format": "[%(levelname)s]-%(asctime)s-%(pathname)s-%(module)s-%(funcName)s-[line:%(lineno)d]: %(message)s",
+    "log_format": "%(asctime)s %(levelname)s %(funcName)s %(message)s",
 }
 
 _LOG_SIZE = 1024 * 1024 * 1  # 1MB 日志最大1MB
@@ -138,12 +141,23 @@ class HandleLog:
 _handler = None
 
 
-def print_info(*msg, **kw):
-    print(f"{ColorAnsi.GREEN}{msg}{kw}{ColorAnsi.END}")
+def print_format(color_ansi, type, *args):
+    ft = color_ansi + "{}" + ColorAnsi.END
+    timestamp = ft.format(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " " + type)
+    text = " ".join(ft.format(str(arg)) for arg in args)
+    print(timestamp, text)
 
 
-def print_error(*msg, **kw):
-    print(f"{ColorAnsi.RED}{msg}{kw}{ColorAnsi.END}")
+def print_info(*args):
+    print_format(ColorAnsi.GREEN, "INFO", *args)
+
+
+def print_error(*args):
+    print_format(ColorAnsi.RED, "ERROR", *args)
+
+
+def print_warn(*args):
+    print_format(ColorAnsi.YELLOW, "WARN", *args)
 
 
 def _get_handle():

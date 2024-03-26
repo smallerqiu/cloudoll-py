@@ -72,14 +72,7 @@ class Model(metaclass=ModelMetaclass):
             f = getattr(self, k, None)
             f.value = None
         for k, v in kw.items():
-            # print(f"{k}----{v}")
-            f = getattr(self, k, None)
-            if isinstance(f, Field):
-                if v is None:
-                    v = f.default
-                f.value = v
-            else:
-                setattr(self, k, v)
+            self[k] = v
 
         # super().__init__(self, **kw)
 

@@ -3,7 +3,7 @@ from .parse import parse_coon
 import aiopg, aiomysql
 from .base import MeteBase, QueryTypes
 from typing import Any
-from ..logging import error, print_info
+from ..logging import print_info, print_error
 import traceback
 
 
@@ -35,7 +35,7 @@ async def create_engine(**kw):
             url = f"{driver}://{configs['username']}:{configs['password']}@{configs['host']}:{configs['port']}/{configs['db']}"
         return await aioredis.from_url(url, **query)
     else:
-        error("Not suport this database type.")
+        print_error("Not suport this database type.")
 
 
 class Postgres(MeteBase):
@@ -104,11 +104,13 @@ class Postgres(MeteBase):
                 maxsize=kw.get("maxsize", 10),
                 minsize=kw.get("pool_size", 5),
             )
-            print(f"Database connection successfuly for postgres/{kw.get('db')}")
+            print_info(f"Database connection successfuly for postgres/{kw.get('db')}")
         except Exception as e:
-            error(e)
+            # error(e)
             # print(traceback.format_exc())
-            error(f"Database connection failed,the instance : postgres/{kw.get('db')}")
+            print_error(
+                f"Database connection failed,the instance : postgres/{kw.get('db')}"
+            )
 
         return self
 
@@ -191,9 +193,11 @@ class Mysql(MeteBase):
                 cursorclass=AttrDictCursor,
                 loop=loop,
             )
-            print(f"Database connection successfuly for mysql/{kw.get('db')}.")
+            print_info(f"Database connection successfuly for mysql/{kw.get('db')}.")
         except Exception as e:
-            print(e)
+            # print(e)
             # print(traceback.format_exc())
-            error(f"Database connection failed,the instance : mysql/{kw.get('db')}")
+            print_error(
+                f"Database connection failed,the instance : mysql/{kw.get('db')}"
+            )
         return self
