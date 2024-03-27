@@ -1,5 +1,5 @@
 from .field import Field, Function, Expression
-from ..logging import warning
+from ..logging import print_warn
 from functools import reduce
 import operator
 import copy, datetime
@@ -29,13 +29,13 @@ class ModelMetaclass(type):
                 # mappings[k] = v
                 if v.primary_key:
                     if primary_key:
-                        warning(f"Duplicate primary key for {table_name}")
+                        print_warn(f"Duplicate primary key for {table_name}")
                     primary_key = k
                 else:
                     fields.append(k)
 
         if not primary_key:
-            warning(f"{table_name} Missing primary key")
+            print_warn(f"{table_name} Missing primary key")
 
         # for k in mappings.keys():
         #     attrs.pop(k)

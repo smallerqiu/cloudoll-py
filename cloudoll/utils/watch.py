@@ -8,7 +8,7 @@ import sys
 from contextlib import suppress
 from multiprocessing import Process
 from watchfiles import awatch, DefaultFilter
-from ..logging import debug, info, warning, exception
+from ..logging import print_info, print_warn
 import contextlib
 from typing import Any, Iterator, Optional, NoReturn
 from typing import TYPE_CHECKING, Optional, Sequence, Union
@@ -83,7 +83,7 @@ def mian_app(tty_path, config, entry):
                 except KeyboardInterrupt:
                     pass
                 finally:
-                    with contextlib.suppress(asyncio.TimeoutError, KeyboardInterrupt):
+                    with suppress(asyncio.TimeoutError, KeyboardInterrupt):
                         runner.run(app_runner.cleanup())
         else:
             loop = asyncio.new_event_loop()
@@ -96,7 +96,7 @@ def mian_app(tty_path, config, entry):
             except KeyboardInterrupt:
                 pass
             finally:
-                with contextlib.suppress(asyncio.TimeoutError, KeyboardInterrupt):
+                with suppress(asyncio.TimeoutError, KeyboardInterrupt):
                     loop.run_until_complete(runner.cleanup())
 
 
@@ -128,7 +128,7 @@ class AppTask(WatchTask):
             async for changes in self._awatch:
                 self._reloads += 1
                 if any(f.endswith(".py") for _, f in changes):
-                    debug("%d changes, restarting server", len(changes))
+                    print_info(f"{len(changes)} changes, restarting server")
                     await self._stop_dev_server()
                     self._start_dev_server()
                     await asyncio.sleep(1)
@@ -138,7 +138,8 @@ class AppTask(WatchTask):
 
     def _start_dev_server(self) -> None:
         act = "Start" if self._reloads == 0 else "Restart"
-        info(f"{act}ing dev server")
+        print_info(f"{act}ing dev server")
+        print_info(f"Server Running on http://0.0.0.0:{self._config['server']['port']}")
 
         try:
             tty_path = os.ttyname(sys.stdin.fileno())
@@ -156,19 +157,19 @@ class AppTask(WatchTask):
 
     async def _stop_dev_server(self) -> None:
         if self._process.is_alive():
-            print("stopping server process...")
+            print_info("stopping server process...")
             if self._process.pid:
-                debug("sending SIGINT")
+                print_info("sending SIGINT")
                 os.kill(self._process.pid, signal.SIGINT)
             self._process.join(5)
             if self._process.exitcode is None:
-                warning("process has not terminated, sending SIGKILL")
+                print_warn("process has not terminated, sending SIGKILL")
                 self._process.kill()
                 self._process.join(1)
             else:
-                print("process stopped")
+                print_info("process stopped")
         else:
-            warning(
+            print_warn(
                 "server process already dead, exit code: %s", self._process.exitcode
             )
 

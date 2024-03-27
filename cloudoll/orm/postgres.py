@@ -26,7 +26,7 @@ result = await pool.query("sql")
 __author__ = "chuchur/chuchur.com"
 
 from aiopg import create_pool, Pool, Cursor, Connection
-from ..logging import error
+from ..logging import print_error
 from .base import MeteBase
 from typing import Any
 
@@ -59,7 +59,7 @@ class Postgres(MeteBase):
                 minsize=kw.get("pool_size", 5),
             )
         except Exception as e:
-            # error(e)
-            error(f"Database connection failed,the instance : {kw.get('db')}")
+            # print_error(e)
+            print_error(f"Database connection failed,the instance : {kw.get('db')}")
 
         return self

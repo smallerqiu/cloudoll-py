@@ -50,7 +50,7 @@ class Postgres(MeteBase):
 
     async def query(self, sql, params=None, query_type: QueryTypes = 2, size: int = 10):
         sql = sql.replace("?", "%s").replace("`", "")
-        print("sql", sql, params)
+        print_info("sql", sql, params)
         if not self.pool:
             raise ValueError("must be create_engine first.")
         if self.pool._closing or self.pool._closed:
@@ -144,7 +144,7 @@ class Mysql(MeteBase):
 
     async def query(self, sql, params=None, query_type: QueryTypes = 2, size: int = 10):
         sql = sql.replace("?", "%s")
-        print("sql", sql, params)
+        print_info("sql", sql, params)
         if not self.pool:
             raise ValueError("must be create_engine first.")
         if self.pool._closing or self.pool._closed:

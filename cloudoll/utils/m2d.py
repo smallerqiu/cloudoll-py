@@ -1,7 +1,7 @@
 import enum
 import os
 import re
-from ..logging import print_info, warning
+from ..logging import print_info, print_warn
 import importlib
 
 
@@ -19,7 +19,7 @@ async def create_model(pool, table_name) -> str:
     Create table
     :params table name
     """
-    print(f"create model from {table_name}")
+    print_info(f"create model from {table_name}")
     # rows = await pool.all(f"show full COLUMNS from `{table_name}`", None)
     rows = await get_table_cols(pool, table_name)
     # print(rows)
@@ -133,7 +133,7 @@ async def create_table(pool, models: list, tables: list = None):
             continue
 
         if tb.startswith("v_"):
-            warning(f"{tb} look like a view so skip.")
+            print_warn(f"{tb} look like a view so skip.")
             continue
 
         # sql = f"DROP TABLE IF EXISTS `{tb}`;\n"
@@ -246,7 +246,7 @@ def get_col_sql(field):
         )
     # else:
     # sql += " DEFAULT NULL"
-    print(field.name, field.update_generated)
+    # print(field.name, field.update_generated)
     if field.update_generated:
         sql += " ON UPDATE " + (
             field.default if "(" in field.default else f"'{field.default}'"

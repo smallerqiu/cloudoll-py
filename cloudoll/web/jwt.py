@@ -4,7 +4,7 @@
 __author__ = "chuchur/chuchur.com"
 
 import jwt, datetime
-from ..logging import error
+from ..logging import print_error
 from typing import Union
 
 def encode(payload, key, exp: Union[int, str] = 3600)->str:
@@ -36,5 +36,5 @@ def decode(token, key):
             return None
         return payload  # 返回自定义内容
     except Exception as e:
-        error(e)
+        print_error(e)
         return None

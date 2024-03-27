@@ -46,7 +46,7 @@ from email.mime.multipart import MIMEMultipart
 
 from email.utils import parseaddr, formataddr
 import mimetypes
-from ..logging import info, error
+from ..logging import print_info, print_error
 
 
 def _format_addr(s):
@@ -78,10 +78,10 @@ class Client(object):
             password = self._password
             if account is None or password is None:
                 raise KeyError("请设置账号密码")
-            info("登录中...")
+            print_info("登录中...")
             self._server.login(account, password)
         except BaseException as e:
-            error(e)
+            print_error(e)
             raise
 
     def send(self):

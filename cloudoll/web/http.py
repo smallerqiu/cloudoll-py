@@ -7,7 +7,7 @@ from curl_cffi import requests
 import time
 
 # from requests import Response
-from ..logging import error, info
+from ..logging import print_error, print_info
 
 PROXIES = {
     "http": "http://127.0.0.1:7890",
@@ -65,15 +65,15 @@ class Client(object):
                         return result.text
                     return result
                 else:
-                    print(result.json())
-                    error(f"Error : code ->{result.status_code},try gain....")
+                    print_info(result.json())
+                    print_error(f"Error : code ->{result.status_code},try gain....")
                     try_times -= 1
                     time.sleep(2)
             except BaseException as e:
-                error(e)
+                print_error(e)
                 try_times -= 1
                 time.sleep(2)
-                # info(e)
+                # print_info(e)
         return result
 
 
@@ -126,14 +126,14 @@ def download(url, savepath=None, **kw):
     if not savepath:
         return rb.content
     if not rb:
-        error("下载出错")
+        print_error("下载出错")
         return False
     else:
         try:
             with open(savepath, "wb") as f:
                 f.write(rb.content)
-                info("下载完成！")
+                print_info("下载完成！")
         except BaseException as e:
-            error(e)
+            print_error(e)
             return False
     return True

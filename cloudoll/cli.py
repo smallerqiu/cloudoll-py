@@ -6,11 +6,10 @@ from .utils.m2d import create_models, create_tables
 import asyncio
 import os
 import sys
-from .logging import error, print_info
+from .logging import print_error, print_info
 from pathlib import Path
 from . import __version__
 import traceback
-import logging
 from .utils.watch import AppTask
 from aiohttp import web
 from .utils.common import chainMap
@@ -54,7 +53,6 @@ def gen(path, create, table, environment, database) -> None:
             if sa.pool is None:
                 return
             model_path = os.path.join(os.path.abspath("."), path)
-            # print(model_path)
             tables = None
             if table != "ALL":
                 tables = table.split(",")
@@ -68,8 +66,7 @@ def gen(path, create, table, environment, database) -> None:
                 await create_tables(sa, model_path, tables=tables)
 
         except Exception as e:
-            error(e)
-            print(traceback.print_exc())
+            print_error(traceback.print_exc())
             click.echo("input `cloudoll --help` for more helps.")
         finally:
             await sa.close()
@@ -106,9 +103,9 @@ def start(environment, host, port, path, model) -> None:
             shutdown_timeout=0.1,
         )
     except Exception as e:
-        error(e)
-        print(traceback.format_exc())
-        sys.exit(2)
+        # error(e)
+        print_error(traceback.format_exc())
+        sys.exit(0)
 
 
 _project_existing = click.Path(dir_okay=True)
@@ -120,7 +117,7 @@ def create(project_name) -> None:
     full_path = os.path.join(os.path.abspath("."), project_name)
     # log = logging.getLogger('cloudoll.create')
     if os.path.exists(full_path):
-        logging.exception(f"Project name `{project_name}` already exist.")
+        print_error(f"Project name `{project_name}` already exist.")
         # return None
 
 
