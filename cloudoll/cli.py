@@ -76,23 +76,31 @@ def gen(path, create, table, environment, database) -> None:
 
 @cli.command()
 @click.option("-env", "--environment", help="Environment, local / test / prod", default="local")
-@click.option("-p", "--port", help="Server's port", default=None)
-@click.option("-h", "--host", help="Server's host", default=None)
+@click.option("-p", "--port", help="Server's port", default=9001)
+@click.option("-h", "--host", help="Server's host", default='0.0.0.0')
+@click.option("-m", "--mode", help="development or production mode", default='development')
 @click.option("-path", "--path",help="Unix file system path to serve on. Specifying a path will cause hostname and port arguments to be ignored.",)
-@click.option("-m", "--model", help="Entry point model name. delfault name app", default="app")
-def start(environment, host, port, path, model) -> None:
+@click.option("-e", "--entry", help="Entry point model name. delfault name app", default="app")
+def start(environment, host, port, mode, path, entry) -> None:
     """Start a services."""
     try:
+        print_info("Current mode: " ,mode)
+        config = get_config(environment)
+        # print(environment, host, port, mode, path, entry)
+        # return
+        if mode == 'production':
+            App = app.create(config=config)
+            App.run()
+            return
         aux_app = web.Application(
             logger=None,
         )
-        config = get_config(environment)
         server = config.get("server", {})
         server = chainMap(server, {"host": host, "port": port, "path": path})
         config["server"] = server
 
         aux_port = int(server.port) + 1
-        task = AppTask(Path(".").resolve(), config, entry=model)
+        task = AppTask(Path(".").resolve(), config, entry=entry)
         aux_app.cleanup_ctx.append(task.cleanup_ctx)
         web.run_app(
             aux_app,
@@ -102,8 +110,10 @@ def start(environment, host, port, path, model) -> None:
             print=None,
             shutdown_timeout=0.1,
         )
+    except KeyboardInterrupt:
+        sys.exit(0)
     except Exception as e:
-        # error(e)
+        # print_error(e)
         print_error(traceback.format_exc())
         sys.exit(0)
 

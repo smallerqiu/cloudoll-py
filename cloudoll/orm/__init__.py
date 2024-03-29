@@ -110,7 +110,7 @@ class Postgres(MeteBase):
             )
             print_info(f"Database connection successfuly for postgres/{kw.get('db')}")
         except Exception as e:
-            # error(e)
+            # print_error(e)
             # print(traceback.format_exc())
             print_error(
                 f"Database connection failed,the instance : postgres/{kw.get('db')}"

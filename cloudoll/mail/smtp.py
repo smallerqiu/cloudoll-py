@@ -107,7 +107,7 @@ class Client(object):
             self._server.sendmail(self._account, to_addr, msg.as_string())
             self._server.quit()
         except BaseException as er:
-            error(er)
+            print_error(er)
 
     def add_to_addr(self, nick, addr):
         """
@@ -139,7 +139,7 @@ class Client(object):
             if len(mime_types) > 0:
                 mime_type = mime_types[0]
             else:
-                error("无法匹配附件类型,可以尝试安装httpd服务")
+                print_error("无法匹配附件类型,可以尝试安装httpd服务")
             ## 这里如果拿不到type 需要安装httpd ,dnf install httpd
             [t, n] = mime_type.split("/")
             filename = os.path.basename(filepath)  # 'a.txt'

@@ -3,9 +3,9 @@
 
 __author__ = "chuchur/chuchur.com"
 
-import hashlib, hmac, time, base64, logging
+import hashlib, hmac, time, base64
 from curl_cffi import requests as http
-
+from ..logging import print_error,print_info
 
 class Client(object):
     def __init__(self, **kw):
@@ -15,7 +15,7 @@ class Client(object):
     def _get_sign(self):
         secret = self._secret
         if not secret:
-            logging.error("缺少secret")
+            print_error("缺少secret")
             return None, None
         # 拼接timestamp和secret
         timestamp = int(time.time())
@@ -36,7 +36,7 @@ class Client(object):
         """
         webhook = self._webhook
         if not webhook:
-            logging.error("缺少webhook")
+            print_error("缺少webhook")
             return False
         timestamp, sign = self._get_sign()
         if not timestamp or not sign:
@@ -48,10 +48,10 @@ class Client(object):
         if result:
             res = result.json()
             if res["StatusCode"] == 0:
-                logging.info("发送成功")
+                print_info("发送成功")
                 return False
             else:
-                logging.info("发送失败！")
+                print_error("发送失败！")
                 return True
 
     def send_text(self, text: str):

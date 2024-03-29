@@ -139,7 +139,9 @@ class AppTask(WatchTask):
     def _start_dev_server(self) -> None:
         act = "Start" if self._reloads == 0 else "Restart"
         print_info(f"{act}ing dev server")
-        print_info(f"Server Running on http://0.0.0.0:{self._config['server']['port']}")
+        print_info(
+            f"Server Running on http://{self._config['server']['host']}:{self._config['server']['port']}"
+        )
 
         try:
             tty_path = os.ttyname(sys.stdin.fileno())

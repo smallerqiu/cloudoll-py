@@ -7,7 +7,7 @@ __author__ = "chuchur/chuchur.com"
 import base64
 import hashlib
 import hmac
-import logging
+from ..logging import print_error
 from curl_cffi import requests as http
 import time
 from urllib import parse
@@ -22,7 +22,7 @@ class Client(object):
     def _get_sign(self):
         secret = self._secret
         if not secret:
-            logging.error("缺少secret")
+            print_error("缺少secret")
             return None, None
 
         # 拼接timestamp和secret
@@ -48,7 +48,7 @@ class Client(object):
         """
         access_token = self._access_token
         if not access_token:
-            logging.error("请配置access_token")
+            print_error("请配置access_token")
             return False
         url = "https://oapi.dingtalk.com/media/upload?access_token=%s" % access_token
         with open(filepath, "rb") as f:
@@ -58,7 +58,7 @@ class Client(object):
             if res["errcode"] == 0:
                 return res
             else:
-                logging.error(res["errmsg"])
+                print_error(res["errmsg"])
 
     def send(self, data: dict):
         """
@@ -67,7 +67,7 @@ class Client(object):
         """
         webhook = self._webhook
         if not webhook:
-            logging.error("缺少webhook")
+            print_error("缺少webhook")
             return False
         timestamp, sign = self._get_sign()
         if not timestamp or not sign:
@@ -82,11 +82,11 @@ class Client(object):
         if result:
             res = result.json()
             if res["errcode"] == 0:
-                logging.info("发送成功！")
+                print_error("发送成功！")
                 return True
             else:
-                logging.info("发送失败")
-                logging.error(res["errmsg"])
+                print_error("发送失败")
+                print_error(res["errmsg"])
                 return False
 
     def send_text(self, text: str):

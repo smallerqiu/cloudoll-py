@@ -125,7 +125,7 @@ def _get_modules(fd):
     modules = set()
     temp = os.path.join(os.path.abspath("."), fd)
     if not os.path.exists(temp):
-        info("Routers not detected")
+        print_info("Routers not detected")
         return modules
     s = find_packages(temp)
     for pkg in s:
@@ -170,7 +170,7 @@ def _reg_middleware():
     mid_dir = os.path.join(os.path.abspath("."), root)
     # print(mid_dir)
     if not os.path.exists(mid_dir):
-        info("Middlewares not detected")
+        print_info("Middlewares not detected")
         return
     for f in os.listdir(mid_dir):
         if not f.startswith("__"):
@@ -387,7 +387,7 @@ class Application(object):
         :params prot default  9001
         :params host default 127.0.0.1
         """
-        defaults = {"host": "127.0.0.1", "port": 9001, "path": None}
+        defaults = {"host": "0.0.0.0", "port": 9001, "path": None}
         conf = self.config.get("server", {})
         # args_conf = {"host": self.args.host, "port": self.args.port}
         # print(conf)
@@ -409,7 +409,7 @@ class Application(object):
         # if self.loop is None:
         #     return web.run_app(self.app, host=host, port=port, **kw)
         # else:
-        #     logging.info(f"Server run at http://{host}:{port}")
+        #     print_info(f"Server run at http://{host}:{port}")
         #     return self.loop.create_server(
         #         self.app.make_handler(), host=host, port=port, **kw
         #     )

@@ -30,7 +30,7 @@ from aiomysql.pool import Pool
 
 # from aiomysql.cursors import Cursor
 # from aiomysql.connection import Connection
-from cloudoll.logging import error, warning
+from cloudoll.logging import print_error
 
 # from inspect import isclass, isfunction
 from .base import MeteBase
@@ -79,5 +79,5 @@ class Mysql(MeteBase):
                 loop=loop,
             )
         except Exception as e:
-            error(f"Database connection failed,the instance : {kw.get('db')}")
+            print_error(f"Database connection failed,the instance : {kw.get('db')}")
         return self
