@@ -24,7 +24,7 @@ VERSION = version.__version__
 
 # What packages are required for this module to be executed?
 REQUIRED = [
-    "watchfiles"
+    "watchfiles",
     "curl_cffi",
     "colorlog",
     "aiomysql",
