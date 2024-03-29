@@ -53,10 +53,15 @@ class Postgres(MeteBase):
             dsn = f"dbname={db[0]} user={user[0]} password={password[0]} host={host[0]} port={port[0]}"
             self.pool = await create_pool(
                 dsn=dsn,
-                timeout=kw.get("timeout"),
+                timeout=kw.get("timeout", 10.0),
+                enable_json=kw.get("enable_json"),
+                enable_hstore=kw.get("enable_hstore"),
+                enable_uuid=kw.get("enable_uuid"),
+                enable_uuid=kw.get("enable_uuid"),
+                pool_recycle=kw.get("pool_recycle", 10),
                 echo=kw.get("echo", False),
-                maxsize=kw.get("maxsize", 10),
                 minsize=kw.get("pool_size", 5),
+                maxsize=kw.get("pool_size", 10),
             )
         except Exception as e:
             # print_error(e)

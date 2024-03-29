@@ -76,6 +76,7 @@ class Mysql(MeteBase):
                 maxsize=kw.get("maxsize", 10),
                 minsize=kw.get("pool_size", 5),
                 cursorclass=AttrDictCursor,
+                connect_timeout=kw.get("connect_timeout", 10),
                 loop=loop,
             )
         except Exception as e:
