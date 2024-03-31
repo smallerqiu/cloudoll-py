@@ -213,10 +213,10 @@ class Model(metaclass=ModelMetaclass):
         data = dict()
         md = None
         if args is None or not args:
-            for f in self.__fields__:
-                f = getattr(self, f)
+            for k in self.__fields__:
+                f = getattr(self, k)
                 x = f.value
-                data[f] = x
+                data[k] = x
         else:
             for item in args:
                 md = item
