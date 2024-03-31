@@ -105,7 +105,7 @@ async def create_models(pool, save_path: str = None, tables: list = None):
         all_tables = await get_all_tables(pool)
         tbs = [list(c.values())[0] for c in all_tables]
     content = ""
-    import_line = "from cloudoll.orm import models, Model\n\n"
+    import_line = "from cloudoll.orm.model import models, Model\n\n"
     for t in tbs:
         content += await create_model(pool, t)
     if save_path:
