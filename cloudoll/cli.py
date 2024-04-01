@@ -89,7 +89,7 @@ def start(environment, host, port, mode, path, entry) -> None:
         # print(environment, host, port, mode, path, entry)
         # return
         if mode == 'production':
-            App = app.create(config=config)
+            App = app.create(config=config, entry_model=entry)
             App.run()
             return
         aux_app = web.Application(

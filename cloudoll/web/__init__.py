@@ -260,7 +260,8 @@ class Application(object):
         self._reg_router()
 
         # load life
-        self._load_life_cycle(entry_model)
+        entry = conf_server.get('entry',entry_model)
+        self._load_life_cycle(entry)
 
         # static
         if conf_server is not None:
