@@ -11,6 +11,6 @@ def get_config(env):
     if not os.path.exists(conf_path):
         print_error(f"Configuration file does not exist: {conf_path}")
         return {}
-    with open(conf_path) as f:
+    with open(conf_path,'r',encoding='utf-8') as f:
         config = yaml.safe_load(f)
     return config or {}
