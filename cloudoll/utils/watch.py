@@ -34,7 +34,7 @@ class WatchTask:
     async def start(self, app: Application) -> None:
         self._app = app
         self.stopper = asyncio.Event()
-        ignore_dirs = self._config["server"]["ignore_dirs"] or []
+        ignore_dirs = self._config["server"].get("ignore_dirs", [])
         self._awatch = awatch(
             self._path,
             stop_event=self.stopper,

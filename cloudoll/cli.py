@@ -27,11 +27,11 @@ life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "cleanup_ctx"]
 
 
 @cli.command()
-@click.option("-p", "--path",help="Model's relative path,save models or create tables",default="models.py",)
+@click.option("-p", "--path", help="Model's relative path,save models or create tables", default="models.py",)
 @click.option("-c", "--create", help="For create model or table, model / table", default="model")
-@click.option("-t", "--table",help="Table's name or Model's name, split by `,` or 'ALL'",required=True,)
+@click.option("-t", "--table", help="Table's name or Model's name, split by `,` or 'ALL'", required=True,)
 @click.option("-env", "--environment", help="Environment, local / test / prod", default="local")
-@click.option("-db", "--database",help="Database name, pick the database in conf.{env}.yaml",default="mysql",)
+@click.option("-db", "--database", help="Database name, pick the database in conf.{env}.yaml", default="mysql",)
 def gen(path, create, table, environment, database) -> None:
     """Help to create models or tables."""
 
@@ -76,15 +76,15 @@ def gen(path, create, table, environment, database) -> None:
 
 @cli.command()
 @click.option("-env", "--environment", help="Environment, local / test / prod", default="local")
-@click.option("-p", "--port", help="Server's port", default=9001)
-@click.option("-h", "--host", help="Server's host", default='0.0.0.0')
+@click.option("-p", "--port", help="Server's port", default=None)
+@click.option("-h", "--host", help="Server's host", default=None)
 @click.option("-m", "--mode", help="development or production mode", default='development')
-@click.option("-path", "--path",help="Unix file system path to serve on. Specifying a path will cause hostname and port arguments to be ignored.",)
+@click.option("-path", "--path", help="Unix file system path to serve on. Specifying a path will cause hostname and port arguments to be ignored.",)
 @click.option("-e", "--entry", help="Entry point model name. delfault name app", default="app")
 def start(environment, host, port, mode, path, entry) -> None:
     """Start a services."""
     try:
-        print_info("Current mode: " ,mode)
+        print_info("Current mode: ", mode)
         config = get_config(environment)
         # print(environment, host, port, mode, path, entry)
         # return
@@ -95,8 +95,10 @@ def start(environment, host, port, mode, path, entry) -> None:
         aux_app = web.Application(
             logger=None,
         )
-        server = config.get("server", {})
-        server = chainMap(server, {"host": host, "port": port, "path": path})
+        defaults = {"host": "0.0.0.0", "port": 9001, "path": None}
+        conf_server = config.get("server", {})
+        env_server = {"host": host, "port": port, "path": path}
+        server = chainMap(defaults, conf_server, env_server)
         config["server"] = server
 
         aux_port = int(server.port) + 1

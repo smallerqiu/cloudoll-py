@@ -2,7 +2,8 @@ from .field import Field, Function, Expression
 from ..logging import print_warn
 from functools import reduce
 import operator
-import copy, datetime
+import copy
+import datetime
 
 
 class ModelMetaclass(type):
@@ -31,8 +32,8 @@ class ModelMetaclass(type):
                     if primary_key:
                         print_warn(f"Duplicate primary key for {table_name}")
                     primary_key = k
-                else:
-                    fields.append(k)
+                # else:
+                fields.append(k)
 
         if not primary_key:
             print_warn(f"{table_name} Missing primary key")
@@ -217,6 +218,8 @@ class Model(metaclass=ModelMetaclass):
                 f = getattr(self, k)
                 x = f.value
                 data[k] = x
+        elif args and isinstance(args, dict):
+            data = args
         else:
             for item in args:
                 md = item
@@ -299,19 +302,19 @@ class Model(metaclass=ModelMetaclass):
         self._reset()
         return await self.__pool__.all(sql, args)
 
-    async def update(self, *args) -> bool:
+    async def update(self, *args, **kw) -> bool:
         """
         Update data
         """
         table = self.__table__
-        where = self.__where__
+        # where = self.__where__
+        where = self._literal("WHERE", self.__where__)
 
-        keys, params, md = self._get_key_args(args)
+        keys, params, md = self._get_key_args(args or kw)
 
-        sql = f"update `{table}` set {keys}"
+        sql = f"update `{table}` set {keys} {where}"
 
-        if where is not None:
-            sql += f' where {" and ".join(f for f in where)}'
+        if where is not None and where != '':
             params += self.__params__
         else:
             pk, pkv = self._get_primary()
@@ -327,7 +330,7 @@ class Model(metaclass=ModelMetaclass):
                 params.append(pkv)
             else:
                 raise "Need where or primary key"
-
+        self._reset()
         return await self.__pool__.update(sql, params)
 
     async def delete(self) -> bool:
@@ -335,24 +338,23 @@ class Model(metaclass=ModelMetaclass):
         Delete data
         """
         table = self.__table__
-        where = self.__where__
+        where = self._literal("WHERE", self.__where__)
         args = self.__params__
-        sql = f"delete from `{table}`"
+        sql = f"delete from `{table}` {where}"
 
-        pk, pkv = self._get_primary()
-        if where is not None:
-            sql += f' where {" and ".join(f for f in where)}'
-        elif pkv is not None:
-            sql += f" where `{pk}`=?"
-            args = [pkv]
-        else:
-            raise "need where or primary"
+        if where is None or where == '':
+            pk, pkv = self._get_primary()
+            if pkv is not None:
+                sql += f" where `{pk}`=?"
+                args = [pkv]
+            else:
+                raise "need where or primary key"
         self._reset()
         return await self.__pool__.delete(sql, args)
 
-    async def insert(self, *args):
+    async def insert(self, *args, **kw):
         table = self.__table__
-        keys, params, md = self._get_key_args(args)
+        keys, params, md = self._get_key_args(args or kw)
         sql = f"insert into `{table}` set {keys}"
         self._reset()
         return await self.__pool__.create(sql, params)
