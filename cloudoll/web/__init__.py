@@ -12,8 +12,6 @@ import importlib
 import inspect
 import json
 from errno import EADDRINUSE
-import pkgutil
-import sys
 from urllib import parse
 from aiohttp import web
 from aiohttp.web import Response
@@ -37,6 +35,7 @@ from decimal import Decimal
 from datetime import datetime, date
 from ..utils.common import chainMap, Object
 from ..orm import create_engine, parse_coon
+import uuid
 
 # from ..orm.mysql import Mysql
 from typing import Optional, Iterable
@@ -59,7 +58,7 @@ __ALL__ = (
 )
 
 
-class _Handler(object):
+class RequestHandler(object):
     def __init__(self, cls, fn):
         self.cls = cls
         self.fn = fn
@@ -69,12 +68,12 @@ class _Handler(object):
         # 获取函数参数的名称和默认值
         props = inspect.getfullargspec(self.fn)
         if len(props.args) == 2 and content_type == "multipart/form-data":
-            await _set_session_route(request)
+            await set_session_route(request)
             multipart = await request.multipart()
             field = await multipart.next()
             result = await self.fn(request, field)
         elif len(props.args) == 1:
-            await _set_session_route(request)
+            await set_session_route(request)
             if content_type == "multipart/form-data":
                 data = await request.post()
             elif content_type == "application/json":
@@ -109,7 +108,7 @@ class _Handler(object):
         return render_json(result)
 
 
-async def _set_session_route(request):
+async def set_session_route(request):
     params = dict()
     # match
     rt = request.match_info
@@ -119,29 +118,6 @@ async def _set_session_route(request):
     session = await get_session(request)
     # session = await new_session(request)
     request.session = session
-
-
-def _get_modules(fd):
-    modules = set()
-    temp = os.path.join(os.path.abspath("."), fd)
-    if not os.path.exists(temp):
-        print_info("Routers not detected")
-        return modules
-    s = find_packages(temp)
-    for pkg in s:
-        # modules.add(pkg)
-        pkg_path = temp + "/" + pkg.replace(".", "/")
-        if sys.version_info.major == 2 or (
-            sys.version_info.major == 3 and sys.version_info.minor < 6
-        ):
-            for _, name, ispkg in pkgutil.iter_modules([pkg_path]):
-                if not ispkg:
-                    modules.add(f".{pkg}.{name}")
-        else:
-            for info in pkgutil.iter_modules([pkg_path]):
-                if not info.ispkg:
-                    modules.add(f".{pkg}.{info.name}")
-    return modules
 
 
 async def check_port_open(port: int, delay: float = 1) -> None:
@@ -165,21 +141,27 @@ async def check_port_open(port: int, delay: float = 1) -> None:
     raise Exception("The port {} is already is use".format(port))
 
 
-def _reg_middleware():
-    root = "middlewares"
-    mid_dir = os.path.join(os.path.abspath("."), root)
-    # print(mid_dir)
-    if not os.path.exists(mid_dir):
-        print_info("Middlewares not detected")
+def auto_reg_module(module_dir: str):
+    module_path = os.path.join(os.path.abspath("."), module_dir)
+    if not os.path.exists(module_path):
+        print_info(f"{module_dir} not detected")
         return
-    for f in os.listdir(mid_dir):
-        if not f.startswith("__"):
-            module_name = f"{root}.{os.path.basename(f)[:-3]}"
-            # print(module_name, root)
-            importlib.import_module(module_name, root)
+    for filename in os.listdir(module_dir):
+        if filename.startswith("__") or filename.startswith("."):
+            continue
+        full_path = os.path.join(os.path.abspath("."), module_dir, filename)
+        if os.path.isdir(full_path):
+            auto_reg_module(module_dir + os.sep + filename)
+        elif filename.endswith(".py"):
+            module_name = (
+                module_dir.replace(os.sep, ".")
+                + "."
+                + filename[:-3].replace(os.sep, ".")
+            )
+            importlib.import_module(module_name)
 
 
-def _int(num):
+def parse_int(num):
     return eval(num) if isinstance(num, str) else num
 
 
@@ -234,7 +216,7 @@ class Application(object):
         self.config = config
 
         # middlewares
-        _reg_middleware()
+        auto_reg_module("middlewares")
 
         conf_server = config.get("server")
         client_max_size = 1024**2 * 2
@@ -244,7 +226,7 @@ class Application(object):
             logger=None,
             loop=loop,
             middlewares=self._middleware,
-            client_max_size=_int(client_max_size),
+            client_max_size=parse_int(client_max_size),
         )
         # database
         self.app.db = Object()
@@ -257,10 +239,11 @@ class Application(object):
         self.app.on_startup.append(self._init_session)
         # self._init_session()
         #  router:
-        self._reg_router()
+        auto_reg_module("controllers")
+        self.app.add_routes(self._route_table)
 
         # load life
-        entry = conf_server.get('entry',entry_model)
+        entry = conf_server.get("entry", entry_model)
         self._load_life_cycle(entry)
 
         # static
@@ -333,7 +316,7 @@ class Application(object):
             storage = redis_storage.RedisStorage(
                 redis,
                 cookie_name=cookie_name,
-                max_age=_int(max_age),
+                max_age=parse_int(max_age),
                 httponly=httponly,
                 secure=secure,
             )
@@ -348,7 +331,7 @@ class Application(object):
             storage = memcached_storage.MemcachedStorage(
                 mc,
                 cookie_name=cookie_name,
-                max_age=_int(max_age),
+                max_age=parse_int(max_age),
                 httponly=httponly,
                 secure=secure,
             )
@@ -365,22 +348,11 @@ class Application(object):
             storage = cookie_storage.EncryptedCookieStorage(
                 secret_key,
                 cookie_name=cookie_name,
-                max_age=_int(max_age),
+                max_age=parse_int(max_age),
                 httponly=httponly,
             )
             setup(apps, storage)
             print_info("start local cookie.")
-
-    def _reg_router(self):
-        fd = "controllers"
-        modules = _get_modules(fd)
-        for module in modules:
-            # print(module)
-            importlib.import_module(module, fd)
-
-        self.app.add_routes(self._route_table)
-        # for route in self._routes:
-        #     self.app.router.add_route(**route)
 
     def run(self, **kw):
         """
@@ -417,7 +389,7 @@ class Application(object):
 
     def add_router(self, path, method, name):
         def inner(handler):
-            handler = _Handler(self, handler)
+            handler = RequestHandler(self, handler)
             self.app.router.add_route(method, path, handler, name=name)
             return handler
 
@@ -478,6 +450,8 @@ class JsonEncoder(json.JSONEncoder):
             return list(obj)
         elif isinstance(obj, Model):
             return obj.__dict__
+        elif isinstance(obj, uuid.UUID):
+            return str(obj)
         else:
             return super(JsonEncoder, self).default(obj)
 
@@ -556,8 +530,8 @@ def render_json(data, **kw) -> Response:
         res["data"] = data
     status = kw.get("status", 200)
     if status == 200:
-        res["message"] = "OK"
-        res["code"] = 200
+        res["message"] = kw.get("message", "OK")
+        res["code"] = kw.get("code", 200)
 
     res["timestamp"] = int(datetime.now().timestamp() * 1000)
     text = json.dumps(res, ensure_ascii=False, cls=JsonEncoder)

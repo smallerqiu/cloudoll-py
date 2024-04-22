@@ -233,10 +233,13 @@ class Model(metaclass=ModelMetaclass):
         params = []
         for k, v in data.items():
             if isinstance(v, Field):
-                value = v.value or v.default
-                if value is not None:
-                    if "CURRENT_TIMESTAMP" in str(value):
+                value = v.value
+                if value is None:
+                    if v.created_generated == True or v.update_generated == True:
                         value = datetime.datetime.now()
+                    else:
+                        value = v.default
+                if value is not None:
                     keys.append("`%s`=?" % k)
                     params.append(value)
             elif v is not None:  # fix sql format %s
@@ -314,7 +317,7 @@ class Model(metaclass=ModelMetaclass):
 
         sql = f"update `{table}` set {keys} {where}"
 
-        if where is not None and where != '':
+        if where is not None and where != "":
             params += self.__params__
         else:
             pk, pkv = self._get_primary()
@@ -342,7 +345,7 @@ class Model(metaclass=ModelMetaclass):
         args = self.__params__
         sql = f"delete from `{table}` {where}"
 
-        if where is None or where == '':
+        if where is None or where == "":
             pk, pkv = self._get_primary()
             if pkv is not None:
                 sql += f" where `{pk}`=?"

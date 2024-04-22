@@ -116,7 +116,7 @@ def start(environment, host, port, mode, path, entry) -> None:
         sys.exit(0)
     except Exception as e:
         # print_error(e)
-        print_error(traceback.format_exc())
+        # print_error(traceback.format_exc())
         sys.exit(0)
 
 
