@@ -31,6 +31,17 @@ OP = objdict(
     AVG="AVG",
     AS="AS",
     SUM="SUM",
+    IS_TODAY="IS_TODAY",
+    IS_THIS_WEEK="THIS_WEEK",
+    IS_THIS_MONTH="THIS_MONTH",
+    IS_THIS_YEAR="THIS_YEAR",
+    BEFORE_DAYS="BEFORE_DAYS",
+    BEFORE_HOURS="BEFORE_HOURS",
+    BEFORE_MINUTES="BEFORE_MINUTES",
+    BEFORE_YEARS="BEFORE_YEARS",
+    AFTER_YEARS="AFTER_YEARS",
+    AFTER_MONTHS="AFTER_MONTHS",
+    BEFORE_MONTHS="BEFORE_MONTHS",
     DATE_FORMAT="DATE_FORMAT",
     JSON_CONTAINS_OBJECT="JSON_CONTAINS_OBJECT",
     JSON_CONTAINS_ARRAY="JSON_CONTAINS_ARRAY",
@@ -115,6 +126,39 @@ class FieldBase(object):
     def date_format(self, args):
         return Function(self, OP.DATE_FORMAT, args)
 
+    def is_today(self):
+        return Function(self, OP.IS_TODAY)
+
+    def is_this_week(self):
+        return Function(self, OP.IS_THIS_WEEK)
+
+    def is_this_month(self):
+        return Function(self, OP.IS_THIS_MONTH)
+
+    def is_this_year(self):
+        return Function(self, OP.IS_THIS_YEAR)
+
+    def before_days(self, args):
+        return Function(self, OP.BEFORE_DAYS, args)
+
+    def before_hours(self, args):
+        return Function(self, OP.BEFORE_HOURS, args)
+
+    def before_minutes(self, args):
+        return Function(self, OP.BEFORE_MINUTES, args)
+
+    def before_years(self, args):
+        return Function(self, OP.BEFORE_YEARS, args)
+
+    def before_months(self, args):
+        return Function(self, OP.BEFORE_MONTHS, args)
+
+    def after_months(self, args):
+        return Function(self, OP.AFTER_MONTHS, args)
+
+    def after_years(self, args):
+        return Function(self, OP.AFTER_YEARS, args)
+
     def json_contains_object(self, key, value):
         return Function(self, OP.JSON_CONTAINS_OBJECT, (key, value))
 
@@ -186,6 +230,28 @@ class Function(FieldBase):
         # todo:
         if op == OP.DATE_FORMAT:
             return f"{op}({col_name},?)", [self.rpt]
+        elif op == OP.IS_TODAY:
+            return f"DATE({col_name}) = CURDATE()", None
+        elif op == OP.IS_THIS_WEEK:
+            return f"WEEK({col_name}, 1) = WEEK(CURDATE(), 1)", None
+        elif op == OP.IS_THIS_MONTH:
+            return f"MONTH({col_name}) = MONTH(CURDATE())", None
+        elif op == OP.IS_THIS_YEAR:
+            return f"YEAR({col_name}) = YEAR(CURDATE())", None
+        elif op == OP.BEFORE_DAYS:
+            return f"DATE({col_name}) >= CURDATE() - INTERVAL {self.rpt} DAY", None
+        elif op == OP.BEFORE_HOURS:
+            return f"{col_name} >= NOW() - INTERVAL {self.rpt} HOUR", None
+        elif op == OP.BEFORE_MINUTES:
+            return f"{col_name} >= NOW() - INTERVAL {self.rpt} MINUTE", None
+        elif op == OP.BEFORE_YEARS:
+            return f"{col_name} >= DATE_SUB(NOW(), INTERVAL {self.rpt} YEAR)", None
+        elif op == OP.BEFORE_MONTHS:
+            return f"{col_name} >= DATE_SUB(NOW(), INTERVAL {self.rpt} MONTH)", None
+        elif op == OP.AFTER_YEARS:
+            return f"{col_name} < DATE_SUB(NOW(), INTERVAL {self.rpt} YEAR)", None
+        elif op == OP.AFTER_MONTHS:
+            return f"{col_name} < DATE_SUB(NOW(), INTERVAL {self.rpt} MONTH)", None
         elif op == OP.JSON_CONTAINS_OBJECT:
             _k, _v = self.rpt
             key = _k.full_name if isinstance(_k, Field) else f"'{_k}'"
