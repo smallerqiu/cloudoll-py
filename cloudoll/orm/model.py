@@ -4,6 +4,7 @@ from functools import reduce
 import operator
 import copy
 import datetime
+from ..utils.common import Object
 
 
 class ModelMetaclass(type):
@@ -295,7 +296,8 @@ class Model(metaclass=ModelMetaclass):
         rs = await self.__pool__.one(sql, args)
         if rs:
             self._reset()
-            return self(**rs)
+            # return self(**rs)
+            return Object(rs)
             # return cls(**rs)
         return None
 
