@@ -295,9 +295,12 @@ class Model(metaclass=ModelMetaclass):
         args = self.__params__
         rs = await self.__pool__.one(sql, args)
         if rs:
+            ## join 时返回dict 
+            result = Object(rs) if self.__join__ is not None else self(**rs)
             self._reset()
+            return result
             # return self(**rs)
-            return Object(rs)
+            # return Object(rs)
             # return cls(**rs)
         return None
 
