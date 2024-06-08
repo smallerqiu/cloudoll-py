@@ -40,6 +40,8 @@ async def create_model(pool, table_name) -> str:
                 if isinstance(fields["max_length"], str) and "," in fields["max_length"]
                 else f"max_length={fields['max_length']}"
             )
+        if fields['scale_length']:
+            values.append(f"scale_length={fields['scale_length']}")
         if fields["default"]:
             values.append(f"default='{fields['default']}'")
         if fields["auto_increment"]:
@@ -70,6 +72,7 @@ async def get_table_cols(pool, table_name):
             data_type column_type, 
             is_nullable Null,
             numeric_precision num_length,
+            numeric_scale scale_length,
             character_maximum_length str_length,
             datetime_precision date_length,
             col_description('{table_name}'::regclass, ordinal_position) Comment
@@ -211,6 +214,7 @@ def get_col(field, driver="mysql"):
             "max_length": field["num_length"]
             or field["str_length"]
             or field["date_length"],
+            "scale_length":field['scale_length'],
             "auto_increment": None,
             "NOT_NULL": field["null"] == "NO",
             "created_generated": None,
@@ -224,12 +228,13 @@ def get_col_sql(field):
     sql = f"`{field.name}` {field.column_type}"
 
     if field.max_length:
-        sql += (
-            f"{field.max_length}"
-            if isinstance(field.max_length, tuple)
-            else f"({field.max_length})"
-        )
-
+        if isinstance(field.max_length, tuple):
+            sql +=f"{field.max_length}"
+        elif field.scale_length:
+            sql +=f"({field.max_length},{field.scale_length})"
+        else:
+            sql +=f"({field.max_length})"
+            
     if field.charset:
         # _ci 不区分大小写 _cs Yes
         cs = field.charset.split("_")[0]
@@ -279,6 +284,7 @@ class ColTypes(enum.Enum):
     float = "Float"
     double = "Double"
     decimal = "Decimal"
+    numeric = "Numeric"
     date = "Date"
     datetime = "Datetime"
     timestamp = "Timestamp"

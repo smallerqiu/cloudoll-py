@@ -354,6 +354,7 @@ class Field(FieldBase):
         primary_key=False,  # 主键
         charset=None,  # 编码
         max_length=None,  # 长度
+        scale_length=None, # 精度
         auto_increment=False,  # 自增
         NOT_NULL=False,  # 非空
         created_generated=False,  # 创建时for datetime
@@ -371,6 +372,7 @@ class Field(FieldBase):
         self.charset = charset
         self.default = default
         self.max_length = max_length
+        self.scale_length = scale_length
         self.auto_increment = auto_increment
         self.NOT_NULL = NOT_NULL
         self.created_generated = created_generated

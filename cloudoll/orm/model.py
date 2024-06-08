@@ -512,6 +512,7 @@ class Models(object):
             default=None,
             not_null=False,
             max_length=None,
+            scale_length=None,
             unsigned=False,
             comment=None,
         ):
@@ -521,10 +522,31 @@ class Models(object):
                 default,
                 NOT_NULL=not_null,
                 max_length=max_length,
+                scale_length=scale_length,
                 unsigned=unsigned,
                 comment=comment,
             )
-
+    class NumericField(Field):
+        def __init__(
+            self,
+            name=None,
+            default=0.0,
+            not_null=False,
+            max_length=None,
+            scale_length=None,
+            unsigned=False,
+            comment=None,
+        ):
+            super().__init__(
+                name,
+                "numeric",
+                default,
+                NOT_NULL=not_null,
+                unsigned=unsigned,
+                max_length=max_length,
+                scale_length=scale_length,
+                comment=comment,
+            )
     class DecimalField(Field):
         def __init__(
             self,
@@ -532,6 +554,7 @@ class Models(object):
             default=0.0,
             not_null=False,
             max_length=None,
+            scale_length=None,
             unsigned=False,
             comment=None,
         ):
@@ -542,6 +565,7 @@ class Models(object):
                 NOT_NULL=not_null,
                 unsigned=unsigned,
                 max_length=max_length,
+                scale_length=scale_length,
                 comment=comment,
             )
 
