@@ -26,7 +26,7 @@ async def create_engine(**kw):
 
     if driver == "mysql":
         return await Mysql().create_engine(**configs, **query)
-    elif driver == "postgres":
+    elif driver == "postgres" or driver == "postgressql":
         return await Postgres().create_engine(**configs, **query)
     elif driver == "redis" or driver == "rediss":
         """
@@ -62,26 +62,30 @@ class Postgres(MeteBase):
 
                 # if query_type.value > 4:
                 # if self.driver == "mysql":
+                # print(columns)
                 # await conn.commit()
                 # elif self.driver == "postgres":
-                columns = [desc[0] for desc in cursor.description]
                 result = None
 
                 if query_type == QueryTypes.ALL:
+                    columns = [desc[0] for desc in cursor.description]
                     rows = await cursor.fetchall()
                     result = [dict(zip(columns, row)) for row in rows]
                     return result
                 elif query_type == QueryTypes.ONE:
-                    rows = await cursor.fetchone()
-                    result = dict(zip(columns, rows))
+                    columns = [desc[0] for desc in cursor.description]
+                    row = await cursor.fetchone()
+                    # print("rows_reuslt", rows)
+                    result = dict(zip(columns, row)) if row else {}
                     return result
                 elif query_type == QueryTypes.MANY:
+                    columns = [desc[0] for desc in cursor.description]
                     rows = await cursor.fetchmany(size)
                     result = [dict(zip(columns, row)) for row in rows]
                     return result
                 elif query_type == QueryTypes.COUNT:
                     rs = await cursor.fetchone()
-                    return rs[0]
+                    return rs[0] if row else 0
                 elif query_type == QueryTypes.CREATE:
                     result = cursor.rowcount > 0
                     id = cursor.lastrowid

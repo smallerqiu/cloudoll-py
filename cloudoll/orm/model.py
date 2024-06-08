@@ -3,6 +3,7 @@ from ..logging import print_warn
 from functools import reduce
 import operator
 import copy
+import re
 import datetime
 from ..utils.common import Object
 
@@ -127,6 +128,8 @@ class Model(metaclass=ModelMetaclass):
 
     def _get_primary(self):
         pk = self.__primary_key__
+        if pk is None:
+            return None, None
         pkf = getattr(self, pk)
         return pk, pkf.value
 
@@ -144,14 +147,14 @@ class Model(metaclass=ModelMetaclass):
     @classmethod
     def use(cls, pool=None):
         cls.__pool__ = pool
+        cls.__ispg = cls.__pool__.driver == "postgres"
         return cls()
 
     def select(cls, *args):
         cols = []
-        is_pg = cls.__pool__.driver == "postgres"
         for col in args:
             if isinstance(col, Field):
-                cols.append(col.name if is_pg else col.full_name)
+                cols.append(col.name if cls.__ispg else col.full_name)
             elif isinstance(col, Function):
                 q, p = col.sql()
                 cols.append(q)
@@ -190,12 +193,13 @@ class Model(metaclass=ModelMetaclass):
 
     def order_by(self, *args):
         by = []
-        is_pg = self.__pool__.driver == "postgres"
         for f in args:
             if isinstance(f, str):
                 by.append(f)
             else:
-                by.append(f"{f.lhs.name if is_pg else f.lhs.full_name} {f.op}")
+                by.append(
+                    f"{f.lhs.name if self.cls.__ispg else f.lhs.full_name} {f.op}"
+                )
         if self.__order_by__ is not None:
             by = self.__order_by__ + by
         self.__order_by__ = by
@@ -203,15 +207,14 @@ class Model(metaclass=ModelMetaclass):
 
     def group_by(self, *args):
         by = []
-        is_pg = self.__pool__.driver == "postgres"
         for f in args:
-            by.append(f.name if is_pg else f.full_name)
+            by.append(f.name if self.__ispg else f.full_name)
         if self.__group_by__ is not None:
             by = self.__group_by__ + by
         self.__group_by__ = by
         return self
 
-    def _get_key_args(self, args):
+    def _get_key_args(self, action, args):
         data = dict()
         md = None
         if args is None or not args:
@@ -226,7 +229,9 @@ class Model(metaclass=ModelMetaclass):
                 md = item
                 if isinstance(item, Model):
                     for k in item.__dict__:
-                        data[k] = item[k]
+                        if (action == 'u' and item[k].value) or action == 'i':
+                            data[k] = item[k]
+
                 else:  # for object
                     for k, v in item.items():
                         data[k] = v
@@ -292,10 +297,11 @@ class Model(metaclass=ModelMetaclass):
     async def one(self):
         self.limit(1)
         sql = self._sql()
+        sql = self._exchange_sql(sql)
         args = self.__params__
         rs = await self.__pool__.one(sql, args)
         if rs:
-            ## join 时返回dict 
+            # join 时返回dict
             result = Object(rs) if self.__join__ is not None else self(**rs)
             self._reset()
             return result
@@ -306,9 +312,28 @@ class Model(metaclass=ModelMetaclass):
 
     async def all(self):
         sql = self._sql()
+        sql = self._exchange_sql(sql)
         args = self.__params__
         self._reset()
         return await self.__pool__.all(sql, args)
+
+    def _exchange_sql(self, sql: str):
+        if self.__ispg:
+            sql = sql.replace("CURDATE()", "CURRENT_DATE")
+            sql = sql.replace("NOW()", "CURRENT_TIMESTAMP")
+
+            pattern = r"INTERVAL\s+(\d+)\s+(DAY|MONTH|YEAR|HOUR|MINUTE|SECOND)"
+            matches = re.findall(pattern, sql)
+
+            def replacement(match):
+                number = match.group(1)
+                unit = match.group(2).lower()  # 转换为小写
+                return f"INTERVAL '{number} {unit}'"
+
+            if matches:
+                sql = re.sub(pattern, replacement, sql)
+
+        return sql
 
     async def update(self, *args, **kw) -> bool:
         """
@@ -318,7 +343,7 @@ class Model(metaclass=ModelMetaclass):
         # where = self.__where__
         where = self._literal("WHERE", self.__where__)
 
-        keys, params, md = self._get_key_args(args or kw)
+        keys, params, md = self._get_key_args('u', args or kw)
 
         sql = f"update `{table}` set {keys} {where}"
 
@@ -339,6 +364,7 @@ class Model(metaclass=ModelMetaclass):
             else:
                 raise "Need where or primary key"
         self._reset()
+        sql = self._exchange_sql(sql)
         return await self.__pool__.update(sql, params)
 
     async def delete(self) -> bool:
@@ -358,11 +384,12 @@ class Model(metaclass=ModelMetaclass):
             else:
                 raise "need where or primary key"
         self._reset()
+        sql = self._exchange_sql(sql)
         return await self.__pool__.delete(sql, args)
 
     async def insert(self, *args, **kw):
         table = self.__table__
-        keys, params, md = self._get_key_args(args or kw)
+        keys, params, md = self._get_key_args('i', args or kw)
         sql = f"insert into `{table}` set {keys}"
         self._reset()
         return await self.__pool__.create(sql, params)
@@ -376,6 +403,7 @@ class Model(metaclass=ModelMetaclass):
         aft = " ".join([JOIN, WHERE])
         sql = f"SELECT COUNT(*) FROM {cls.__table__} {aft}"
         args = cls.__params__
+        sql = self._exchange_sql(sql)
         return await cls.__pool__.count(sql, args)
 
 
@@ -526,6 +554,7 @@ class Models(object):
                 unsigned=unsigned,
                 comment=comment,
             )
+
     class NumericField(Field):
         def __init__(
             self,
@@ -547,6 +576,7 @@ class Models(object):
                 scale_length=scale_length,
                 comment=comment,
             )
+
     class DecimalField(Field):
         def __init__(
             self,

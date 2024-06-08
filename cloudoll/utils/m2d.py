@@ -6,12 +6,12 @@ import importlib
 
 
 def snake_to_camel(snake_str):
-    components = snake_str.split('_')
+    components = snake_str.split("_")
     # camel_str = components[0] + ''.join(x.title() for x in components[1:])
     # x.capitalize() //first
     # x.title() //all
     # return camel_str[0].upper() + camel_str[1:]
-    return ''.join(x.title() for x in components[0:])
+    return "".join(x.title() for x in components[0:])
 
 
 async def create_model(pool, table_name) -> str:
@@ -27,6 +27,7 @@ async def create_model(pool, table_name) -> str:
     tb += f"\t__table__ = '{table_name}'\n\n"
     for f in rows:
         fields = get_col(f, pool.driver)
+        # print("fields",fields)
         name = fields["name"]
         column_type = fields["column_type"]
         values = []
@@ -40,7 +41,7 @@ async def create_model(pool, table_name) -> str:
                 if isinstance(fields["max_length"], str) and "," in fields["max_length"]
                 else f"max_length={fields['max_length']}"
             )
-        if fields['scale_length']:
+        if fields["scale_length"]:
             values.append(f"scale_length={fields['scale_length']}")
         if fields["default"]:
             values.append(f"default='{fields['default']}'")
@@ -67,6 +68,10 @@ async def get_table_cols(pool, table_name):
     if pool.driver == "mysql":
         return await pool.all(f"show full COLUMNS from `{table_name}`", None)
     elif pool.driver == "postgres":
+        pri_row = await pool.one(
+            f"SELECT column_name from information_schema.key_column_usage WHERE table_name = '{table_name}'",
+            None,
+        )
         sql = f"""SELECT column_name Field, 
             column_default Default,
             data_type column_type, 
@@ -77,7 +82,14 @@ async def get_table_cols(pool, table_name):
             datetime_precision date_length,
             col_description('{table_name}'::regclass, ordinal_position) Comment
             FROM information_schema.columns WHERE table_name ='{table_name}'"""
-        return await pool.all(sql, None)
+
+        rows = await pool.all(sql, None)
+        for row in rows:
+            row["Key"] = "PRI" if pri_row and pri_row["column_name"] == row["field"] else None
+       
+        # print("rows", rows)
+        
+        return rows
     else:
         raise ValueError("Database not support.")
 
@@ -92,7 +104,6 @@ async def get_all_tables(pool):
         )
     else:
         raise ValueError("Database not support.")
-
 
 
 async def create_models(pool, save_path: str = None, tables: list = None):
@@ -204,17 +215,17 @@ def get_col(field, driver="mysql"):
             fields["column_type"] = t.groups()[0]
             fields["max_length"] = t.groups()[1]
         return fields
-    elif driver == "postgres":
+    elif driver == "postgres" or driver == "postgresql":
         fields = {
             "name": field["field"],
             "column_type": field["column_type"].replace(" ", "_"),
-            "primary_key": False,
+            "primary_key": field["Key"] == "PRI",
             "default": field["default"],
             "charset": None,
             "max_length": field["num_length"]
             or field["str_length"]
             or field["date_length"],
-            "scale_length":field['scale_length'],
+            "scale_length": field["scale_length"],
             "auto_increment": None,
             "NOT_NULL": field["null"] == "NO",
             "created_generated": None,
@@ -229,12 +240,12 @@ def get_col_sql(field):
 
     if field.max_length:
         if isinstance(field.max_length, tuple):
-            sql +=f"{field.max_length}"
+            sql += f"{field.max_length}"
         elif field.scale_length:
-            sql +=f"({field.max_length},{field.scale_length})"
+            sql += f"({field.max_length},{field.scale_length})"
         else:
-            sql +=f"({field.max_length})"
-            
+            sql += f"({field.max_length})"
+
     if field.charset:
         # _ci 不区分大小写 _cs Yes
         cs = field.charset.split("_")[0]
@@ -296,5 +307,3 @@ class ColTypes(enum.Enum):
     character = "Char"
     integer = "Integer"
     boolean = "Boolean"
-    
-    
