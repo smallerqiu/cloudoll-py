@@ -291,7 +291,9 @@ class ColTypes(enum.Enum):
     json = "Json"
     # pg
     timestamp_with_time_zone = "Timestamp"
+    timestamp_without_time_zone = "Timestamp"
     character_varying = "VarChar"
+    character = "Char"
     integer = "Integer"
     boolean = "Boolean"
     
