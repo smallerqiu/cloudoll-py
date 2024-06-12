@@ -198,7 +198,7 @@ class Model(metaclass=ModelMetaclass):
                 by.append(f)
             else:
                 by.append(
-                    f"{f.lhs.name if self.cls.__ispg else f.lhs.full_name} {f.op}"
+                    f"{f.lhs.name if self.__ispg else f.lhs.full_name} {f.op}"
                 )
         if self.__order_by__ is not None:
             by = self.__order_by__ + by
