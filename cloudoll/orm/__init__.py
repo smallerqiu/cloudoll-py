@@ -1,12 +1,16 @@
 from redis import asyncio as aioredis
 from .parse import parse_coon
-import aiopg, aiomysql
 from .base import MeteBase, QueryTypes
 from typing import Any
 from ..logging import print_info, print_error
 import traceback
+import aiomysql
 from aiomysql import Pool as MYPool
+
+import aiopg as pg
 from aiopg.pool import Pool as PGPool
+# import asyncpg as pg
+# from asyncpg.pool import Pool as PGPool
 
 
 async def create_engine(**kw):
@@ -34,7 +38,8 @@ async def create_engine(**kw):
         rediss://[[username]:[password]]@localhost:6379/0
         """
         if url is None:
-            url = f"{driver}://{configs['username']}:{configs['password']}@{configs['host']}:{configs['port']}/{configs['db']}"
+            url = f"{driver}://{configs['username']}:{configs['password']}@{
+                configs['host']}:{configs['port']}/{configs['db']}"
         return await aioredis.from_url(url, **query)
     else:
         print_error("Not suport this database type.")
@@ -48,6 +53,65 @@ class Postgres(MeteBase):
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         self.__init__(*args, **kwds)
 
+    # async def query(self, sql, params=None, query_type: QueryTypes = 2, size: int = 10):
+    #     sql = sql.replace("?", "%s").replace("`", "")
+    #     print_info("sql", sql, params)
+    #     if not self.pool:
+    #         raise ValueError("must be create_engine first.")
+    #     if self.pool._closing or self.pool._closed:
+    #         return None
+
+    #     # async with self.pool.acquire() as conn:
+    #     async with self.pool.acquire() as conn:
+    #         # current_cursor = getattr(cursor, 'lastrowid', None)
+    #         if (
+    #             query_type == QueryTypes.CREATEBATCH
+    #             or query_type == QueryTypes.UPDATEBATCH
+    #         ):
+    #             result = await conn.executemany(sql, params)  # aiopg don't support executemany
+    #         else:
+    #             result = await conn.execute(sql, params)
+
+    #         # result = None
+
+    #         return result
+
+    #         if query_type == QueryTypes.ALL:
+    #             columns = [desc[0] for desc in cursor.description]
+    #             rows = await cursor.fetchall()
+    #             result = [dict(zip(columns, row)) for row in rows]
+    #             return result
+    #         elif query_type == QueryTypes.ONE:
+    #             columns = [desc[0] for desc in cursor.description]
+    #             row = await cursor.fetchone()
+    #             # print("rows_reuslt", rows)
+    #             result = dict(zip(columns, row)) if row else {}
+    #             return result
+    #         elif query_type == QueryTypes.MANY:
+    #             columns = [desc[0] for desc in cursor.description]
+    #             rows = await cursor.fetchmany(size)
+    #             result = [dict(zip(columns, row)) for row in rows]
+    #             return result
+    #         elif query_type == QueryTypes.COUNT:
+    #             rs = await cursor.fetchone()
+    #             return rs[0] if row else 0
+    #         elif query_type == QueryTypes.CREATE:
+    #             result = cursor.rowcount > 0
+    #             id = cursor.lastrowid
+    #             return result, id
+    #         elif query_type == QueryTypes.CREATEBATCH:
+    #             count = cursor.rowcount
+    #             id = cursor.lastrowid
+    #             return count, id
+    #         elif query_type == QueryTypes.UPDATE:
+    #             return cursor.rowcount > 0
+    #         elif query_type == QueryTypes.UPDATEBATCH:
+    #             return cursor.rowcount
+    #         elif query_type == QueryTypes.DELETE:
+    #             return cursor.rowcount > 0
+
+    #         self.pool.release(cursor)
+
     async def query(self, sql, params=None, query_type: QueryTypes = 2, size: int = 10):
         sql = sql.replace("?", "%s").replace("`", "")
         print_info("sql", sql, params)
@@ -55,16 +119,19 @@ class Postgres(MeteBase):
             raise ValueError("must be create_engine first.")
         if self.pool._closing or self.pool._closed:
             return None
+
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 # current_cursor = getattr(cursor, 'lastrowid', None)
-                await cursor.execute(sql, params)
+                if (
+                    query_type == QueryTypes.CREATEBATCH
+                    or query_type == QueryTypes.UPDATEBATCH
+                ):
+                    # aiopg don't support executemany
+                    await cursor.executemany(sql, params)
+                else:
+                    await cursor.execute(sql, params)
 
-                # if query_type.value > 4:
-                # if self.driver == "mysql":
-                # print(columns)
-                # await conn.commit()
-                # elif self.driver == "postgres":
                 result = None
 
                 if query_type == QueryTypes.ALL:
@@ -90,12 +157,18 @@ class Postgres(MeteBase):
                     result = cursor.rowcount > 0
                     id = cursor.lastrowid
                     return result, id
+                elif query_type == QueryTypes.CREATEBATCH:
+                    count = cursor.rowcount
+                    id = cursor.lastrowid
+                    return count, id
                 elif query_type == QueryTypes.UPDATE:
                     return cursor.rowcount > 0
+                elif query_type == QueryTypes.UPDATEBATCH:
+                    return cursor.rowcount
                 elif query_type == QueryTypes.DELETE:
                     return cursor.rowcount > 0
 
-        self.pool.release(conn)
+        self.pool.release(cursor)
 
     async def create_engine(self, **kw):
         try:
@@ -104,20 +177,26 @@ class Postgres(MeteBase):
             user = (kw.get("username"),)
             password = (str(kw.get("password", "")),)
             db = (kw.get("db"),)
-            dsn = f"dbname={db[0]} user={user[0]} password={password[0]} host={host[0]} port={port[0]}"
-            self.pool = await aiopg.create_pool(
+            dsn = f"dbname={db[0]} user={user[0]} password={
+                password[0]} host={host[0]} port={port[0]}"  # aiopg
+            # dsn = f"postgres://{user[0]}:{password[0]}@{host[0]}:{port[0]}/{db[0]}" #asyncpg
+            self.pool = await pg.create_pool(
                 dsn=dsn,
                 timeout=kw.get("timeout"),
-                echo=kw.get("echo", False),
-                maxsize=kw.get("maxsize", 10),
-                minsize=kw.get("pool_size", 5),
+                echo=kw.get("echo", False),  # aiopg
+                # max_size=kw.get("maxsize", 10), #asyncpg
+                # min_size=kw.get("minsize", 5), #asyncpg
+                maxsize=kw.get("maxsize", 10),  # aiopg
+                minsize=kw.get("minsize", 5),  # aiopg
             )
-            print_info(f"Database connection successfuly for postgres/{kw.get('db')}")
+            print_info(
+                f"Database connection successfuly for postgres/{kw.get('db')}")
         except Exception as e:
-            # print_error(e)
+            print_error(e)
             # print(traceback.format_exc())
             print_error(
-                f"Database connection failed,the instance : postgres/{kw.get('db')}"
+                f"Database connection failed,the instance : postgres/{
+                    kw.get('db')}"
             )
 
         return self
@@ -148,7 +227,7 @@ class Mysql(MeteBase):
 
     async def query(self, sql, params=None, query_type: QueryTypes = 2, size: int = 10):
         sql = sql.replace("?", "%s")
-        print_info("sql", sql, params)
+        # print_info("sql", sql, params)
         if not self.pool:
             raise ValueError("must be create_engine first.")
         if self.pool._closing or self.pool._closed:
@@ -156,7 +235,13 @@ class Mysql(MeteBase):
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 # current_cursor = getattr(cursor, 'lastrowid', None)
-                await cursor.execute(sql, params)
+                if (
+                    query_type == QueryTypes.CREATEBATCH
+                    or query_type == QueryTypes.UPDATEBATCH
+                ):
+                    await cursor.executemany(sql, params)
+                else:
+                    await cursor.execute(sql, params)
 
                 # if query_type.value > 4:
                 # if self.driver == "mysql":
@@ -180,8 +265,14 @@ class Mysql(MeteBase):
                     result = cursor.rowcount > 0
                     id = cursor.lastrowid
                     return result, id
+                elif query_type == QueryTypes.CREATEBATCH:
+                    count = cursor.rowcount
+                    id = cursor.lastrowid
+                    return count, id
                 elif query_type == QueryTypes.UPDATE:
                     return cursor.rowcount > 0
+                elif query_type == QueryTypes.UPDATEBATCH:
+                    return cursor.rowcount
                 elif query_type == QueryTypes.DELETE:
                     return cursor.rowcount > 0
 
@@ -199,15 +290,17 @@ class Mysql(MeteBase):
                 charset=kw.get("charset", "utf8"),
                 autocommit=False,  # kw.get("autocommit", False),
                 maxsize=kw.get("maxsize", 10),
-                minsize=kw.get("pool_size", 5),
+                minsize=kw.get("minsize", 5),
                 cursorclass=AttrDictCursor,
                 loop=loop,
             )
-            print_info(f"Database connection successfuly for mysql/{kw.get('db')}.")
+            print_info(
+                f"Database connection successfuly for mysql/{kw.get('db')}.")
         except Exception as e:
             # print(e)
             # print(traceback.format_exc())
             print_error(
-                f"Database connection failed,the instance : mysql/{kw.get('db')}"
+                f"Database connection failed,the instance : mysql/{
+                    kw.get('db')}"
             )
         return self

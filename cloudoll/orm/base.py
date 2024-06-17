@@ -9,6 +9,8 @@ class QueryTypes(Enum):
     CREATE = 5
     UPDATE = 6
     DELETE = 7
+    CREATEBATCH = 8
+    UPDATEBATCH = 9
 
 
 class MeteBase:
@@ -60,9 +62,15 @@ class MeteBase:
 
     async def update(self, sql, params):
         return await self.query(sql, params, QueryTypes.UPDATE)
+    
+    async def update_batch(self, sql, params):
+        return await self.query(sql, params, QueryTypes.UPDATEBATCH)
 
     async def delete(self, sql, params):
         return await self.query(sql, params, QueryTypes.DELETE)
 
     async def create(self, sql, params):
         return await self.query(sql, params, QueryTypes.CREATE)
+    
+    async def create_batch(self, sql, params):
+        return await self.query(sql, params, QueryTypes.CREATEBATCH)

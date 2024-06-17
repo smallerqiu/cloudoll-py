@@ -197,9 +197,7 @@ class Model(metaclass=ModelMetaclass):
             if isinstance(f, str):
                 by.append(f)
             else:
-                by.append(
-                    f"{f.lhs.name if self.__ispg else f.lhs.full_name} {f.op}"
-                )
+                by.append(f"{f.lhs.name if self.__ispg else f.lhs.full_name} {f.op}")
         if self.__order_by__ is not None:
             by = self.__order_by__ + by
         self.__order_by__ = by
@@ -216,7 +214,6 @@ class Model(metaclass=ModelMetaclass):
 
     def _get_key_args(self, action, args):
         data = dict()
-        md = None
         if args is None or not args:
             for k in self.__fields__:
                 f = getattr(self, k)
@@ -226,10 +223,9 @@ class Model(metaclass=ModelMetaclass):
             data = args
         else:
             for item in args:
-                md = item
                 if isinstance(item, Model):
                     for k in item.__dict__:
-                        if (action == 'u' and item[k].value) or action == 'i':
+                        if (action == "u" and item[k].value) or action == "i":
                             data[k] = item[k]
 
                 else:  # for object
@@ -251,7 +247,28 @@ class Model(metaclass=ModelMetaclass):
             elif v is not None:  # fix sql format %s
                 keys.append("`%s`=?" % k)
                 params.append(v)
-        return ",".join(keys), params, md
+        return ",".join(keys), params
+
+    def _get_batch_keys_values(self, items: list):
+        keys = []
+        values = []
+        item = items[0]
+        if isinstance(item, Model):
+            keys = item.__dict__.keys()
+        elif isinstance(item, dict):
+            keys = item.keys()
+
+        for item in items:
+            value = []
+            if isinstance(item, Model):
+                for k in item.__dict__:
+                    value.append(item[k].value)
+            elif isinstance(item, dict):  # for object
+                for k, v in item.items():
+                    value.append(v)
+            value = tuple(key for key in value)
+            values.append(value)
+        return keys, values
 
     def _merge_params(self, p):
         if p is not None:
@@ -343,7 +360,7 @@ class Model(metaclass=ModelMetaclass):
         # where = self.__where__
         where = self._literal("WHERE", self.__where__)
 
-        keys, params, md = self._get_key_args('u', args or kw)
+        keys, params = self._get_key_args("u", args or kw)
 
         sql = f"update `{table}` set {keys} {where}"
 
@@ -389,10 +406,19 @@ class Model(metaclass=ModelMetaclass):
 
     async def insert(self, *args, **kw):
         table = self.__table__
-        keys, params, md = self._get_key_args('i', args or kw)
+        keys, params = self._get_key_args("i", args or kw)
         sql = f"insert into `{table}` set {keys}"
         self._reset()
         return await self.__pool__.create(sql, params)
+
+    async def insert_batch(self, items: list):
+        table = self.__table__
+        if len(items) == 0:
+            return 0
+        keys, params = self._get_batch_keys_values(items)
+        sql = f"insert into `{table}`  ({",".join(keys)}) values ({','.join(['?' for k in keys])})"
+        self._reset()
+        return await self.__pool__.create_batch(sql, params)
 
     async def count(self):
         __where__ = copy.copy(self.__where__)
