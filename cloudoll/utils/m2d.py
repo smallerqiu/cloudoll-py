@@ -253,7 +253,8 @@ def get_col_sql(field):
     if field.primary_key:
         sql += " PRIMARY KEY"
     if field.auto_increment:
-        sql += " AUTO_INCREMENT"
+        # todo: postgres SERIAL
+        sql += " AUTO_INCREMENT" 
     if field.NOT_NULL:
         sql += " NOT NULL"
     if field.default:

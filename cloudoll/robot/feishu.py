@@ -5,7 +5,8 @@ __author__ = "chuchur/chuchur.com"
 
 import hashlib, hmac, time, base64
 from curl_cffi import requests as http
-from ..logging import print_error,print_info
+from ..logging import print_error, print_info
+
 
 class Client(object):
     def __init__(self, **kw):

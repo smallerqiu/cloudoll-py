@@ -7,7 +7,8 @@ import re
 import datetime
 from ..utils.common import Object
 
-__ALL__ = ("models","Model")
+__ALL__ = ("models", "Model")
+
 
 class ModelMetaclass(type):
     # def __init__(self, **kw):
@@ -213,7 +214,7 @@ class Model(metaclass=ModelMetaclass):
         self.__group_by__ = by
         return self
 
-    def _get_key_args(self, action, args):
+    def _format_data(self, action, args):
         data = dict()
         if args is None or not args:
             for k in self.__fields__:
@@ -232,6 +233,11 @@ class Model(metaclass=ModelMetaclass):
                 else:  # for object
                     for k, v in item.items():
                         data[k] = v
+
+        return data
+
+    def _get_update_key_args(self, action, args):
+        data = self._format_data(action, args)
         keys = []
         params = []
         for k, v in data.items():
@@ -249,6 +255,26 @@ class Model(metaclass=ModelMetaclass):
                 keys.append("`%s`=?" % k)
                 params.append(v)
         return ",".join(keys), params
+
+    def _get_insert_key_args(self, action, args):
+        data = self._format_data(action, args)
+        keys = []
+        params = []
+        for k, v in data.items():
+            if isinstance(v, Field):
+                value = v.value
+                if value is None:
+                    if v.created_generated == True or v.update_generated == True:
+                        value = datetime.datetime.now()
+                    else:
+                        value = v.default
+                if value is not None:
+                    keys.append(k)
+                    params.append(value)
+            elif v is not None:  # fix sql format %s
+                keys.append(k)
+                params.append(v)
+        return keys, params
 
     def _get_batch_keys_values(self, items: list):
         keys = []
@@ -361,7 +387,7 @@ class Model(metaclass=ModelMetaclass):
         # where = self.__where__
         where = self._literal("WHERE", self.__where__)
 
-        keys, params = self._get_key_args("u", args or kw)
+        keys, params = self._get_update_key_args("u", args or kw)
 
         sql = f"update `{table}` set {keys} {where}"
 
@@ -407,9 +433,10 @@ class Model(metaclass=ModelMetaclass):
 
     async def insert(self, *args, **kw):
         table = self.__table__
-        keys, params = self._get_key_args("i", args or kw)
-        sql = f"insert into `{table}` set {keys}"
+        keys, params = self._get_insert_key_args("i", args or kw)
+        sql = f"insert into `{table}` ({','.join(keys)}) values ({','.join(['?' for k in keys])})"
         self._reset()
+        params = tuple(key for key in params)
         return await self.__pool__.create(sql, params)
 
     async def insert_batch(self, items: list):
@@ -417,7 +444,7 @@ class Model(metaclass=ModelMetaclass):
         if len(items) == 0:
             return 0
         keys, params = self._get_batch_keys_values(items)
-        sql = f"insert into `{table}`  ({",".join(keys)}) values ({','.join(['?' for k in keys])})"
+        sql = f"insert into `{table}` ({','.join(keys)}) values ({','.join(['?' for k in keys])})"
         self._reset()
         return await self.__pool__.create_batch(sql, params)
 

@@ -9,10 +9,12 @@ from aiomysql import Pool as MYPool
 
 import aiopg as pg
 from aiopg.pool import Pool as PGPool
+
 # import asyncpg as pg
 # from asyncpg.pool import Pool as PGPool
 
-__ALL__ = ("create_engine")
+__ALL__ = "create_engine"
+
 
 async def create_engine(**kw):
     url = kw.get("url")
@@ -177,8 +179,7 @@ class Postgres(MeteBase):
             user = (kw.get("username"),)
             password = (str(kw.get("password", "")),)
             db = (kw.get("db"),)
-            dsn = f"dbname={db[0]} user={user[0]} password={
-                password[0]} host={host[0]} port={port[0]}"  # aiopg
+            dsn = f"dbname={db[0]} user={user[0]} password={password[0]} host={host[0]} port={port[0]}"  # aiopg
             # dsn = f"postgres://{user[0]}:{password[0]}@{host[0]}:{port[0]}/{db[0]}" #asyncpg
             self.pool = await pg.create_pool(
                 dsn=dsn,
@@ -189,14 +190,12 @@ class Postgres(MeteBase):
                 maxsize=kw.get("maxsize", 10),  # aiopg
                 minsize=kw.get("minsize", 5),  # aiopg
             )
-            print_info(
-                f"Database connection successfuly for postgres/{kw.get('db')}")
+            print_info(f"Database connection successfuly for postgres/{kw.get('db')}")
         except Exception as e:
             print_error(e)
             # print(traceback.format_exc())
             print_error(
-                f"Database connection failed,the instance : postgres/{
-                    kw.get('db')}"
+                f"Database connection failed,the instance : postgres/{kw.get('db')}"
             )
 
         return self
@@ -294,13 +293,11 @@ class Mysql(MeteBase):
                 cursorclass=AttrDictCursor,
                 loop=loop,
             )
-            print_info(
-                f"Database connection successfuly for mysql/{kw.get('db')}.")
+            print_info(f"Database connection successfuly for mysql/{kw.get('db')}.")
         except Exception as e:
             # print(e)
             # print(traceback.format_exc())
             print_error(
-                f"Database connection failed,the instance : mysql/{
-                    kw.get('db')}"
+                f"Database connection failed,the instance : mysql/{kw.get('db')}"
             )
         return self
