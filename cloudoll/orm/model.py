@@ -7,6 +7,7 @@ import re
 import datetime
 from ..utils.common import Object
 
+__ALL__ = ("models","Model")
 
 class ModelMetaclass(type):
     # def __init__(self, **kw):

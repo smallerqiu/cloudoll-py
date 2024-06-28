@@ -12,6 +12,7 @@ from aiopg.pool import Pool as PGPool
 # import asyncpg as pg
 # from asyncpg.pool import Pool as PGPool
 
+__ALL__ = ("create_engine")
 
 async def create_engine(**kw):
     url = kw.get("url")
@@ -38,8 +39,7 @@ async def create_engine(**kw):
         rediss://[[username]:[password]]@localhost:6379/0
         """
         if url is None:
-            url = f"{driver}://{configs['username']}:{configs['password']}@{
-                configs['host']}:{configs['port']}/{configs['db']}"
+            url = f"{driver}://{configs['username']}:{configs['password']}@{configs['host']}:{configs['port']}/{configs['db']}"
         return await aioredis.from_url(url, **query)
     else:
         print_error("Not suport this database type.")
