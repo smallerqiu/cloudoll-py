@@ -392,7 +392,8 @@ class Model(metaclass=ModelMetaclass):
         sql = f"update `{table}` set {keys} {where}"
 
         if where is not None and where != "":
-            params += self.__params__
+            if self.__params__:
+                params += self.__params__
         else:
             pk, pkv = self._get_primary()
             if pkv is None:

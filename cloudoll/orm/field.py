@@ -316,7 +316,8 @@ class Expression(FieldBase):
         elif isinstance(r, FieldBase):
             _q, _p = r.sql()
             q.append(_q)
-            p = p + _p
+            if _p:
+                p = p + _p
         elif self.op == OP.AS:
             # is_fun or (isinstance(r, str) and (self.op == OP.AND or self.op == OP.OR)):
             q.append(r)
