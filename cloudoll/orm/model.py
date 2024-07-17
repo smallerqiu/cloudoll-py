@@ -434,7 +434,8 @@ class Model(metaclass=ModelMetaclass):
     async def insert(self, *args, **kw):
         table = self.__table__
         keys, params = self._get_insert_key_args("i", args or kw)
-        sql = f"insert into `{table}` ({','.join(keys)}) values ({','.join(['?' for k in keys])})"
+        escape_keys = [f'`{k}`' for k in keys]
+        sql = f"insert into `{table}` ({','.join(escape_keys)}) values ({','.join(['?' for k in keys])})"
         self._reset()
         params = tuple(key for key in params)
         return await self.__pool__.create(sql, params)
@@ -444,7 +445,8 @@ class Model(metaclass=ModelMetaclass):
         if len(items) == 0:
             return 0
         keys, params = self._get_batch_keys_values(items)
-        sql = f"insert into `{table}` ({','.join(keys)}) values ({','.join(['?' for k in keys])})"
+        escape_keys = [f'`{k}`' for k in keys]
+        sql = f"insert into `{table}` ({','.join(escape_keys)}) values ({','.join(['?' for k in keys])})"
         self._reset()
         return await self.__pool__.create_batch(sql, params)
 
