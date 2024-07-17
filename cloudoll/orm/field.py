@@ -35,13 +35,15 @@ OP = objdict(
     IS_THIS_WEEK="THIS_WEEK",
     IS_THIS_MONTH="THIS_MONTH",
     IS_THIS_YEAR="THIS_YEAR",
-    BEFORE_DAYS="BEFORE_DAYS",
-    BEFORE_HOURS="BEFORE_HOURS",
-    BEFORE_MINUTES="BEFORE_MINUTES",
-    BEFORE_YEARS="BEFORE_YEARS",
+    LASTED_HOURS="LASTED_HOURS",
+    LASTED_MINUTES="LASTED_MINUTES",
+    LASTED_SECONDS="LASTED_SECONDS",
+    LASTED_YEARS="LASTED_YEARS",
+    LASTED_MONTHS="LASTED_MONTHS",
+    LASTED_DAYS="LASTED_DAYS",
+    
     AFTER_YEARS="AFTER_YEARS",
     AFTER_MONTHS="AFTER_MONTHS",
-    BEFORE_MONTHS="BEFORE_MONTHS",
     DATE_FORMAT="DATE_FORMAT",
     JSON_CONTAINS_OBJECT="JSON_CONTAINS_OBJECT",
     JSON_CONTAINS_ARRAY="JSON_CONTAINS_ARRAY",
@@ -139,19 +141,19 @@ class FieldBase(object):
         return Function(self, OP.IS_THIS_YEAR)
 
     def before_days(self, args):
-        return Function(self, OP.BEFORE_DAYS, args)
+        return Function(self, OP.LASTED_DAYS, args)
 
     def before_hours(self, args):
-        return Function(self, OP.BEFORE_HOURS, args)
+        return Function(self, OP.LASTED_HOURS, args)
 
     def before_minutes(self, args):
-        return Function(self, OP.BEFORE_MINUTES, args)
+        return Function(self, OP.LASTED_MINUTES, args)
 
     def before_years(self, args):
-        return Function(self, OP.BEFORE_YEARS, args)
+        return Function(self, OP.LASTED_YEARS, args)
 
     def before_months(self, args):
-        return Function(self, OP.BEFORE_MONTHS, args)
+        return Function(self, OP.LASTED_MONTHS, args)
 
     def after_months(self, args):
         return Function(self, OP.AFTER_MONTHS, args)
@@ -238,16 +240,20 @@ class Function(FieldBase):
             return f"MONTH({col_name}) = MONTH(CURDATE())", None
         elif op == OP.IS_THIS_YEAR:
             return f"YEAR({col_name}) = YEAR(CURDATE())", None
-        elif op == OP.BEFORE_DAYS:
-            return f"DATE({col_name}) >= CURDATE() - INTERVAL {self.rpt} DAY", None
-        elif op == OP.BEFORE_HOURS:
-            return f"{col_name} >= NOW() - INTERVAL {self.rpt} HOUR", None
-        elif op == OP.BEFORE_MINUTES:
+        
+        elif op == OP.LASTED_SECONDS:
+            return f"{col_name} >= NOW() - INTERVAL {self.rpt} SECONDS", None
+        elif op == OP.LASTED_MINUTES:
             return f"{col_name} >= NOW() - INTERVAL {self.rpt} MINUTE", None
-        elif op == OP.BEFORE_YEARS:
+        elif op == OP.LASTED_HOURS:
+            return f"{col_name} >= NOW() - INTERVAL {self.rpt} HOUR", None
+        elif op == OP.LASTED_YEARS:
             return f"{col_name} >= DATE_SUB(NOW(), INTERVAL {self.rpt} YEAR)", None
-        elif op == OP.BEFORE_MONTHS:
+        elif op == OP.LASTED_MONTHS:
             return f"{col_name} >= DATE_SUB(NOW(), INTERVAL {self.rpt} MONTH)", None
+        elif op == OP.LASTED_DAYS:
+            return f"DATE({col_name}) >= CURDATE() - INTERVAL {self.rpt} DAY", None
+        
         elif op == OP.AFTER_YEARS:
             return f"{col_name} < DATE_SUB(NOW(), INTERVAL {self.rpt} YEAR)", None
         elif op == OP.AFTER_MONTHS:
