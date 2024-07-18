@@ -41,9 +41,12 @@ OP = objdict(
     LASTED_YEARS="LASTED_YEARS",
     LASTED_MONTHS="LASTED_MONTHS",
     LASTED_DAYS="LASTED_DAYS",
-    
-    AFTER_YEARS="AFTER_YEARS",
-    AFTER_MONTHS="AFTER_MONTHS",
+    BEFORE_YEARS="BEFORE_YEARS",
+    BEFORE_MONTHS="BEFORE_MONTHS",
+    BEFORE_DAYS="BEFORE_DAYS",
+    BEFORE_HOURS="BEFORE_HOURS",
+    BEFORE_MINUTES="BEFORE_MINUTES",
+    BEFORE_SECONDS="BEFORE_SECONDS",
     DATE_FORMAT="DATE_FORMAT",
     JSON_CONTAINS_OBJECT="JSON_CONTAINS_OBJECT",
     JSON_CONTAINS_ARRAY="JSON_CONTAINS_ARRAY",
@@ -140,26 +143,41 @@ class FieldBase(object):
     def is_this_year(self):
         return Function(self, OP.IS_THIS_YEAR)
 
-    def before_days(self, args):
-        return Function(self, OP.LASTED_DAYS, args)
-
-    def before_hours(self, args):
+    def lasted_hours(self, args):
         return Function(self, OP.LASTED_HOURS, args)
 
-    def before_minutes(self, args):
+    def lasted_minutes(self, args):
         return Function(self, OP.LASTED_MINUTES, args)
 
-    def before_years(self, args):
+    def lasted_seconds(self, args):
+        return Function(self, OP.LASTED_SECONDS, args)
+
+    def lasted_years(self, args):
         return Function(self, OP.LASTED_YEARS, args)
 
-    def before_months(self, args):
+    def lasted_months(self, args):
         return Function(self, OP.LASTED_MONTHS, args)
 
-    def after_months(self, args):
-        return Function(self, OP.AFTER_MONTHS, args)
+    def lasted_days(self, args):
+        return Function(self, OP.LASTED_DAYS, args)
 
-    def after_years(self, args):
-        return Function(self, OP.AFTER_YEARS, args)
+    def before_months(self, args):
+        return Function(self, OP.BEFORE_MONTHS, args)
+
+    def before_years(self, args):
+        return Function(self, OP.BEFORE_YEARS, args)
+
+    def before_days(self, args):
+        return Function(self, OP.BEFORE_DAYS, args)
+
+    def before_hours(self, args):
+        return Function(self, OP.BEFORE_HOURS, args)
+
+    def before_minutes(self, args):
+        return Function(self, OP.BEFORE_MINUTES, args)
+
+    def before_seconds(self, args):
+        return Function(self, OP.BEFORE_SECOBDS, args)
 
     def json_contains_object(self, key, value):
         return Function(self, OP.JSON_CONTAINS_OBJECT, (key, value))
@@ -240,24 +258,33 @@ class Function(FieldBase):
             return f"MONTH({col_name}) = MONTH(CURDATE())", None
         elif op == OP.IS_THIS_YEAR:
             return f"YEAR({col_name}) = YEAR(CURDATE())", None
-        
+
         elif op == OP.LASTED_SECONDS:
-            return f"{col_name} >= NOW() - INTERVAL {self.rpt} SECONDS", None
+            return f"{col_name} >= NOW() - INTERVAL {self.rpt} SECOND", None
         elif op == OP.LASTED_MINUTES:
             return f"{col_name} >= NOW() - INTERVAL {self.rpt} MINUTE", None
         elif op == OP.LASTED_HOURS:
             return f"{col_name} >= NOW() - INTERVAL {self.rpt} HOUR", None
         elif op == OP.LASTED_YEARS:
-            return f"{col_name} >= DATE_SUB(NOW(), INTERVAL {self.rpt} YEAR)", None
+            return f"{col_name} >= NOW() - INTERVAL {self.rpt} YEAR", None
         elif op == OP.LASTED_MONTHS:
-            return f"{col_name} >= DATE_SUB(NOW(), INTERVAL {self.rpt} MONTH)", None
+            return f"{col_name} >= NOW() - INTERVAL {self.rpt} MONTH", None
         elif op == OP.LASTED_DAYS:
             return f"DATE({col_name}) >= CURDATE() - INTERVAL {self.rpt} DAY", None
-        
-        elif op == OP.AFTER_YEARS:
-            return f"{col_name} < DATE_SUB(NOW(), INTERVAL {self.rpt} YEAR)", None
-        elif op == OP.AFTER_MONTHS:
-            return f"{col_name} < DATE_SUB(NOW(), INTERVAL {self.rpt} MONTH)", None
+
+        elif op == OP.BEFORE_YEARS:
+            return f"{col_name} < NOW() - INTERVAL {self.rpt} YEAR", None
+        elif op == OP.BEFORE_MONTHS:
+            return f"{col_name} < NOW() - INTERVAL {self.rpt} MONTH", None
+        elif op == OP.BEFORE_DAYS:
+            return f"{col_name} < NOW() - INTERVAL {self.rpt} DAY", None
+        elif op == OP.BEFORE_HOURS:
+            return f"{col_name} < NOW() - INTERVAL {self.rpt} HOUR", None
+        elif op == OP.BEFORE_MINUTES:
+            return f"{col_name} < NOW() - INTERVAL {self.rpt} MINUTE", None
+        elif op == OP.BEFORE_SECONDS:
+            return f"{col_name} < NOW() - INTERVAL {self.rpt} SECOND", None
+
         elif op == OP.JSON_CONTAINS_OBJECT:
             _k, _v = self.rpt
             key = _k.full_name if isinstance(_k, Field) else f"'{_k}'"
@@ -307,34 +334,28 @@ class Expression(FieldBase):
             q.append(_q)
             if _p:
                 p = p + _p
-            # return l.sql()
 
         q.append(f" {self.op} ")
 
         if isinstance(r, Field):
             if r._value is not None:
-                # _value = r._value if r._value is not None else r.full_name
                 q.append("?")
                 p.append(r._value)
             else:
                 q.append(r.full_name)
-            # q.append(str(r._value) if r._value is not None else r.full_name)
         elif isinstance(r, FieldBase):
             _q, _p = r.sql()
             q.append(_q)
             if _p:
                 p = p + _p
         elif self.op == OP.AS:
-            # is_fun or (isinstance(r, str) and (self.op == OP.AND or self.op == OP.OR)):
             q.append(r)
         elif r is not None:
             q.append("?")
             p.append(r)
         if not is_fun:
             q.append(")")
-        # q.append(")")
         q = [str(num) for num in q]
-        # print("".join(q))
         return "".join(q), p
 
     # def __str__(self):
@@ -345,7 +366,6 @@ class Expression(FieldBase):
     #     return str(eval(f"{cal}{self.rhs}"))
 
     def __repr__(self):
-        # return self.__value
         cal = f"{self.lhs.value}{self.op}"
         if isinstance(self.rhs, FieldBase):
             return str(eval(f"{cal}{self.rhs.value}"))
@@ -361,7 +381,7 @@ class Field(FieldBase):
         primary_key=False,  # 主键
         charset=None,  # 编码
         max_length=None,  # 长度
-        scale_length=None, # 精度
+        scale_length=None,  # 精度
         auto_increment=False,  # 自增
         NOT_NULL=False,  # 非空
         created_generated=False,  # 创建时for datetime
