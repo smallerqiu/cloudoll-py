@@ -81,6 +81,6 @@ class IdWorker:
             return id
 
 
-# 示例使用
-worker = IdWorker(worker_id=1, datacenter_id=1)
-print(worker.next_id())
+# eg:
+# worker = IdWorker(worker_id=1, datacenter_id=1)
+# print(worker.next_id())
