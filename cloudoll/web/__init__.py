@@ -234,6 +234,7 @@ class Application(object):
         self.app.on_startup.append(self._init_database)
         self.app.on_cleanup.append(self._close_database)
         self.app.config = config
+        self.app.env = env
         self.app.jwt_encode = self.jwt_encode
         self.app.jwt_decode = self.jwt_decode
         # session
