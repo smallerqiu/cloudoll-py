@@ -203,6 +203,7 @@ class Application(object):
 
     def create(self, env: str = None, entry_model: str = None, config=None):
         # self.init_parse()
+        self.env = env
         loop = asyncio.get_event_loop()
         if loop is None:
             loop = asyncio.new_event_loop()

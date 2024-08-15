@@ -116,13 +116,15 @@ class Postgres(MeteBase):
 
     async def query(self, sql, params=None, query_type: QueryTypes = 2, size: int = 10):
         sql = sql.replace("?", "%s").replace('`', '"')
-        print_info("sql", sql, params)
         if not self.pool:
             raise ValueError("must be create_engine first.")
         if self.pool._closing or self.pool._closed:
             return None
 
         async with self.pool.acquire() as conn:
+            if conn.echo:
+                print_info("sql", sql, params)
+                
             async with conn.cursor() as cursor:
                 # current_cursor = getattr(cursor, 'lastrowid', None)
                 if (
@@ -226,12 +228,14 @@ class Mysql(MeteBase):
 
     async def query(self, sql, params=None, query_type: QueryTypes = 2, size: int = 10):
         sql = sql.replace("?", "%s")
-        # print_info("sql", sql, params)
         if not self.pool:
             raise ValueError("must be create_engine first.")
         if self.pool._closing or self.pool._closed:
             return None
         async with self.pool.acquire() as conn:
+            if conn.echo:
+                print_info("sql", sql, params)
+
             async with conn.cursor() as cursor:
                 # current_cursor = getattr(cursor, 'lastrowid', None)
                 if (

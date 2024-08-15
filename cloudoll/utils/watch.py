@@ -72,11 +72,11 @@ def set_tty(tty_path: Optional[str]) -> Iterator[None]:
         yield
 
 
-def mian_app(tty_path, config, entry):
+def mian_app(tty_path, config, entry, env):
     with set_tty(tty_path):
         if sys.version_info >= (3, 11):
             with asyncio.Runner() as runner:
-                app_runner = runner.run(create_main_app(config, entry))
+                app_runner = runner.run(create_main_app(config, entry, env))
                 try:
                     runner.run(start_main_app(app_runner, config["server"]["port"]))
                     runner.get_loop().run_forever()
@@ -87,7 +87,7 @@ def mian_app(tty_path, config, entry):
                         runner.run(app_runner.cleanup())
         else:
             loop = asyncio.new_event_loop()
-            runner = loop.run_until_complete(create_main_app(config, entry))
+            runner = loop.run_until_complete(create_main_app(config, entry, env))
             try:
                 loop.run_until_complete(
                     start_main_app(runner, config["server"]["port"])
@@ -100,9 +100,9 @@ def mian_app(tty_path, config, entry):
                     loop.run_until_complete(runner.cleanup())
 
 
-async def create_main_app(config, entry):
+async def create_main_app(config, entry, env):
     await check_port_open(config["server"]["port"])
-    App = app.create(config=config, entry_model=entry)
+    App = app.create(env=env, config=config, entry_model=entry)
     return web.AppRunner(App.app, shutdown_timeout=0.1)
 
 
@@ -113,9 +113,10 @@ async def start_main_app(runner, port):
 
 
 class AppTask(WatchTask):
-    def __init__(self, watch_path: str, config, entry: None):
+    def __init__(self, watch_path: str, config, entry: None, env: str):
         self._config = config
         self._entry = entry
+        self._env = env
         self._reloads = 0
         assert watch_path
         super().__init__(watch_path)
@@ -153,7 +154,7 @@ class AppTask(WatchTask):
             tty_path = None
 
         self._process = Process(
-            target=mian_app, args=(tty_path, self._config, self._entry)
+            target=mian_app, args=(tty_path, self._config, self._entry, self._env)
         )
         self._process.start()
 

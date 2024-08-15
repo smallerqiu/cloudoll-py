@@ -89,7 +89,7 @@ def start(environment, host, port, mode, path, entry) -> None:
         # print(environment, host, port, mode, path, entry)
         # return
         if mode == 'production':
-            App = app.create(config=config, entry_model=entry)
+            App = app.create(env=environment, config=config, entry_model=entry)
             App.run()
             return
         aux_app = web.Application(
@@ -102,7 +102,7 @@ def start(environment, host, port, mode, path, entry) -> None:
         config["server"] = server
 
         aux_port = int(server.port) + 1
-        task = AppTask(Path(".").resolve(), config, entry=entry)
+        task = AppTask(Path(".").resolve(), config, entry=entry, env=environment)
         aux_app.cleanup_ctx.append(task.cleanup_ctx)
         web.run_app(
             aux_app,
