@@ -201,6 +201,7 @@ def get_col(field, driver="mysql"):
             "default": field["Default"],
             "charset": field["Collation"],
             "max_length": None,
+            "scale_length":None,
             "auto_increment": field["Extra"] == "auto_increment",
             "NOT_NULL": field["Null"] == "NO",
             "created_generated": "DEFAULT_GENERATED" == field["Extra"],
