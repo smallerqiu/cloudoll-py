@@ -31,6 +31,8 @@ OP = objdict(
     AVG="AVG",
     AS="AS",
     SUM="SUM",
+    MAX="MAX",
+    MIN="MIN",
     IS_TODAY="IS_TODAY",
     IS_THIS_WEEK="THIS_WEEK",
     IS_THIS_MONTH="THIS_MONTH",
@@ -50,6 +52,7 @@ OP = objdict(
     DATE_FORMAT="DATE_FORMAT",
     JSON_CONTAINS_OBJECT="JSON_CONTAINS_OBJECT",
     JSON_CONTAINS_ARRAY="JSON_CONTAINS_ARRAY",
+    GROUP_CONCAT='GROUP_CONCAT',
     COUNT="COUNT",
     COUNT_WHEN="COUNT_WHEN",
     IS_NOT="IS NOT",
@@ -118,6 +121,9 @@ class FieldBase(object):
 
     def count(self):
         return Function(self, OP.COUNT)
+
+    def max(self):
+        return Function(self, OP.MAX)
 
     def count_when(self, value):
         return Function(self, OP.COUNT_WHEN, value)
@@ -284,7 +290,9 @@ class Function(FieldBase):
             return f"{col_name} < NOW() - INTERVAL {self.rpt} MINUTE", None
         elif op == OP.BEFORE_SECONDS:
             return f"{col_name} < NOW() - INTERVAL {self.rpt} SECOND", None
-
+        elif op == OP.CONTAINS:
+            return f"{col_name} LIKE CONCAT('%%',?,'%%')", [self.rpt]
+            # return f"CONTAINS({col_name},?)", [self.rpt]
         elif op == OP.JSON_CONTAINS_OBJECT:
             _k, _v = self.rpt
             key = _k.full_name if isinstance(_k, Field) else f"'{_k}'"
@@ -300,6 +308,16 @@ class Function(FieldBase):
             return f"COUNT({col_name})", None
         elif op == OP.COUNT_WHEN:
             return f"COUNT(CASE WHEN {col_name} = ? THEN 1 END)", [self.rpt]
+        elif op == OP.SUM:
+            return f"SUM({col_name})", None
+        elif op == OP.AVG:
+            return f"AVG({col_name})", None
+        elif op == OP.MAX:
+            return f"MAX({col_name})", None
+        elif op == OP.MIN:
+            return f"MIN({col_name})", None
+        elif op == OP.GROUP_CONCAT:
+            return f"GROUP_CONCAT({col_name})", None
 
 
 class Expression(FieldBase):
