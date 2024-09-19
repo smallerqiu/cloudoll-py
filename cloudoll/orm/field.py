@@ -55,6 +55,10 @@ OP = objdict(
     GROUP_CONCAT='GROUP_CONCAT',
     COUNT="COUNT",
     COUNT_WHEN="COUNT_WHEN",
+    SUM_WHEN="SUM_WHEN",
+    MAX_WHEN="MAX_WHEN",
+    MIN_WHEN="MIN_WHEN",
+    AVG_WHEN="AVG_WHEN",
     IS_NOT="IS NOT",
     IS_NOT_NULL="IS NOT NULL",
     IS_NULL="IS NULL",
@@ -122,17 +126,52 @@ class FieldBase(object):
     def count(self):
         return Function(self, OP.COUNT)
 
+    def count_when(self, *arg):
+        """
+        input: count_when(A.field > 10 ,1 , 0) \n
+        output: count(case when A.field > 10 then 1 else 0 end)
+        """
+        return Function(self, OP.COUNT_WHEN, arg)
+
     def max(self):
         return Function(self, OP.MAX)
 
-    def count_when(self, value):
-        return Function(self, OP.COUNT_WHEN, value)
+    def max_when(self, *arg):
+        """
+        input: max_when(A.field > 10 ,A.field) \n 
+        output: max(case when A.field > 10 then A.field end)
+        """
+        return Function(self, OP.MAX_WHEN, arg)
+
+    def min(self):
+        return Function(self, OP.MIN)
+
+    def min_when(self, *arg):
+        """
+        input: min_when(A.field > 10 ,A.field) \n 
+        output: min(case when A.field > 10 then A.field end)
+        """
+        return Function(self, OP.MIN_WHEN, arg)
 
     def sum(self):
         return Function(self, OP.SUM)
 
+    def sum_when(self, *arg):
+        """
+        input: sum_when(A.field > 10 ,1 , 0)\n
+        output: sum(case when A.field > 10 then 1 else 0 end)
+        """
+        return Function(self, OP.SUM_WHEN, arg)
+
     def avg(self):
         return Function(self, OP.AVG)
+
+    def avg_when(self, *arg):
+        """
+        input: avg_when(A.field > 10 , A.field)\n
+        output: avg(case when A.field > 10 then A.field end)
+        """
+        return Function(self, OP.AVG_WHEN, arg)
 
     def date_format(self, args):
         return Function(self, OP.DATE_FORMAT, args)
@@ -243,6 +282,20 @@ class ExpList(FieldBase):
         # return f"{lpt.sql() if isinstance(lpt,Expression) else lpt} {self.op} {rpt.sql() if isinstance(rpt,Expression) else rpt}"
 
 
+def deconstruct(args):
+    f = args[0] if len(args) > 0 else None
+    v1 = args[1] if len(args) > 1 else 1
+    v2 = args[2] if len(args) > 2 and args[2] is not None else 'NULL'
+    c = None
+    v = None
+    if isinstance(f, FieldBase):
+        c = f"{f.lhs.full_name} {f.op} ?"
+        v = f.rhs
+    if isinstance(v1, FieldBase):
+        v1 = v1.name
+    return c, v, v1, v2
+
+
 class Function(FieldBase):
     def __init__(self, col, op, rpt=None):
         self.col = col
@@ -299,23 +352,33 @@ class Function(FieldBase):
             return f"json_contains({col_name},json_object({key},?))", [_v]
         elif op == OP.JSON_CONTAINS_ARRAY:
             if is_field:
-                return (
-                    f"json_contains({col_name},json_array({self.rpt.full_name}))",
-                    None,
-                )
+                return f"json_contains({col_name},json_array({self.rpt.full_name}))", None
             return f"json_contains({col_name},json_array(?))", [self.rpt]
         elif op == OP.COUNT:
             return f"COUNT({col_name})", None
         elif op == OP.COUNT_WHEN:
-            return f"COUNT(CASE WHEN {col_name} = ? THEN 1 END)", [self.rpt]
+            c, v, v1, v2 = deconstruct(self.rpt)
+            return f"COUNT(CASE WHEN {c} THEN {v1} ELSE {v2} END)", [v]
         elif op == OP.SUM:
             return f"SUM({col_name})", None
+        elif op == OP.SUM_WHEN:
+            c, v, v1, v2 = deconstruct(self.rpt)
+            return f"SUM(CASE WHEN {c} THEN {v1} ELSE {v2} END)", [v]
         elif op == OP.AVG:
             return f"AVG({col_name})", None
+        elif op == OP.AVG_WHEN:
+            c, v, v1, v2 = deconstruct(self.rpt)
+            return f"AVG(CASE WHEN {c} THEN {v1} ELSE {v2} END)", [v]
         elif op == OP.MAX:
             return f"MAX({col_name})", None
+        elif op == OP.MAX_WHEN:
+            c, v, v1, v2 = deconstruct(self.rpt)
+            return f"MAX(CASE WHEN {c} THEN {v1} ELSE {v2} END)", [v]
         elif op == OP.MIN:
             return f"MIN({col_name})", None
+        elif op == OP.MIN_WHEN:
+            c, v, v1, v2 = deconstruct(self.rpt)
+            return f"MIN(CASE WHEN {c} THEN {v1} ELSE {v2} END)", [v]
         elif op == OP.GROUP_CONCAT:
             return f"GROUP_CONCAT({col_name})", None
 
