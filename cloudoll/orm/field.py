@@ -52,7 +52,6 @@ OP = objdict(
     DATE_FORMAT="DATE_FORMAT",
     JSON_CONTAINS_OBJECT="JSON_CONTAINS_OBJECT",
     JSON_CONTAINS_ARRAY="JSON_CONTAINS_ARRAY",
-    GROUP_CONCAT='GROUP_CONCAT',
     COUNT="COUNT",
     COUNT_WHEN="COUNT_WHEN",
     SUM_WHEN="SUM_WHEN",
@@ -70,6 +69,7 @@ OP = objdict(
     NOT_BETWEEN="NOT BETWEEN",
     REGEXP="REGEXP",
     IREGEXP="IREGEXP",
+    GROUP_CONCAT="GROUP_CONCAT",
     DISTINCT="DISTINCT",
     CONCAT="||",
     BITWISE_NEGATION="~",
@@ -114,8 +114,11 @@ class FieldBase(object):
     ilike = _op(OP.ILIKE)  # ilike for pg
     not_like = _op(OP.NOT_LIKE)  # not like
 
+    def group_concat(self, *arg):
+        return Function(self, OP.GROUP_CONCAT, arg)
+
     def distinct(self, *arg):
-        return Expression(self, OP.DISTINCT, arg)
+        return Function(self, OP.DISTINCT, arg)
 
     def desc(self):
         return Expression(self, OP.DESC, None)
@@ -380,7 +383,19 @@ class Function(FieldBase):
             c, v, v1, v2 = deconstruct(self.rpt)
             return f"MIN(CASE WHEN {c} THEN {v1} ELSE {v2} END)", [v]
         elif op == OP.GROUP_CONCAT:
-            return f"GROUP_CONCAT({col_name})", None
+            arg = self.rpt
+            extra = None
+            if len(arg) == 0:
+                extra = col_name
+            elif len(arg) == 1 and isinstance(arg[0], FieldBase):
+                extra = f"{arg[0].op} {arg[0].col.name}"
+            else:
+                # todo : DISTINCT name ORDER BY name ASC SEPARATOR '; '
+                extra = col_name
+
+            return f"GROUP_CONCAT({extra})", None
+        elif op == OP.DISTINCT:
+            return f"DISTINCT {col_name}", None
 
 
 class Expression(FieldBase):
