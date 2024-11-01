@@ -1,4 +1,4 @@
-# import yaml
+import yaml
 import os
 from ..logging import print_error, print_info
 from envyaml import EnvYAML
@@ -12,7 +12,11 @@ def get_config(env):
     if not os.path.exists(conf_path):
         print_error(f"Configuration file does not exist: {conf_path}")
         return {}
-    # with open(conf_path, "r", encoding="utf-8") as f:
-    # config = yaml.safe_load(f)
-    config = EnvYAML(conf_path)
+    with open(conf_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    try:
+        config_ori = EnvYAML(conf_path, strict=False)
+        config = dict(config_ori)
+    except BaseException as e:
+        print_error(e)
     return config or {}
