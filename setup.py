@@ -36,7 +36,8 @@ REQUIRED = [
     "pyjwt",
     "aiohttp_session[secure]",
     "PyYAML",
-    "click"
+    "click",
+    "envyaml"
 ]
 
 # What packages are optional?
