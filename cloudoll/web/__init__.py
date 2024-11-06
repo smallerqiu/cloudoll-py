@@ -13,7 +13,7 @@ import inspect
 import json
 from errno import EADDRINUSE
 from urllib import parse
-from aiohttp import web
+from aiohttp import web, hdrs
 from aiohttp.web import Response
 from aiohttp.web_ws import WebSocketResponse, StreamResponse, WSMsgType
 from aiohttp.web_response import LooseHeaders
@@ -38,7 +38,7 @@ from ..orm import create_engine, parse_coon
 import uuid
 
 # from ..orm.mysql import Mysql
-from typing import Optional, Iterable
+from typing import Optional, Iterable, Callable, Awaitable
 
 __ALL__ = (
     "app",
@@ -46,21 +46,22 @@ __ALL__ = (
     "Response",
     "WebStream",
     "WSMsgType",
-    "get",
+    "View",
+    "routes" "get",
     "put",
     "delete",
+    "post",
     "render_json",
     "render_error",
-    "middleware",
     "render_view",
+    "middleware",
     "redirect",
     "jwt",
 )
 
 
 class RequestHandler(object):
-    def __init__(self, cls, fn):
-        self.cls = cls
+    def __init__(self, fn):
         self.fn = fn
 
     async def __call__(self, request):
@@ -182,7 +183,7 @@ class Application(object):
                 return
             entry = importlib.import_module(entry_model, ".")
 
-            life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "cleanup_ctx"]
+            life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "on_task"]
             for cycle in life_cycle:
                 if hasattr(entry, cycle):
                     cy = getattr(self, cycle)
@@ -391,7 +392,7 @@ class Application(object):
 
     def add_router(self, path, method, name):
         def inner(handler):
-            handler = RequestHandler(self, handler)
+            handler = RequestHandler(handler)
             self.app.router.add_route(method, path, handler, name=name)
             return handler
 
@@ -435,8 +436,64 @@ class Application(object):
         return self.app.on_cleanup
 
     @property
-    def cleanup_ctx(self):
+    def on_task(self):
         return self.app.cleanup_ctx
+
+
+class View(web.View):
+    async def _iter(self) -> StreamResponse:
+        request = self.request
+        if request.method not in hdrs.METH_ALL:
+            self._raise_allowed_methods()
+        method: Optional[Callable[[], Awaitable[StreamResponse]]]
+        method = getattr(self, request.method.lower(), None)
+        if method is None:
+            self._raise_allowed_methods()
+        # result = await method()
+        # assert isinstance(ret, StreamResponse)
+        # return ret
+        content_type = request.content_type
+        # 获取函数参数的名称和默认值
+        props = inspect.getfullargspec(method)
+        if len(props.args) == 3 and content_type == "multipart/form-data":
+            await set_session_route(request)
+            multipart = await request.multipart()
+            field = await multipart.next()
+            result = await method(request, field)
+        elif len(props.args) == 2:
+            await set_session_route(request)
+            if content_type == "multipart/form-data":
+                data = await request.post()
+            elif content_type == "application/json":
+                data = await request.json()
+            else:
+                data = await request.post()
+            query_string = request.query_string
+            body = {}
+            for k in data:
+                body[k] = data[k]
+            qs = {}
+            if query_string:
+                for k, v in parse.parse_qs(query_string, True).items():
+                    qs[k] = v[0]
+            request.qs = Object(qs)
+            request.body = Object(body)
+            result = await method(request)
+        else:
+            result = await method()
+        try:
+            if isinstance(result, Response):
+                return result
+            if isinstance(result, StreamResponse):
+                return result
+            if isinstance(result, WebSocketResponse):  # maybe catch error
+                return result
+            if "content_type" in result and "text/html" in result["content_type"]:
+                return result
+        except:
+            pass
+
+        return render_json(result)
 
 
 app = Application()
@@ -510,8 +567,7 @@ def delete(path: str, name=None):
     return app.add_router(path, "DELETE", name)
 
 
-def all(path: str):
-    #     return app._actions(path, 'GET')
+def routes(path: str):
     return app.route_table.view(path)
 
 
