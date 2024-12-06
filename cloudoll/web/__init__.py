@@ -24,7 +24,6 @@ from aiohttp_session import (
     memcached_storage,
     cookie_storage,
 )
-from setuptools import find_packages
 from .settings import get_config
 import aiomcache
 from redis import asyncio as aioredis
