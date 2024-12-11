@@ -6,6 +6,7 @@ import copy
 import re
 import datetime
 from ..utils.common import Object
+from typing import Tuple
 
 __ALL__ = ("models", "Model")
 
@@ -149,7 +150,7 @@ class Model(metaclass=ModelMetaclass):
     @classmethod
     def use(cls, pool=None):
         cls.__pool__ = pool
-        cls.__ispg = cls.__pool__.driver == "postgres"
+        cls.__ispg = cls.__pool__.driver == "postgres" if pool else False
         return cls()
 
     def select(cls, *args):
@@ -432,10 +433,10 @@ class Model(metaclass=ModelMetaclass):
         sql = self._exchange_sql(sql)
         return await self.__pool__.delete(sql, args)
 
-    async def insert(self, *args, **kw):
+    async def insert(self, *args, **kw) -> Tuple[bool, int]:
         table = self.__table__
         keys, params = self._get_insert_key_args("i", args or kw)
-        escape_keys = [f'`{k}`' for k in keys]
+        escape_keys = [f"`{k}`" for k in keys]
         sql = f"insert into `{table}` ({','.join(escape_keys)}) values ({','.join(['?' for k in keys])})"
         self._reset()
         params = tuple(key for key in params)
@@ -446,12 +447,12 @@ class Model(metaclass=ModelMetaclass):
         if len(items) == 0:
             return 0
         keys, params = self._get_batch_keys_values(items)
-        escape_keys = [f'`{k}`' for k in keys]
+        escape_keys = [f"`{k}`" for k in keys]
         sql = f"insert into `{table}` ({','.join(escape_keys)}) values ({','.join(['?' for k in keys])})"
         self._reset()
         return await self.__pool__.create_batch(sql, params)
 
-    async def count(self):
+    async def count(self) -> int:
         __where__ = copy.copy(self.__where__)
         __join__ = copy.copy(self.__join__)
         cls = copy.deepcopy(self)

@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Tuple
 
 
 class QueryTypes(Enum):
@@ -47,7 +48,7 @@ class MeteBase:
     async def query(
         self, sql, params=None, query_type: QueryTypes = 2, size: int = 10
     ): ...
-   
+
     async def all(self, sql, params):
         return await self.query(sql, params, QueryTypes.ALL)
 
@@ -62,15 +63,15 @@ class MeteBase:
 
     async def update(self, sql, params):
         return await self.query(sql, params, QueryTypes.UPDATE)
-    
+
     async def update_batch(self, sql, params):
         return await self.query(sql, params, QueryTypes.UPDATEBATCH)
 
     async def delete(self, sql, params):
         return await self.query(sql, params, QueryTypes.DELETE)
 
-    async def create(self, sql, params):
+    async def create(self, sql, params) -> Tuple[bool, int]:
         return await self.query(sql, params, QueryTypes.CREATE)
-    
+
     async def create_batch(self, sql, params):
         return await self.query(sql, params, QueryTypes.CREATEBATCH)

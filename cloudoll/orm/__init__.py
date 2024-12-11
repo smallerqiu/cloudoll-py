@@ -115,7 +115,7 @@ class Postgres(MeteBase):
     #         self.pool.release(cursor)
 
     async def query(self, sql, params=None, query_type: QueryTypes = 2, size: int = 10):
-        sql = sql.replace("?", "%s").replace('`', '"')
+        sql = sql.replace("?", "%s").replace("`", '"')
         if not self.pool:
             raise ValueError("must be create_engine first.")
         if self.pool._closing or self.pool._closed:
@@ -124,7 +124,7 @@ class Postgres(MeteBase):
         async with self.pool.acquire() as conn:
             if conn.echo:
                 print_info("sql", sql, params)
-                
+
             async with conn.cursor() as cursor:
                 # current_cursor = getattr(cursor, 'lastrowid', None)
                 if (

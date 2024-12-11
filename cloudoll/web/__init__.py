@@ -508,7 +508,7 @@ class JsonEncoder(json.JSONEncoder):
             return list(obj)
         elif isinstance(obj, Model):
             return obj.__dict__
-        elif isinstance(obj, uuid.UUID):
+        elif isinstance(obj, uuid.UUID) or isinstance(obj, Exception):
             return str(obj)
         else:
             return super(JsonEncoder, self).default(obj)
