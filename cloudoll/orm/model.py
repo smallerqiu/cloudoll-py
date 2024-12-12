@@ -228,7 +228,7 @@ class Model(metaclass=ModelMetaclass):
             for item in args:
                 if isinstance(item, Model):
                     for k in item.__dict__:
-                        if (action == "u" and item[k].value) or action == "i":
+                        if (action == "u" and item[k].value is not None) or action == "i":
                             data[k] = item[k]
 
                 else:  # for object

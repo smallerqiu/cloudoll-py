@@ -508,6 +508,8 @@ class JsonEncoder(json.JSONEncoder):
             return list(obj)
         elif isinstance(obj, Model):
             return obj.__dict__
+        elif isinstance(obj, bytes):
+            return obj.decode("utf-8")
         elif isinstance(obj, uuid.UUID) or isinstance(obj, Exception):
             return str(obj)
         else:
@@ -582,7 +584,7 @@ def render_json(data, **kw) -> Response:
         res.update(data)
     elif isinstance(data, tuple):
         data = dict(data)
-        res.update(data)
+        res.update(data)    
     else:
         res["data"] = data
     status = kw.get("status", 200)
