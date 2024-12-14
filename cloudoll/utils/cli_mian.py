@@ -31,7 +31,6 @@ def run_app(**config_kwargs: Any):
         env_server = {"host": config.host, "port": config.port, "path": config.path}
         server = chainMap(defaults, conf_server, env_server)
         app_config["server"] = server
-
         aux_port = int(server.port) + 1
         task = AppTask(Path(".").resolve(), app_config, entry=config.entry, env=config.environment)
         aux_app.cleanup_ctx.append(task.cleanup_ctx)

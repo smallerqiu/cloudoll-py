@@ -1,4 +1,4 @@
-from typing import AsyncIterator, Iterable, Optional, Tuple, Union
+from typing import AsyncIterator, Optional, Union
 from pathlib import Path
 from ..web import Application, app, check_port_open
 import asyncio
@@ -10,11 +10,10 @@ from multiprocessing import Process
 from watchfiles import awatch, DefaultFilter
 from ..logging import print_info, print_warn
 import contextlib
-from typing import Any, Iterator, Optional, NoReturn
-from typing import TYPE_CHECKING, Optional, Sequence, Union
+from typing import Iterator, Optional
+from typing import Optional, Union
 from aiohttp import web
 import traceback
-import pickle
 
 
 class CloudollFilter(DefaultFilter):
@@ -127,8 +126,8 @@ class AppTask(WatchTask):
 
     async def _run(self) -> None:
         assert self._app is not None
+        self._start_dev_server()
         try:
-            self._start_dev_server()
             async for changes in self._awatch:
                 self._reloads += 1
                 if any(f.endswith(".py") for _, f in changes):
@@ -144,9 +143,7 @@ class AppTask(WatchTask):
     def _start_dev_server(self) -> None:
         act = "Start" if self._reloads == 0 else "Restart"
         print_info(f"{act}ing dev server")
-        print_info(
-            f"Server Running on http://{self._config['server']['host']}:{self._config['server']['port']}"
-        )
+        
 
         try:
             tty_path = os.ttyname(sys.stdin.fileno())
@@ -156,17 +153,31 @@ class AppTask(WatchTask):
         except AttributeError:
             # on windows, without a windows machine I've no idea what else to do here
             tty_path = None
-            
+
+        # for key, value in self._config.items():
+        #     try:
+        #         pickle.dumps(value)
+        #     except Exception as e:
+        #         print(f"Serialization error on key '{key}': {e} {value}")
+
         # import pickle
         # try:
-        #     pickle.dumps(config)  # 检查是否可序列化
+        #     pickle.dumps(b)  # 检查是否可序列化
         # except Exception as e:
         #     print("Serialization error:", e)
-
-        self._process = Process(
-            target=mian_app, args=(tty_path, self._config, self._entry, self._env)
+        try:
+            self._process = Process(
+                target=mian_app, args=(tty_path, self._config, self._entry, self._env)
+            )
+            self._process.start()
+        except Exception as e:
+            print(f"Error starting server: {e}")
+        
+        print_info(
+            f"Server Running on http://{self._config['server']['host']}:{self._config['server']['port']}"
         )
-        self._process.start()
+        print_info("(Press CTRL+C to quit)")
+        
 
     async def _stop_dev_server(self) -> None:
         if self._process.is_alive():

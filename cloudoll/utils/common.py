@@ -6,7 +6,19 @@ class Object(dict):
 
     def __getattr__(self, key):
         return self.get(key, None)
+    
+    def __delattr__(self, key):
+        try:
+            del self[key]
+        except KeyError:
+            raise AttributeError(f"'DotDict' object has no attribute '{key}'")
+    
+    def __getstate__(self):
+        '''to fix pickle.dumps '''
+        return dict(self)
 
+    def __setstate__(self, state):
+        self.update(state)
 
 def chainMap(*dicts):
     merged_dict = Object()

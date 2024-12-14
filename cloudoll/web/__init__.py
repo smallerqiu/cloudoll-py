@@ -142,6 +142,7 @@ async def check_port_open(port: int, delay: float = 1) -> None:
 
 
 def auto_reg_module(module_dir: str):
+    
     module_path = os.path.join(os.path.abspath("."), module_dir)
     if not os.path.exists(module_path):
         print_info(f"{module_dir} not detected")
@@ -218,6 +219,7 @@ class Application(object):
 
         # middlewares
         auto_reg_module("middlewares")
+        print_info("auto register middlewares")
 
         conf_server = config.get("server")
         client_max_size = 1024**2 * 2
@@ -242,6 +244,8 @@ class Application(object):
         # self._init_session()
         #  router:
         auto_reg_module("controllers")
+        print_info("auto register controllers")
+        
         self.app.add_routes(self._route_table)
 
         # load life
@@ -508,6 +512,8 @@ class JsonEncoder(json.JSONEncoder):
             return list(obj)
         elif isinstance(obj, Model):
             return obj.__dict__
+        elif isinstance(obj, bytes):
+            return obj.decode("utf-8")
         elif isinstance(obj, uuid.UUID) or isinstance(obj, Exception):
             return str(obj)
         else:
