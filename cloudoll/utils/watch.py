@@ -13,6 +13,8 @@ import contextlib
 from typing import Any, Iterator, Optional, NoReturn
 from typing import TYPE_CHECKING, Optional, Sequence, Union
 from aiohttp import web
+import traceback
+import pickle
 
 
 class CloudollFilter(DefaultFilter):
@@ -95,6 +97,8 @@ def mian_app(tty_path, config, entry, env):
                 loop.run_forever()
             except KeyboardInterrupt:
                 pass
+            except Exception as e:
+                traceback.print_exc()
             finally:
                 with suppress(asyncio.TimeoutError, KeyboardInterrupt):
                     loop.run_until_complete(runner.cleanup())
@@ -125,7 +129,6 @@ class AppTask(WatchTask):
         assert self._app is not None
         try:
             self._start_dev_server()
-
             async for changes in self._awatch:
                 self._reloads += 1
                 if any(f.endswith(".py") for _, f in changes):
@@ -134,7 +137,8 @@ class AppTask(WatchTask):
                     self._start_dev_server()
                     await asyncio.sleep(1)
         except Exception as exc:
-            # exception(exc)
+            traceback.print_exc()
+
             raise Exception("error running dev server")
 
     def _start_dev_server(self) -> None:
@@ -152,6 +156,12 @@ class AppTask(WatchTask):
         except AttributeError:
             # on windows, without a windows machine I've no idea what else to do here
             tty_path = None
+            
+        # import pickle
+        # try:
+        #     pickle.dumps(config)  # 检查是否可序列化
+        # except Exception as e:
+        #     print("Serialization error:", e)
 
         self._process = Process(
             target=mian_app, args=(tty_path, self._config, self._entry, self._env)

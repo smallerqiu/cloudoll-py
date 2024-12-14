@@ -1,19 +1,11 @@
 import click
-from .web.settings import get_config
-from .web import app
-from .orm import create_engine
-from .utils.m2d import create_models, create_tables
 import asyncio
 import os
 import sys
-from .logging import print_error, print_info
-from pathlib import Path
+from .logging import print_error
 from . import __version__
-import traceback
-from .utils.watch import AppTask
-from aiohttp import web
-from .utils.common import chainMap
-
+from typing import Any
+from .utils.cli_mian import run_app, run_gen
 sys.path.append(os.path.abspath("."))
 
 
@@ -32,41 +24,16 @@ life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "cleanup_ctx"]
 @click.option("-t", "--table", help="Table's name or Model's name, split by `,` or 'ALL'", required=True,)
 @click.option("-env", "--environment", help="Environment, local / test / prod", default="local")
 @click.option("-db", "--database", help="Database name, pick the database in conf.{env}.yaml", default="mysql",)
-def gen(path, create, table, environment, database) -> None:
+def gen(**config: Any) -> None:
     """Help to create models or tables."""
 
     # click.echo(create)
     async def start():
         try:
-            config = get_config(environment)
-            url_config = config.get("database")
-            if url_config is None:
-                raise ValueError(
-                    f"Can't find the database config in conf.{environment}.yaml"
-                )
-            db_config = url_config.get(database)
-            if db_config is None:
-                raise ValueError(
-                    f"Can't find the database config key ->{database} in conf.{environment}.yaml"
-                )
-            sa = await create_engine(**db_config)
-            if sa.pool is None:
-                return
-            model_path = os.path.join(os.path.abspath("."), path)
-            tables = None
-            if table != "ALL":
-                tables = table.split(",")
-
-            if create == "model":
-                await create_models(sa, path, tables=tables)
-                print_info(f"Model save at:{model_path}")
-            elif create == "table":
-                if model_path is None:
-                    raise ValueError("Need package name or model name.")
-                await create_tables(sa, model_path, tables=tables)
-
+            sa = await run_gen(**config)
         except Exception as e:
-            print_error(traceback.print_exc())
+            # traceback.print_exc()
+            print_error('Error: %s', e)
             click.echo("input `cloudoll --help` for more helps.")
         finally:
             await sa.close()
@@ -81,43 +48,15 @@ def gen(path, create, table, environment, database) -> None:
 @click.option("-m", "--mode", help="development or production mode", default='development')
 @click.option("-path", "--path", help="Unix file system path to serve on. Specifying a path will cause hostname and port arguments to be ignored.",)
 @click.option("-e", "--entry", help="Entry point model name. delfault name app", default="app")
-def start(environment, host, port, mode, path, entry) -> None:
+def start(**config: Any) -> None:
     """Start a services."""
     try:
-        print_info("Current mode: ", mode)
-        config = get_config(environment)
-        # print(environment, host, port, mode, path, entry)
-        # return
-        if mode == 'production':
-            App = app.create(env=environment, config=config, entry_model=entry)
-            App.run()
-            return
-        aux_app = web.Application(
-            logger=None,
-        )
-        defaults = {"host": "0.0.0.0", "port": 9001, "path": None}
-        conf_server = config.get("server", {})
-        env_server = {"host": host, "port": port, "path": path}
-        server = chainMap(defaults, conf_server, env_server)
-        config["server"] = server
-
-        aux_port = int(server.port) + 1
-        task = AppTask(Path(".").resolve(), config, entry=entry, env=environment)
-        aux_app.cleanup_ctx.append(task.cleanup_ctx)
-        web.run_app(
-            aux_app,
-            access_log=None,
-            host=host,
-            port=aux_port,
-            print=None,
-            shutdown_timeout=0.1,
-        )
-    except KeyboardInterrupt:
-        sys.exit(0)
+        active_config = {k: v for k, v in config.items() if v is not None}
+        run_app(**active_config)
     except Exception as e:
-        print_error(e)
-        print_error(traceback.format_exc())
-        sys.exit(0)
+        print_error('Error: %s', e)
+        # traceback.format_exc()
+        sys.exit(2)
 
 
 _project_existing = click.Path(dir_okay=True)

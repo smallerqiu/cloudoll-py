@@ -44,7 +44,7 @@ async def create_engine(**kw):
             url = f"{driver}://{configs['username']}:{configs['password']}@{configs['host']}:{configs['port']}/{configs['db']}"
         return await aioredis.from_url(url, **query)
     else:
-        print_error("Not suport this database type.")
+        raise "Not suport this database type."
 
 
 class Postgres(MeteBase):
