@@ -27,7 +27,7 @@ from aiohttp_session import (
 from .settings import get_config
 import aiomcache
 from redis import asyncio as aioredis
-from ..logging import print_warn, print_info
+from ..logging import warning, info
 from ..orm.model import Model
 from . import jwt
 from decimal import Decimal
@@ -35,7 +35,6 @@ from datetime import datetime, date
 from ..utils.common import chainMap, Object
 from ..orm import create_engine, parse_coon
 import uuid
-
 # from ..orm.mysql import Mysql
 from typing import Optional, Iterable, Callable, Awaitable
 
@@ -64,6 +63,7 @@ class RequestHandler(object):
         self.fn = fn
 
     async def __call__(self, request):
+        print(request)
         content_type = request.content_type
         # 获取函数参数的名称和默认值
         props = inspect.getfullargspec(self.fn)
@@ -132,7 +132,7 @@ async def check_port_open(port: int, delay: float = 1) -> None:
         except OSError as e:
             if e.errno != EADDRINUSE:
                 raise
-            print_warn("port %d is already in use, waiting %d...", port, i)
+            warning("port %d is already in use, waiting %d...", port, i)
             await asyncio.sleep(delay)
         else:
             server.close()
@@ -142,10 +142,10 @@ async def check_port_open(port: int, delay: float = 1) -> None:
 
 
 def auto_reg_module(module_dir: str):
-    
+
     module_path = os.path.join(os.path.abspath("."), module_dir)
     if not os.path.exists(module_path):
-        print_info(f"{module_dir} not detected")
+        info(f"{module_dir} not detected")
         return
     for filename in os.listdir(module_dir):
         if filename.startswith("__") or filename.startswith("."):
@@ -189,7 +189,7 @@ class Application(object):
                     cy = getattr(self, cycle)
                     cy.append(getattr(entry, cycle))
         except ImportError:
-            print_warn(f"Entry model:{entry_model} can not find.")
+            warning(f"Entry model:{entry_model} can not find.")
 
     def init_parse(self):
         try:
@@ -219,7 +219,7 @@ class Application(object):
 
         # middlewares
         auto_reg_module("middlewares")
-        print_info("auto register middlewares")
+        info("auto register middlewares")
 
         conf_server = config.get("server")
         client_max_size = 1024**2 * 2
@@ -244,8 +244,8 @@ class Application(object):
         # self._init_session()
         #  router:
         auto_reg_module("controllers")
-        print_info("auto register controllers")
-        
+        info("auto register controllers")
+
         self.app.add_routes(self._route_table)
 
         # load life
@@ -258,7 +258,7 @@ class Application(object):
             if conf_st:
                 temp = os.path.join(os.path.abspath("."), "static")
                 self.app.router.add_static(**conf_st, path=temp)
-                print_warn("Suggest using nginx or others instead.")
+                info("Suggest using nginx or others instead.")
 
         temp = os.path.join(os.path.abspath("."), "templates")
         if os.path.exists(temp):
@@ -280,15 +280,15 @@ class Application(object):
         self.clean_up = True
 
         for db in apps.db:
-            print_info(f"release database {db}.")
+            info(f"release database {db}.")
             await apps.db[db].close()
 
         # close for session
         if "redis" in apps:
-            print_info(f"release redis session.")
+            info(f"release redis session.")
             await apps.redis.close()
         if "memcached" in apps:
-            print_info(f"release memcached session")
+            info(f"release memcached session")
             apps.memcached.close()
 
     async def _init_database(self, apps):
@@ -327,7 +327,7 @@ class Application(object):
                 secure=secure,
             )
             setup(apps, storage)
-            print_info("start redis session.")
+            info("start redis session.")
         elif mcache_conf:
             host = mcache_conf.get("host")
             port = mcache_conf.get("port", 11211)
@@ -342,7 +342,7 @@ class Application(object):
                 secure=secure,
             )
             setup(apps, storage)
-            print_info("start memcached session.")
+            info("start memcached session.")
         else:
             dig = hashlib.sha256(cookie_name.encode()).digest()
             fernet_key = base64.urlsafe_b64encode(dig)
@@ -358,7 +358,7 @@ class Application(object):
                 httponly=httponly,
             )
             setup(apps, storage)
-            print_info("start local cookie.")
+            info("start local cookie.")
 
     def run(self, **kw):
         """
@@ -373,8 +373,8 @@ class Application(object):
         conf = chainMap(defaults, conf, kw)
         # print(conf)
         # check_port_open(conf["host"], conf["port"])
-        print_info(f"Server running on http://{conf['host']}:{conf['port']}")
-        print_info("(Press CTRL+C to quit)")
+        info(f"Server running on http://{conf['host']}:{conf['port']}")
+        info("(Press CTRL+C to quit...)")
         web.run_app(
             self.app,
             loop=self._loop,
@@ -388,7 +388,7 @@ class Application(object):
         # if self.loop is None:
         #     return web.run_app(self.app, host=host, port=port, **kw)
         # else:
-        #     print_info(f"Server run at http://{host}:{port}")
+        #     info(f"Server run at http://{host}:{port}")
         #     return self.loop.create_server(
         #         self.app.make_handler(), host=host, port=port, **kw
         #     )

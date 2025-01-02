@@ -112,6 +112,10 @@ async def create_main_app(config, entry, env):
 async def start_main_app(runner, port):
     await runner.setup()
     site = web.TCPSite(runner, host="0.0.0.0", port=port)
+    print_info(
+        f"Server running on http://0.0.0.0:{port}"
+    )
+    print_info("(Press CTRL+C to quit)")
     await site.start()
 
 
@@ -143,7 +147,6 @@ class AppTask(WatchTask):
     def _start_dev_server(self) -> None:
         act = "Start" if self._reloads == 0 else "Restart"
         print_info(f"{act}ing dev server")
-        
 
         try:
             tty_path = os.ttyname(sys.stdin.fileno())
@@ -172,12 +175,6 @@ class AppTask(WatchTask):
             self._process.start()
         except Exception as e:
             print(f"Error starting server: {e}")
-        
-        print_info(
-            f"Server Running on http://{self._config['server']['host']}:{self._config['server']['port']}"
-        )
-        print_info("(Press CTRL+C to quit)")
-        
 
     async def _stop_dev_server(self) -> None:
         if self._process.is_alive():
