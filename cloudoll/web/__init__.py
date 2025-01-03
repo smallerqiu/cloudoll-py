@@ -374,7 +374,7 @@ class Application(object):
         # print(conf)
         # check_port_open(conf["host"], conf["port"])
         info(f"Server running on http://{conf['host']}:{conf['port']}")
-        info("(Press CTRL+C to quit...)")
+        info("(Press CTRL+C to quit.)")
         web.run_app(
             self.app,
             loop=self._loop,
