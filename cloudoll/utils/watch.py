@@ -8,7 +8,7 @@ import sys
 from contextlib import suppress
 from multiprocessing import Process
 from watchfiles import awatch, DefaultFilter
-from ..logging import print_info, print_warn
+from ..logging import info, warning, error
 import contextlib
 from typing import Iterator, Optional
 from typing import Optional, Union
@@ -90,14 +90,10 @@ def mian_app(tty_path, config, entry, env):
             loop = asyncio.new_event_loop()
             runner = loop.run_until_complete(create_main_app(config, entry, env))
             try:
-                loop.run_until_complete(
-                    start_main_app(runner, config["server"]["port"])
-                )
+                loop.run_until_complete(start_main_app(runner, config["server"]["port"]))
                 loop.run_forever()
             except KeyboardInterrupt:
                 pass
-            except Exception as e:
-                traceback.print_exc()
             finally:
                 with suppress(asyncio.TimeoutError, KeyboardInterrupt):
                     loop.run_until_complete(runner.cleanup())
@@ -112,10 +108,8 @@ async def create_main_app(config, entry, env):
 async def start_main_app(runner, port):
     await runner.setup()
     site = web.TCPSite(runner, host="0.0.0.0", port=port)
-    print_info(
-        f"Server running on http://0.0.0.0:{port}"
-    )
-    print_info("(Press CTRL+C to quit)")
+    info(f"Server running on http://0.0.0.0:{port}")
+    info("(Press CTRL+C to quit)")
     await site.start()
 
 
@@ -135,7 +129,7 @@ class AppTask(WatchTask):
             async for changes in self._awatch:
                 self._reloads += 1
                 if any(f.endswith(".py") for _, f in changes):
-                    print_info(f"{len(changes)} changes, restarting server")
+                    info(f"{len(changes)} changes, restarting server")
                     await self._stop_dev_server()
                     self._start_dev_server()
                     await asyncio.sleep(1)
@@ -146,7 +140,7 @@ class AppTask(WatchTask):
 
     def _start_dev_server(self) -> None:
         act = "Start" if self._reloads == 0 else "Restart"
-        print_info(f"{act}ing dev server")
+        info(f"{act}ing dev server")
 
         try:
             tty_path = os.ttyname(sys.stdin.fileno())
@@ -174,23 +168,23 @@ class AppTask(WatchTask):
             )
             self._process.start()
         except Exception as e:
-            print(f"Error starting server: {e}")
+            error(f"Error starting server: {e}")
 
     async def _stop_dev_server(self) -> None:
         if self._process.is_alive():
-            print_info("stopping server process...")
+            info("stopping server process...")
             if self._process.pid:
-                print_info("sending SIGINT")
+                info("sending SIGINT")
                 os.kill(self._process.pid, signal.SIGINT)
             self._process.join(5)
             if self._process.exitcode is None:
-                print_warn("process has not terminated, sending SIGKILL")
+                warning("process has not terminated, sending SIGKILL")
                 self._process.kill()
                 self._process.join(1)
             else:
-                print_info("process stopped")
+                info("process stopped")
         else:
-            print_warn(
+            warning(
                 "server process already dead, exit code: %s", self._process.exitcode
             )
 
