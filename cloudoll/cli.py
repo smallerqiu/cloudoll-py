@@ -5,7 +5,7 @@ import sys
 from .logging import print_error
 from . import __version__
 from typing import Any
-from .utils.cli_mian import run_app, run_gen
+from .utils.cli_main import run_app, run_gen
 sys.path.append(os.path.abspath("."))
 
 

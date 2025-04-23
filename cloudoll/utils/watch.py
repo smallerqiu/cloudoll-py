@@ -1,6 +1,6 @@
 from typing import AsyncIterator, Optional, Union
 from pathlib import Path
-from ..web import Application, app, check_port_open
+from ..web import Application, app
 import asyncio
 import os
 import signal
@@ -14,7 +14,7 @@ from typing import Iterator, Optional
 from typing import Optional, Union
 from aiohttp import web
 import traceback
-
+from .common import check_port_open
 
 class CloudollFilter(DefaultFilter):
     def __init__(self, ignore_dirs: tuple = None) -> None:

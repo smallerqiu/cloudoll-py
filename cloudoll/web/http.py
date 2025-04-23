@@ -2,78 +2,20 @@
 # -*- coding: utf-8 -*-
 
 __author__ = "chuchur/chuchur.com"
-
+# from aiohttp.web import middleware
 from curl_cffi import requests
-import time
-
-# from requests import Response
-from ..logging import print_error, print_info
-
-PROXIES = {
-    "http": "http://127.0.0.1:7890",
-    "https": "http://127.0.0.1:7890",
-}
-
-HEADERS = {
-    "sec-ch-ua": '"Not A;Brand";v="99", "Chromium";v="102", "Google Chrome";v="102"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": "Windows",
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "Expires": "0",
-    "Pragma": "no-cache",
-    "Cache": "no-cache",
-    "Cache-control": "no-cache",
-    "Connection": "keep-alive",
-    # "Content-Type": "application/json; charset=UTF-8",
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.100 Safari/537.36",
-}
 
 
 class Client(object):
     def __init__(self):
         self.session = requests.Session()
 
-    def requests(self, method, url, **kw):
-        headers = kw.get("headers", None)
-        if headers is None:
-            headers = HEADERS
-        else:
-            headers = {**headers, **HEADERS}
-        kw["headers"] = headers
-        proxies = kw.get("proxies", False)
-        if proxies:
-            if proxies is True:
-                kw["proxies"] = PROXIES
-            else:
-                kw["proxies"] = proxies
-        try_times = kw.get("try_times", 2)
-        if kw.get("try_times"):
-            kw.pop("try_times")
-        result = None
-        while try_times > 0:
-            try:
-                fun = getattr(self.session, method, None)
-                result: requests.Response = fun(url, **kw)
-                head = result.headers
-                ctype = head["Content-Type"]
-                if result.status_code == 200:
-                    try_times = 0
-                    if "application/json" in ctype:
-                        return result.json()
-                    elif "text/html" in ctype:
-                        return result.text
-                    return result
-                else:
-                    print_info(result.json())
-                    print_error(f"Error : code ->{result.status_code},try gain....")
-                    try_times -= 1
-                    time.sleep(2)
-            except BaseException as e:
-                print_error(e)
-                try_times -= 1
-                time.sleep(2)
-                # print_info(e)
+    def requests(self, method, url, **kw) -> requests.Response:
+        impersonate = kw.get("impersonate", None)
+        if not impersonate:
+            kw["impersonate"] = "chrome133a"
+        fun = getattr(self.session, method, None)
+        result: requests.Response = fun(url, **kw)
         return result
 
 
@@ -122,18 +64,16 @@ def download(url, savepath=None, **kw):
     :params url 文件的地址
     :params savepath 保存路径
     """
-    rb = http.requests("get", url, **kw)
-    if not savepath:
-        return rb.content
-    if not rb:
-        print_error("下载出错")
-        return False
+    response = http.requests("get", url, **kw)
+    if response.status_code == 200:
+        # 如果传入了保存路径，保存文件
+        if savepath:
+            with open(savepath, "wb") as file:
+                file.write(response.content)
+            print(f"File saved to {savepath}")
+        else:
+            # 如果没有传入保存路径，返回文件内容
+            return response.content
     else:
-        try:
-            with open(savepath, "wb") as f:
-                f.write(rb.content)
-                print_info("下载完成！")
-        except BaseException as e:
-            print_error(e)
-            return False
-    return True
+        print(f"Failed to download the file. Status code: {response.status_code}")
+        return None

@@ -42,10 +42,10 @@ class ColorAnsi:
 _FORMATS = {
     # 终端输出格式
     # "console_format": "%(log_color)s[%(levelname)s]-%(asctime)s-%(pathname)s-%(module)s-%(funcName)s-[line:%(lineno)d]: %(message)s",
-    "console_format": "%(log_color)s%(asctime)s %(levelname)s %(funcName)s %(message)s",
+    "console_format": "%(log_color)s%(asctime)s %(levelname)s %(message)s",
     # 日志输出格式
     # "log_format": "[%(levelname)s]-%(asctime)s-%(pathname)s-%(module)s-%(funcName)s-[line:%(lineno)d]: %(message)s",
-    "log_format": "%(asctime)s %(levelname)s %(funcName)s %(message)s",
+    "log_format": "%(asctime)s %(levelname)s %(message)s",
 }
 
 _LOG_SIZE = 1024 * 1024 * 1  # 1MB 日志最大1MB
