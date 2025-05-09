@@ -23,6 +23,7 @@ from .core import (
     render_json,
     render_error,
     render_view,
+    render,
     middleware,
     redirect,
 )
@@ -44,6 +45,7 @@ __all__: Tuple[str, ...] = (
     "render_json",
     "render_error",
     "render_view",
+    "render",
     "middleware",
     "redirect",
     "jwt",

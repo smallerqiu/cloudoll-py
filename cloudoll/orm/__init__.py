@@ -10,9 +10,6 @@ from aiomysql import Pool as MYPool
 import aiopg as pg
 from aiopg.pool import Pool as PGPool
 
-# import asyncpg as pg
-# from asyncpg.pool import Pool as PGPool
-
 __ALL__ = "create_engine"
 
 
@@ -55,65 +52,6 @@ class Postgres(MeteBase):
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         self.__init__(*args, **kwds)
 
-    # async def query(self, sql, params=None, query_type: QueryTypes = 2, size: int = 10):
-    #     sql = sql.replace("?", "%s").replace("`", "")
-    #     print_info("sql", sql, params)
-    #     if not self.pool:
-    #         raise ValueError("must be create_engine first.")
-    #     if self.pool._closing or self.pool._closed:
-    #         return None
-
-    #     # async with self.pool.acquire() as conn:
-    #     async with self.pool.acquire() as conn:
-    #         # current_cursor = getattr(cursor, 'lastrowid', None)
-    #         if (
-    #             query_type == QueryTypes.CREATEBATCH
-    #             or query_type == QueryTypes.UPDATEBATCH
-    #         ):
-    #             result = await conn.executemany(sql, params)  # aiopg don't support executemany
-    #         else:
-    #             result = await conn.execute(sql, params)
-
-    #         # result = None
-
-    #         return result
-
-    #         if query_type == QueryTypes.ALL:
-    #             columns = [desc[0] for desc in cursor.description]
-    #             rows = await cursor.fetchall()
-    #             result = [dict(zip(columns, row)) for row in rows]
-    #             return result
-    #         elif query_type == QueryTypes.ONE:
-    #             columns = [desc[0] for desc in cursor.description]
-    #             row = await cursor.fetchone()
-    #             # print("rows_reuslt", rows)
-    #             result = dict(zip(columns, row)) if row else {}
-    #             return result
-    #         elif query_type == QueryTypes.MANY:
-    #             columns = [desc[0] for desc in cursor.description]
-    #             rows = await cursor.fetchmany(size)
-    #             result = [dict(zip(columns, row)) for row in rows]
-    #             return result
-    #         elif query_type == QueryTypes.COUNT:
-    #             rs = await cursor.fetchone()
-    #             return rs[0] if row else 0
-    #         elif query_type == QueryTypes.CREATE:
-    #             result = cursor.rowcount > 0
-    #             id = cursor.lastrowid
-    #             return result, id
-    #         elif query_type == QueryTypes.CREATEBATCH:
-    #             count = cursor.rowcount
-    #             id = cursor.lastrowid
-    #             return count, id
-    #         elif query_type == QueryTypes.UPDATE:
-    #             return cursor.rowcount > 0
-    #         elif query_type == QueryTypes.UPDATEBATCH:
-    #             return cursor.rowcount
-    #         elif query_type == QueryTypes.DELETE:
-    #             return cursor.rowcount > 0
-
-    #         self.pool.release(cursor)
-
     async def query(self, sql, params=None, query_type: QueryTypes = 2, size: int = 10):
         sql = sql.replace("?", "%s").replace("`", '"')
         if not self.pool:
@@ -132,7 +70,7 @@ class Postgres(MeteBase):
                     or query_type == QueryTypes.UPDATEBATCH
                 ):
                     # aiopg don't support executemany
-                    await cursor.executemany(sql, params)
+                    raise RuntimeError("postgres don't support executemany")
                 else:
                     await cursor.execute(sql, params)
 
@@ -155,8 +93,7 @@ class Postgres(MeteBase):
                     result = [dict(zip(columns, row)) for row in rows]
                     return result
                 elif query_type == QueryTypes.COUNT:
-                    rs = await cursor.fetchone()
-                    return rs[0] if row else 0
+                    return cursor.rowcount
                 elif query_type == QueryTypes.CREATE:
                     result = cursor.rowcount > 0
                     id = cursor.lastrowid
@@ -182,13 +119,13 @@ class Postgres(MeteBase):
             password = (str(kw.get("password", "")),)
             db = (kw.get("db"),)
             dsn = f"dbname={db[0]} user={user[0]} password={password[0]} host={host[0]} port={port[0]}"  # aiopg
-            # dsn = f"postgres://{user[0]}:{password[0]}@{host[0]}:{port[0]}/{db[0]}" #asyncpg
+            # dsn = f"postgres://{user[0]}:{password[0]}@{host[0]}:{port[0]}/{db[0]}" # asyncpg
             self.pool = await pg.create_pool(
                 dsn=dsn,
                 timeout=kw.get("timeout"),
                 echo=kw.get("echo", False),  # aiopg
-                # max_size=kw.get("maxsize", 10), #asyncpg
-                # min_size=kw.get("minsize", 5), #asyncpg
+                # max_size=kw.get("maxsize", 10), # asyncpg
+                # min_size=kw.get("minsize", 5), # asyncpg
                 maxsize=kw.get("maxsize", 10),  # aiopg
                 minsize=kw.get("minsize", 5),  # aiopg
             )
@@ -246,11 +183,7 @@ class Mysql(MeteBase):
                 else:
                     await cursor.execute(sql, params)
 
-                # if query_type.value > 4:
-                # if self.driver == "mysql":
                 await conn.commit()
-                # elif self.driver == "postgres":
-                # columns = [desc[0] for desc in cursor.description]
 
                 if query_type == QueryTypes.ALL:
                     return await cursor.fetchall()
@@ -259,11 +192,7 @@ class Mysql(MeteBase):
                 elif query_type == QueryTypes.MANY:
                     return await cursor.fetchmany(size)
                 elif query_type == QueryTypes.COUNT:
-                    rs = await cursor.fetchone()
-                    value = 0
-                    for r in rs:
-                        value = rs[r]
-                    return value
+                    return cursor.rowcount
                 elif query_type == QueryTypes.CREATE:
                     result = cursor.rowcount > 0
                     id = cursor.lastrowid
@@ -299,7 +228,6 @@ class Mysql(MeteBase):
             )
             print_info(f"Database connection successfuly for mysql/{kw.get('db')}.")
         except Exception as e:
-            # print(e)
             # print(traceback.format_exc())
             print_error(
                 f"Database connection failed,the instance : mysql/{kw.get('db')}"

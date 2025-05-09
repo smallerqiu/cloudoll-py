@@ -458,7 +458,8 @@ class Model(metaclass=ModelMetaclass):
         cls = copy.deepcopy(self)
         JOIN = cls._literal("LEFT JOIN", __join__)
         WHERE = cls._literal("WHERE", __where__)
-        aft = " ".join([JOIN, WHERE])
+        GROUPBY = self._literal("GROUP BY", self.__group_by__)
+        aft = " ".join([JOIN, WHERE, GROUPBY])
         sql = f"SELECT COUNT(*) FROM {cls.__table__} {aft}"
         args = cls.__params__
         sql = self._exchange_sql(sql)
@@ -468,14 +469,14 @@ class Model(metaclass=ModelMetaclass):
 class Models(object):
     class CharField(Field):
         def __init__(
-            self,
-            name=None,
-            primary_key=False,
-            default=None,
-            charset=None,
-            max_length=None,
-            not_null=False,
-            comment=None,
+                self,
+                name=None,
+                primary_key=False,
+                default=None,
+                charset=None,
+                max_length=None,
+                not_null=False,
+                comment=None,
         ):
             super().__init__(
                 name,
@@ -490,14 +491,14 @@ class Models(object):
 
     class VarCharField(Field):
         def __init__(
-            self,
-            name=None,
-            primary_key=False,
-            default=None,
-            charset=None,
-            max_length=None,
-            not_null=False,
-            comment=None,
+                self,
+                name=None,
+                primary_key=False,
+                default=None,
+                charset=None,
+                max_length=None,
+                not_null=False,
+                comment=None,
         ):
             super().__init__(
                 name,
@@ -512,7 +513,7 @@ class Models(object):
 
     class BooleanField(Field):
         def __init__(
-            self, name=None, default=False, not_null=False, comment=None, unsigned=False
+                self, name=None, default=False, not_null=False, comment=None, unsigned=False
         ):
             super().__init__(
                 name,
@@ -525,15 +526,15 @@ class Models(object):
 
     class IntegerField(Field):
         def __init__(
-            self,
-            name=None,
-            primary_key=False,
-            default=None,
-            auto_increment=False,
-            not_null=False,
-            unsigned=False,
-            comment=None,
-            max_length=None,
+                self,
+                name=None,
+                primary_key=False,
+                default=None,
+                auto_increment=False,
+                not_null=False,
+                unsigned=False,
+                comment=None,
+                max_length=None,
         ):
             super().__init__(
                 name,
@@ -549,15 +550,15 @@ class Models(object):
 
     class BigIntegerField(Field):
         def __init__(
-            self,
-            name=None,
-            primary_key=False,
-            default=None,
-            auto_increment=False,
-            not_null=False,
-            unsigned=False,
-            comment=None,
-            max_length=None,
+                self,
+                name=None,
+                primary_key=False,
+                default=None,
+                auto_increment=False,
+                not_null=False,
+                unsigned=False,
+                comment=None,
+                max_length=None,
         ):
             super().__init__(
                 name,
@@ -573,13 +574,13 @@ class Models(object):
 
     class DoubleField(Field):
         def __init__(
-            self,
-            name=None,
-            default=None,
-            not_null=False,
-            max_length=None,
-            unsigned=False,
-            comment=None,
+                self,
+                name=None,
+                default=None,
+                not_null=False,
+                max_length=None,
+                unsigned=False,
+                comment=None,
         ):
             super().__init__(
                 name,
@@ -593,14 +594,14 @@ class Models(object):
 
     class FloatField(Field):
         def __init__(
-            self,
-            name=None,
-            default=None,
-            not_null=False,
-            max_length=None,
-            scale_length=None,
-            unsigned=False,
-            comment=None,
+                self,
+                name=None,
+                default=None,
+                not_null=False,
+                max_length=None,
+                scale_length=None,
+                unsigned=False,
+                comment=None,
         ):
             super().__init__(
                 name,
@@ -615,14 +616,14 @@ class Models(object):
 
     class NumericField(Field):
         def __init__(
-            self,
-            name=None,
-            default=0.0,
-            not_null=False,
-            max_length=None,
-            scale_length=None,
-            unsigned=False,
-            comment=None,
+                self,
+                name=None,
+                default=0.0,
+                not_null=False,
+                max_length=None,
+                scale_length=None,
+                unsigned=False,
+                comment=None,
         ):
             super().__init__(
                 name,
@@ -637,14 +638,14 @@ class Models(object):
 
     class DecimalField(Field):
         def __init__(
-            self,
-            name=None,
-            default=0.0,
-            not_null=False,
-            max_length=None,
-            scale_length=None,
-            unsigned=False,
-            comment=None,
+                self,
+                name=None,
+                default=0.0,
+                not_null=False,
+                max_length=None,
+                scale_length=None,
+                unsigned=False,
+                comment=None,
         ):
             super().__init__(
                 name,
@@ -659,13 +660,13 @@ class Models(object):
 
     class TextField(Field):
         def __init__(
-            self,
-            name=None,
-            default=None,
-            charset=None,
-            max_length=None,
-            not_null=False,
-            comment=None,
+                self,
+                name=None,
+                default=None,
+                charset=None,
+                max_length=None,
+                not_null=False,
+                comment=None,
         ):
             super().__init__(
                 name,
@@ -679,13 +680,13 @@ class Models(object):
 
     class LongTextField(Field):
         def __init__(
-            self,
-            name=None,
-            default=None,
-            charset=None,
-            max_length=None,
-            not_null=False,
-            comment=None,
+                self,
+                name=None,
+                default=None,
+                charset=None,
+                max_length=None,
+                not_null=False,
+                comment=None,
         ):
             super().__init__(
                 name,
@@ -699,13 +700,13 @@ class Models(object):
 
     class MediumTextField(Field):
         def __init__(
-            self,
-            name=None,
-            default=None,
-            charset=None,
-            max_length=None,
-            not_null=False,
-            comment=None,
+                self,
+                name=None,
+                default=None,
+                charset=None,
+                max_length=None,
+                not_null=False,
+                comment=None,
         ):
             super().__init__(
                 name,
@@ -719,14 +720,14 @@ class Models(object):
 
     class DatetimeField(Field):
         def __init__(
-            self,
-            name=None,
-            default=None,
-            max_length=None,
-            not_null=False,
-            created_generated=False,
-            update_generated=False,
-            comment=None,
+                self,
+                name=None,
+                default=None,
+                max_length=None,
+                not_null=False,
+                created_generated=False,
+                update_generated=False,
+                comment=None,
         ):
             super().__init__(
                 name,
@@ -741,14 +742,14 @@ class Models(object):
 
     class DateField(Field):
         def __init__(
-            self,
-            name=None,
-            default=None,
-            max_length=None,
-            not_null=False,
-            created_generated=False,
-            update_generated=False,
-            comment=None,
+                self,
+                name=None,
+                default=None,
+                max_length=None,
+                not_null=False,
+                created_generated=False,
+                update_generated=False,
+                comment=None,
         ):
             super().__init__(
                 name,
@@ -763,14 +764,14 @@ class Models(object):
 
     class TimestampField(Field):
         def __init__(
-            self,
-            name=None,
-            default=None,
-            max_length=None,
-            not_null=False,
-            created_generated=False,
-            update_generated=False,
-            comment=None,
+                self,
+                name=None,
+                default=None,
+                max_length=None,
+                not_null=False,
+                created_generated=False,
+                update_generated=False,
+                comment=None,
         ):
             super().__init__(
                 name,
@@ -786,7 +787,7 @@ class Models(object):
 
     class JsonField(Field):
         def __init__(
-            self, name=None, default=None, charset=None, not_null=False, comment=None
+                self, name=None, default=None, charset=None, not_null=False, comment=None
         ):
             super().__init__(
                 name,
