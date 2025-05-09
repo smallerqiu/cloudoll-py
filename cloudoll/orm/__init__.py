@@ -84,7 +84,6 @@ class Postgres(MeteBase):
                 elif query_type == QueryTypes.ONE:
                     columns = [desc[0] for desc in cursor.description]
                     row = await cursor.fetchone()
-                    # print("rows_reuslt", rows)
                     result = dict(zip(columns, row)) if row else {}
                     return result
                 elif query_type == QueryTypes.MANY:
@@ -93,7 +92,16 @@ class Postgres(MeteBase):
                     result = [dict(zip(columns, row)) for row in rows]
                     return result
                 elif query_type == QueryTypes.COUNT:
-                    return cursor.rowcount
+                    result = await cursor.fetchone()
+                    count = 0
+                    if rows is None:
+                        return count
+                    for row in rows:
+                        count = rows[row]
+                    return count
+                elif query_type == QueryTypes.GROUP_COUNT:
+                    result = await cursor.fetchall()
+                    return 0 if not result else len(result)
                 elif query_type == QueryTypes.CREATE:
                     result = cursor.rowcount > 0
                     id = cursor.lastrowid
@@ -192,7 +200,16 @@ class Mysql(MeteBase):
                 elif query_type == QueryTypes.MANY:
                     return await cursor.fetchmany(size)
                 elif query_type == QueryTypes.COUNT:
-                    return cursor.rowcount
+                    rows = await cursor.fetchone()
+                    count = 0
+                    if rows is None:
+                        return count
+                    for row in rows:
+                        count = rows[row]
+                    return count
+                elif query_type == QueryTypes.GROUP_COUNT:
+                    result = await cursor.fetchall()
+                    return 0 if not result else len(result)
                 elif query_type == QueryTypes.CREATE:
                     result = cursor.rowcount > 0
                     id = cursor.lastrowid

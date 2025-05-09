@@ -12,6 +12,7 @@ class QueryTypes(Enum):
     DELETE = 7
     CREATEBATCH = 8
     UPDATEBATCH = 9
+    GROUP_COUNT = 10
 
 
 class MeteBase:
@@ -60,6 +61,8 @@ class MeteBase:
 
     async def count(self, sql, params):
         return await self.query(sql, params, QueryTypes.COUNT)
+    async def group_count(self, sql, params):
+        return await self.query(sql, params, QueryTypes.GROUP_COUNT)
 
     async def update(self, sql, params):
         return await self.query(sql, params, QueryTypes.UPDATE)
