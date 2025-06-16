@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cloudoll"
+version = "2.4.0"  # 建议与 setup.py 保持同步（或迁移进来）
+description = "辅助快速创建可分布的微服务。"
+authors = [
+  {name = "Qiu", email = "smallerqiu@gmail.com"},
+]
+readme = "README.md"
+requires-python = ">=3.6.0"
+license = "MIT"
+keywords = ["微服务", "分布式", "aiohttp", "cloudoll"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = [
+  "watchfiles",
+  "colorlog",
+  "aiomysql",
+  "aiopg",
+  "aiohttp",
+  "redis[hiredis]",
+  "aiomcache",
+  "jinja2",
+  "pyjwt",
+  "aiohttp_session[secure]",
+  "PyYAML",
+  "click",
+  "envyaml"
+]
+
+[project.urls]
+Homepage = "https://gitee.com/chuchur/cloudoll-py"
+Repository = "https://gitee.com/chuchur/cloudoll-py"
+
+[project.scripts]
+cloudoll = "cloudoll.cli:cli"
