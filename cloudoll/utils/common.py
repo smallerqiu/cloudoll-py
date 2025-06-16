@@ -1,4 +1,9 @@
 import asyncio
+from ..logging import warning
+
+EADDRINUSE: int
+
+
 class Object(dict):
     # __setattr__ = dict.__setitem__
     # __getattr__ = dict.__getitem__
@@ -7,19 +12,20 @@ class Object(dict):
 
     def __getattr__(self, key):
         return self.get(key, None)
-    
+
     def __delattr__(self, key):
         try:
             del self[key]
         except KeyError:
             raise AttributeError(f"'DotDict' object has no attribute '{key}'")
-    
+
     def __getstate__(self):
-        '''to fix pickle.dumps '''
+        """to fix pickle.dumps"""
         return dict(self)
 
     def __setstate__(self, state):
         self.update(state)
+
 
 def chainMap(*dicts):
     merged_dict = Object()
