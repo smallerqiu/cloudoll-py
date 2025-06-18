@@ -12,12 +12,12 @@ class AsyncRequest:
         session: Optional[aiohttp.ClientSession] = None,
     ):
         """
-        异步HTTP请求客户端
+        Asynchronous HTTP request client
 
-        :param timeout: 请求超时时间(秒)
-        :param max_retries: 最大重试次数
-        :param retry_delay: 重试延迟(秒)
-        :param session: 可复用的aiohttp会话
+        :param timeout: Request timeout(Second)
+        :param max_retries: Maximum retry attempts
+        :param retry_delay: Retry delay(Second)
+        :param session: Reusable aiohttp session
         """
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self.max_retries = max_retries
@@ -37,17 +37,17 @@ class AsyncRequest:
         raise_for_status: bool = True,
     ) -> aiohttp.ClientResponse:
         """
-        执行异步HTTP请求
+        Perform asynchronous HTTP requests
 
         :param method: HTTP方法 (GET, POST, PUT, DELETE等)
-        :param url: 请求URL
-        :param params: URL查询参数
-        :param data: 请求体数据 (表单或原始数据)
-        :param json_data: JSON格式的请求体数据
-        :param headers: 请求头
-        :param cookies: cookies
-        :param allow_redirects: 是否允许重定向
-        :param raise_for_status: 是否在HTTP错误状态时抛出异常
+        :param url: Request URL
+        :param params: URL query parameters
+        :param data: Request body data (Forms or raw data)
+        :param json_data: JSON formatted request body data
+        :param headers: Request headers
+        :param cookies: Cookies
+        :param allow_redirects: Whether to allow redirects
+        :param raise_for_status: Whether to raise an exception for HTTP errors
         :return: aiohttp.ClientResponse
         """
         session = self._session or aiohttp.ClientSession(timeout=self.timeout)
@@ -87,7 +87,7 @@ class AsyncRequest:
         headers: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> aiohttp.ClientResponse:
-        """发送GET请求"""
+        """Send a GET request"""
         return await self.request("GET", url, params=params, headers=headers, **kwargs)
 
     async def post(
@@ -98,7 +98,7 @@ class AsyncRequest:
         headers: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> aiohttp.ClientResponse:
-        """发送POST请求"""
+        """Send a POST request"""
         return await self.request(
             "POST", url, data=data, json_data=json_data, headers=headers, **kwargs
         )
@@ -111,7 +111,7 @@ class AsyncRequest:
         headers: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> aiohttp.ClientResponse:
-        """发送PUT请求"""
+        """Send a PUT request"""
         return await self.request(
             "PUT", url, data=data, json_data=json_data, headers=headers, **kwargs
         )
@@ -119,11 +119,11 @@ class AsyncRequest:
     async def delete(
         self, url: str, headers: Optional[Dict[str, str]] = None, **kwargs
     ) -> aiohttp.ClientResponse:
-        """发送DELETE请求"""
+        """Send a DELETE request"""
         return await self.request("DELETE", url, headers=headers, **kwargs)
 
     async def close(self) -> None:
-        """关闭客户端会话"""
+        """Close the aiohttp session if it exists """
         if self._session is not None:
             await self._session.close()
             self._session = None
@@ -135,12 +135,12 @@ class AsyncRequest:
         await self.close()
 
 
-# 使用示例
+# demo
 """
 async def test():
     async with AsyncRequest() as client:
         try:
-            # GET请求示例
+            # GET Request example
             response = await client.get(
                 "https://httpbin.org/get",
                 params={"key": "value"},
@@ -148,7 +148,7 @@ async def test():
             )
             print(await response.json())
 
-            # POST请求示例
+            # POST Request example
             response = await client.post(
                 "https://httpbin.org/post",
                 json_data={"key": "value"},

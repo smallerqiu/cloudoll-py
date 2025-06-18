@@ -4,9 +4,9 @@
 __author__ = "Qiu / smallerqiu@gmail.com"
 from typing import Tuple
 
-from .settings import get_config
-from . import jwt
-from .core import (
+from cloudoll.web.settings import get_config
+from cloudoll.web import jwt
+from cloudoll.web.core import (
     Application,
     app,
     Response,

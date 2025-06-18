@@ -1,7 +1,6 @@
 from pathlib import Path
 import yaml
-import os
-from ..logging import error, info
+from cloudoll.logging import error, info
 from envyaml import EnvYAML
 
 

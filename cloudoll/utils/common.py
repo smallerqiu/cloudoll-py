@@ -1,5 +1,5 @@
 import asyncio
-from ..logging import warning
+from cloudoll.logging import warning
 
 EADDRINUSE: int
 

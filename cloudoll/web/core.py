@@ -11,15 +11,15 @@ import base64
 import importlib.util
 import inspect
 import json
-from errno import EADDRINUSE
 from pathlib import Path
 import sys
 import time
 from urllib import parse
 from aiohttp import web, hdrs
 from aiohttp.web import Response
-from aiohttp.web_ws import WebSocketResponse, StreamResponse, WSMsgType
-from aiohttp.web_response import LooseHeaders
+from aiohttp.web_ws import WebSocketResponse, WSMsgType
+from aiohttp.web_response import StreamResponse
+from aiohttp.typedefs import LooseHeaders
 from aiohttp_session import (
     get_session,
     setup,
@@ -27,16 +27,16 @@ from aiohttp_session import (
     memcached_storage,
     cookie_storage,
 )
-from .settings import get_config
+from cloudoll.web.settings import get_config
 import aiomcache
 from redis import asyncio as aioredis
-from ..logging import info
-from ..orm.model import Model
-from . import jwt
+from cloudoll.logging import info
+from cloudoll.orm.model import Model
+from cloudoll.web import jwt
 from decimal import Decimal
 from datetime import datetime, date
-from ..utils.common import chainMap, Object
-from ..orm import create_engine, parse_coon
+from cloudoll.utils.common import chainMap, Object
+from cloudoll.orm import create_engine, parse_coon
 import uuid
 from typing import Optional, Iterable, Callable, Awaitable
 
@@ -94,12 +94,12 @@ async def _render_result(request, func):
         result = await func(request, field)
     elif len(args) == 1:
         # :todo post body is none
-        # if content_type == "multipart/form-data":
-        #     data = await request.post()
-        # elif content_type == "application/json":
-        #     data = await request.post()
-        # else:
-        data = await request.post()
+        if content_type == "multipart/form-data":
+            data = await request.post()
+        elif content_type == "application/json":
+            data = await request.json()
+        else:
+            data = await request.post()
         query_string = request.query_string
         body = {}
         for k in data:
@@ -189,7 +189,7 @@ class Application(object):
         except:
             pass
 
-    def create(self, env: str = None, entry_model: str = None, config=None):
+    def create(self, env: str, entry_model: str, config=None):
         # self.init_parse()
         self.env = env
         loop = asyncio.get_event_loop()
@@ -357,6 +357,8 @@ class Application(object):
         defaults = {"host": "0.0.0.0", "port": 9001, "path": None}
         conf = self.config.get("server", {})
         conf = chainMap(defaults, conf, kw)
+        if self.app is None:
+            raise ValueError("Please create app first.like app.create()")
 
         async def log(_):
             # make sure this tip is printed after the server starts
@@ -447,21 +449,21 @@ app = Application()
 
 
 class JsonEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, datetime) or isinstance(obj, date):
-            return obj.__str__()
-        elif isinstance(obj, Decimal):
-            return str(obj)
-        elif isinstance(obj, set):
-            return list(obj)
-        elif isinstance(obj, Model):
-            return obj.__dict__
-        elif isinstance(obj, bytes):
-            return obj.decode("utf-8")
-        elif isinstance(obj, uuid.UUID) or isinstance(obj, Exception):
-            return str(obj)
+    def default(self, o):
+        if isinstance(o, datetime) or isinstance(o, date):
+            return o.__str__()
+        elif isinstance(o, Decimal):
+            return str(o)
+        elif isinstance(o, set):
+            return list(o)
+        elif isinstance(o, Model):
+            return o.__dict__
+        elif isinstance(o, bytes):
+            return o.decode("utf-8")
+        elif isinstance(o, uuid.UUID) or isinstance(o, Exception):
+            return str(o)
         else:
-            return super(JsonEncoder, self).default(obj)
+            return super(JsonEncoder, self).default(o)
 
 
 async def WebSocket(
@@ -557,7 +559,7 @@ def render(**kw) -> Response:
     return Response(**kw)
 
 
-def render_view(template=None, *args, **kw) -> Response:
+def render_view(template: str, *args, **kw) -> Response:
     body = None
     if app.env is not None:
         body = app.env.get_template(template).render(*args)

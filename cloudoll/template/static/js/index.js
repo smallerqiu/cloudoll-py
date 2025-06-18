@@ -22,8 +22,10 @@ document.addEventListener('DOMContentLoaded', function () {
     wsbtn.onclick = function () {
         let input = document.querySelector('.ws-input')
         let msg = input.value;
-        ws.send(msg);
-        input.value = '';
+        if (msg.trim()) {
+            ws.send(msg);
+            input.value = '';
+        }
     };
 
     // eventsource
@@ -68,7 +70,7 @@ document.addEventListener('DOMContentLoaded', function () {
             age: 18
         }
         if (method === 'post' || method === 'put') {
-            options.body = JSON.stringify()
+            options.body = JSON.stringify(data)
         } else {
             let { search } = new URL(url);
             url += (search ? "&" : "?") + new URLSearchParams(data).toString();
@@ -95,7 +97,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 result.innerHTML = JSON.stringify(data, null, 4);
             })
             .catch((err) => {
-                console.log(err.message)
+                result.innerHTML = err;
+                // console.log(err.message)
             })
             .finally(() => {
                 // todo

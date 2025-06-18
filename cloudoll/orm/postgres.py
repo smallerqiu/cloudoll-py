@@ -26,24 +26,24 @@ result = await pool.query("sql")
 __author__ = "Qiu / smallerqiu@gmail.com"
 
 from aiopg import create_pool, Pool, Cursor, Connection
-from ..logging import error
-from .base import MeteBase
-from typing import Any
+from cloudoll.logging import error
+from cloudoll.orm.base import MeteBase
+from typing import Any, Optional
 
 
 class Postgres(MeteBase):
     def __init__(self):
-        self.pool: Pool = None
-        self.cursor: Cursor = None
-        self.conn: Connection = None
+        self.pool: Optional[Pool] = None
+        self.cursor: Optional[Cursor] = None
+        self.conn: Optional[Connection] = None
         # self.__MODELS__ = []
 
-    def __call__(cls, *args: Any, **kwds: Any) -> Any:
-        cls.__init__(*args, **kwds)
-        return cls()
+    # def __call__(cls, *args: Any, **kwds: Any) -> Any:
+    #     cls.__init__(*args, **kwds)
+    #     return cls()
 
     @classmethod
-    async def create_engine(self, **kw):
+    async def create_engine(cls, **kw):
         try:
             host = (kw.get("host", "localhost"),)
             port = (kw.get("port", 5432),)
@@ -51,13 +51,12 @@ class Postgres(MeteBase):
             password = (str(kw.get("password", "")),)
             db = (kw.get("db"),)
             dsn = f"dbname={db[0]} user={user[0]} password={password[0]} host={host[0]} port={port[0]}"
-            self.pool = await create_pool(
+            cls.pool = await create_pool(
                 dsn=dsn,
                 timeout=kw.get("timeout", 10.0),
-                enable_json=kw.get("enable_json"),
-                enable_hstore=kw.get("enable_hstore"),
-                enable_uuid=kw.get("enable_uuid"),
-                enable_uuid=kw.get("enable_uuid"),
+                enable_json=kw.get("enable_json", False),
+                enable_hstore=kw.get("enable_hstore", False),
+                enable_uuid=kw.get("enable_uuid", False),
                 pool_recycle=kw.get("pool_recycle", 10),
                 echo=kw.get("echo", False),
                 minsize=kw.get("pool_size", 5),
@@ -67,4 +66,4 @@ class Postgres(MeteBase):
             # error(e)
             error(f"Database connection failed,the instance : {kw.get('db')}")
 
-        return self
+        return cls

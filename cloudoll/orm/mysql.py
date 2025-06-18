@@ -33,7 +33,7 @@ from aiomysql.pool import Pool
 from cloudoll.logging import error
 
 # from inspect import isclass, isfunction
-from .base import MeteBase
+from cloudoll.orm.base import MeteBase
 
 
 class AttrDict(dict):

@@ -4,7 +4,7 @@
 __author__ = "Qiu / smallerqiu@gmail.com"
 
 import jwt, datetime
-from ..logging import error
+from cloudoll.logging import error
 from typing import Union
 
 def encode(payload, key, exp: Union[int, str] = 3600)->str:
@@ -15,8 +15,9 @@ def encode(payload, key, exp: Union[int, str] = 3600)->str:
     :params exp 过期时间单位秒，默认1个小时
     """
     headers = dict(typ="jwt", alg="HS256")
-    exp = datetime.datetime.now() + datetime.timedelta(seconds=eval(exp) if isinstance(exp, str) else exp)  # 过期时间
-    payload["exp"] = exp.timestamp()
+    exp_seconds = eval(exp) if isinstance(exp, str) else exp
+    exp_datetime = datetime.datetime.now() + datetime.timedelta(seconds=exp_seconds)  # 过期时间
+    payload["exp"] = exp_datetime.timestamp()
     result = jwt.encode(payload=payload, key=key, algorithm="HS256", headers=headers)
     return result
 

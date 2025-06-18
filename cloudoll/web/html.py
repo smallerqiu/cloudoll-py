@@ -6,7 +6,7 @@ from html.parser import HTMLParser
 
 
 class parser(HTMLParser):
-    def __init__(self, tags: dict = None):
+    def __init__(self, tags: dict):
         """
         标签属性查找
         :params tags :{ "div":{ "id" : "list" ,"class": "table" }}
@@ -28,7 +28,7 @@ class parser(HTMLParser):
 
     def handle_endtag(self, tag):
         # print('</%s>' % tag)
-        
+
         pass
 
     def handle_startendtag(self, tag, attrs):
@@ -44,7 +44,7 @@ class parser(HTMLParser):
             if len(src):
                 self._videos.append(src[0])
         # print('<%s/>' % tag)
-        
+
         pass
 
     def handle_data(self, data):

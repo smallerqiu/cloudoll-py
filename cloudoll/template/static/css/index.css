@@ -38,6 +38,11 @@ h3 {
   font-size: 13px;
 }
 
+.ws-input,
+#api-url {
+  flex: 1;
+}
+
 .msg-list {
   flex: 1;
   border: 1px solid #efefef;
