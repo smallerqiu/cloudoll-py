@@ -64,6 +64,8 @@ class Client(object):
         self._account = config.get("account", "")
         self._account_name = config.get("account_name", "")
         self._password = config.get("password", "")
+        if not smtp_server:
+            raise ValueError("smtp_server config is required")
         self._server = smtplib.SMTP_SSL(smtp_server, port)
         # self._server.starttls()  # 调用starttls()方法加密
         self._server.set_debuglevel(debug_level)  # 打印出和SMTP服务器交互的所有信息

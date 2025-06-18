@@ -1,15 +1,15 @@
 from typing import Any
-from ..web.settings import get_config
-from ..logging import info, error
-from ..utils.common import Object, chainMap
-from .watch import AppTask
+from cloudoll.web.settings import get_config
+from cloudoll.logging import info, error
+from cloudoll.utils.common import Object, chainMap
+from cloudoll.clitool.watch import AppTask
 from aiohttp import web
-from ..web import app
+from cloudoll.web import app
 from pathlib import Path
-from .m2d import create_models, create_tables
-from ..orm import create_engine
+from cloudoll.clitool.m2d import create_models, create_tables
+from cloudoll.orm import create_engine
 import os
-from .process import ProcessManager
+from cloudoll.clitool.process import ProcessManager
 import sys
 
 
@@ -79,9 +79,10 @@ async def run_gen(**config_kwargs: Any):
         return
     model_path = Path(config.path)
     tables = None
-    if config.table != "ALL":
+    if config.table and config.table != "ALL":
         tables = config.table.split(",")
-
+    if tables is None:
+        return
     if config.create == "model":
         await create_models(sa, config.path, tables=tables)
         info(f"Model save at:{model_path}")
@@ -89,3 +90,4 @@ async def run_gen(**config_kwargs: Any):
         if model_path is None:
             raise ValueError("Need package name or model name.")
         await create_tables(sa, model_path, tables=tables)
+    return sa

@@ -1,8 +1,8 @@
 from redis import asyncio as aioredis
-from .parse import parse_coon
-from .base import MeteBase, QueryTypes
+from cloudoll.orm.parse import parse_coon
+from cloudoll.orm.base import MeteBase, QueryTypes
 from typing import Any
-from ..logging import info, error
+from cloudoll.logging import info, error
 import traceback
 import aiomysql
 from aiomysql import Pool as MYPool
@@ -10,7 +10,7 @@ from aiomysql import Pool as MYPool
 import aiopg as pg
 from aiopg.pool import Pool as PGPool
 
-__all__ = "create_engine"
+__all__ = ["create_engine"]
 
 
 async def create_engine(**kw):
@@ -41,7 +41,7 @@ async def create_engine(**kw):
             url = f"{driver}://{configs['username']}:{configs['password']}@{configs['host']}:{configs['port']}/{configs['db']}"
         return await aioredis.from_url(url, **query)
     else:
-        raise "Not suport this database type."
+        raise ValueError("Not support this database type.")
 
 
 class Postgres(MeteBase):
@@ -52,7 +52,7 @@ class Postgres(MeteBase):
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         self.__init__(*args, **kwds)
 
-    async def query(self, sql, params=None, query_type: QueryTypes = 2, size: int = 10):
+    async def query(self, sql, params=None, query_type: QueryTypes = QueryTypes.COUNT, size: int = 10):
         sql = sql.replace("?", "%s").replace("`", '"')
         if not self.pool:
             raise ValueError("must be create_engine first.")
@@ -94,10 +94,10 @@ class Postgres(MeteBase):
                 elif query_type == QueryTypes.COUNT:
                     result = await cursor.fetchone()
                     count = 0
-                    if rows is None:
+                    if result is None:
                         return count
-                    for row in rows:
-                        count = rows[row]
+                    for value in result:
+                        count = value
                     return count
                 elif query_type == QueryTypes.GROUP_COUNT:
                     result = await cursor.fetchall()
@@ -117,8 +117,6 @@ class Postgres(MeteBase):
                 elif query_type == QueryTypes.DELETE:
                     return cursor.rowcount > 0
 
-        self.pool.release(cursor)
-
     async def create_engine(self, **kw):
         try:
             host = (kw.get("host", "localhost"),)
@@ -130,7 +128,7 @@ class Postgres(MeteBase):
             # dsn = f"postgres://{user[0]}:{password[0]}@{host[0]}:{port[0]}/{db[0]}" # asyncpg
             self.pool = await pg.create_pool(
                 dsn=dsn,
-                timeout=kw.get("timeout"),
+                timeout=float(kw.get("timeout", 60)),
                 echo=kw.get("echo", False),  # aiopg
                 # max_size=kw.get("maxsize", 10), # asyncpg
                 # min_size=kw.get("minsize", 5), # asyncpg
@@ -141,9 +139,7 @@ class Postgres(MeteBase):
         except Exception as e:
             error(e)
             # print(traceback.format_exc())
-            error(
-                f"Database connection failed,the instance : postgres/{kw.get('db')}"
-            )
+            error(f"Database connection failed,the instance : postgres/{kw.get('db')}")
 
         return self
 
@@ -246,7 +242,5 @@ class Mysql(MeteBase):
             info(f"Database connection successfuly for mysql/{kw.get('db')}.")
         except Exception as e:
             # print(traceback.format_exc())
-            error(
-                f"Database connection failed,the instance : mysql/{kw.get('db')}"
-            )
+            error(f"Database connection failed,the instance : mysql/{kw.get('db')}")
         return self

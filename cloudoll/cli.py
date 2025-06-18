@@ -3,11 +3,11 @@ import click
 import asyncio
 import os
 import sys
-from .logging import error
-from . import __version__
+from cloudoll.logging import error
+from cloudoll import __version__
 from typing import Any
-from .clitool.cli_main import run_app, run_gen
-from .clitool.process import ProcessManager
+from cloudoll.clitool.cli_main import run_app, run_gen
+from cloudoll.clitool.process import ProcessManager
 
 
 @click.group()
@@ -50,14 +50,12 @@ def gen(**config: Any) -> None:
     # click.echo(create)
     async def start():
         try:
-            sa = await run_gen(**config)
+            await run_gen(**config)
         except Exception as e:
             # traceback.print_exc()
             error("Error: %s", e)
             click.echo("input `cloudoll --help` for more helps.")
-        finally:
-            await sa.close()
-
+            sys.exit(2)
     asyncio.run(start())
 
 

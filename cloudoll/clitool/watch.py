@@ -1,6 +1,6 @@
 from typing import AsyncIterator, Optional, Union
 from pathlib import Path
-from ..web import Application, app
+from cloudoll.web import Application, app
 import asyncio
 import os
 import signal
@@ -8,17 +8,17 @@ import sys
 from contextlib import suppress
 from multiprocessing import Process
 from watchfiles import awatch, DefaultFilter
-from ..logging import info, warning, error, debug
+from cloudoll.logging import info, warning, error, debug
 import contextlib
 from typing import Iterator, Optional
 from typing import Optional, Union
 from aiohttp import web
 import traceback
-from ..utils.common import check_port_open
+from cloudoll.utils.common import check_port_open
 
 
 class CloudollFilter(DefaultFilter):
-    def __init__(self, ignore_dirs: tuple = None) -> None:
+    def __init__(self, ignore_dirs: tuple = ()) -> None:
         self.ignore_dirs = self.ignore_dirs + tuple("logs")
         if ignore_dirs:
             self.ignore_dirs = self.ignore_dirs + ignore_dirs
@@ -200,7 +200,7 @@ class AppTask(WatchTask):
                 "server process already dead, exit code: %s", self._process.exitcode
             )
 
-    async def close(self) -> None:
+    async def close(self, *args) -> None:
         self.stopper.set()
         await self._stop_dev_server()
-        await asyncio.gather(super().close())
+        await asyncio.gather(super().close(*args))

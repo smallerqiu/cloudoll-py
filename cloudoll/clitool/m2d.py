@@ -2,8 +2,8 @@ import enum
 import os
 from pathlib import Path
 import re
-from ..logging import info, warning
-import importlib
+from cloudoll.logging import info, warning
+import importlib.util
 
 
 def snake_to_camel(snake_str):
@@ -86,10 +86,12 @@ async def get_table_cols(pool, table_name):
 
         rows = await pool.all(sql, None)
         for row in rows:
-            row["Key"] = "PRI" if pri_row and pri_row["column_name"] == row["field"] else None
-       
+            row["Key"] = (
+                "PRI" if pri_row and pri_row["column_name"] == row["field"] else None
+            )
+
         # print("rows", rows)
-        
+
         return rows
     else:
         raise ValueError("Database not support.")
@@ -107,7 +109,7 @@ async def get_all_tables(pool):
         raise ValueError("Database not support.")
 
 
-async def create_models(pool, save_path: str = None, tables: list = None):
+async def create_models(pool, save_path: str, tables: list):
     """
     Create models
     :params tables
@@ -137,7 +139,7 @@ async def create_models(pool, save_path: str = None, tables: list = None):
         return content
 
 
-async def create_table(pool, models: list, tables: list = None):
+async def create_table(pool, models: list, tables: list):
     for model in models:
         # print(table.__name__)
         if model.__name__ == "Model":
@@ -170,7 +172,7 @@ async def create_table(pool, models: list, tables: list = None):
         await pool.query(sql, None)
 
 
-async def create_tables(pool, model_name: str = None, tables: list = None):
+async def create_tables(pool, model_name: str, tables: list):
 
     # parts = model_name.split('.')
     # package_name = '.'.join(parts[:-1]) or '.'
@@ -180,18 +182,16 @@ async def create_tables(pool, model_name: str = None, tables: list = None):
     # module_classes = [cls for cls in vars(module_name).values() if isinstance(cls, type)]
 
     name = os.path.basename(model_name)[:-3]
-    # 创建模块规范
     module_spec = importlib.util.spec_from_file_location(name, model_name)
-    # 创建模块对象
-    module = importlib.util.module_from_spec(module_spec)
-    # 执行模块并加载其内容
-    module_spec.loader.exec_module(module)
-    # 获取模块中的所有实体
-    module_classes = [cls for cls in vars(module).values() if isinstance(cls, type)]
+    if module_spec and module_spec.loader:
+        module = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(module)
+        module_classes = [cls for cls in vars(module).values() if isinstance(cls, type)]
 
-    # print(module_classes)
-    await create_table(pool, models=module_classes, tables=tables)
-
+        # print(module_classes)
+        await create_table(pool, models=module_classes, tables=tables)
+    else:
+        raise ImportError(f"Module {model_name} not found or invalid.")
 
 def get_col(field, driver="mysql"):
     if driver == "mysql":
@@ -202,7 +202,7 @@ def get_col(field, driver="mysql"):
             "default": field["Default"],
             "charset": field["Collation"],
             "max_length": None,
-            "scale_length":None,
+            "scale_length": None,
             "auto_increment": field["Extra"] == "auto_increment",
             "NOT_NULL": field["Null"] == "NO",
             "created_generated": "DEFAULT_GENERATED" == field["Extra"],
@@ -256,7 +256,7 @@ def get_col_sql(field):
         sql += " PRIMARY KEY"
     if field.auto_increment:
         # todo: postgres SERIAL
-        sql += " AUTO_INCREMENT" 
+        sql += " AUTO_INCREMENT"
     if field.NOT_NULL:
         sql += " NOT NULL"
     if field.default:

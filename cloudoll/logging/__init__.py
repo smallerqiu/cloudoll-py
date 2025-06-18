@@ -72,7 +72,8 @@ class DailyFileHandler(Handler):
 
     def emit(self, record):
         self._update_handler()
-        self.handler.emit(record)
+        if self.handler is not None:
+            self.handler.emit(record)
 
     def close(self):
         if self.handler:

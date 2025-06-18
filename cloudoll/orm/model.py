@@ -1,11 +1,11 @@
-from .field import Field, Function, Expression
-from ..logging import warning
+from cloudoll.orm.field import Field, Function, Expression
+from cloudoll.logging import warning
 from functools import reduce
 import operator
 import copy
 import re
 import datetime
-from ..utils.common import Object
+from cloudoll.utils.common import Object
 from typing import Tuple
 
 __all__ = ("models", "Model")
@@ -430,7 +430,7 @@ class Model(metaclass=ModelMetaclass):
                 sql += f" where `{pk}`=?"
                 args = [pkv]
             else:
-                raise "need where or primary key"
+                raise ValueError("need where or primary key")
         self._reset()
         sql = self._exchange_sql(sql)
         return await self.__pool__.delete(sql, args)
