@@ -2,7 +2,7 @@ server:
   host: 127.0.0.1
   port: 9001
   ignore_dirs: ["logs", "test"]
-  client_max_size: 10
+  client_max_size: 10000
   static:
     prefix: /static
 

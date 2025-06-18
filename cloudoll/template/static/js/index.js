@@ -61,9 +61,7 @@ document.addEventListener('DOMContentLoaded', function () {
         let options = {
             method: method,
             signal: controller.signal,
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: {},
         }
         let data = {
             name: 'cloudoll',
@@ -71,6 +69,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (method === 'post' || method === 'put') {
             options.body = JSON.stringify(data)
+            options.headers['Content-Type'] = 'application/json';
         } else {
             let { search } = new URL(url);
             url += (search ? "&" : "?") + new URLSearchParams(data).toString();

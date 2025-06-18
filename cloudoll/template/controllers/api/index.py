@@ -9,24 +9,24 @@ class ApiView(View):
 
     async def get(self, ctx):
         return {
-            "msg": "you send a get request",
+            "message": "you send a get request",
             "data": ctx.qs,
         }
 
     async def post(self, ctx):
         return {
-            "msg": "you send a post request",
+            "message": "you send a post request",
             "data": ctx.body,
         }
 
     async def delete(self, ctx):
         return {
-            "msg": "you send a delete request",
+            "message": "you send a delete request",
             "data": ctx.qs,
         }
 
     async def put(self, ctx):
         return {
-            "msg": "you send a put request",
+            "message": "you send a put request",
             "data": ctx.body,
         }
