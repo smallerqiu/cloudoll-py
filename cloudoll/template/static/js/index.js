@@ -88,7 +88,13 @@ document.addEventListener('DOMContentLoaded', function () {
                         let res = await r.json();
                         throw new Error(res.message);
                     } else {
-                        throw new Error(r.statusText || "Something went wrong");
+                        try {
+                            let res = await r.json();
+                            return res
+                        } catch (e) {
+                            // console.log(e)
+                            throw new Error(r.statusText || "Something went wrong");
+                        }
                     }
                 }
             })
