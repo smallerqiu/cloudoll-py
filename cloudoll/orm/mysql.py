@@ -22,7 +22,7 @@ config = ....(database.mysql)
 pool = await Mysql().create_engine(**config)
 result = await pool.query("sql")
 """
-__author__ = "chuchur/chuchur.com"
+__author__ = "Qiu / smallerqiu@gmail.com"
 
 from typing import Any
 from aiomysql import create_pool, DictCursor
@@ -30,7 +30,7 @@ from aiomysql.pool import Pool
 
 # from aiomysql.cursors import Cursor
 # from aiomysql.connection import Connection
-from cloudoll.logging import print_error
+from cloudoll.logging import error
 
 # from inspect import isclass, isfunction
 from .base import MeteBase
@@ -80,5 +80,5 @@ class Mysql(MeteBase):
                 loop=loop,
             )
         except Exception as e:
-            print_error(f"Database connection failed,the instance : {kw.get('db')}")
+            error(f"Database connection failed,the instance : {kw.get('db')}")
         return self

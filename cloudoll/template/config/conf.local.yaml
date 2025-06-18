@@ -1,0 +1,26 @@
+server:
+  host: 127.0.0.1
+  port: 9001
+  ignore_dirs: ["logs", "test"]
+  client_max_size: 10
+  static:
+    prefix: /static
+
+# database:
+#   mysql_db:
+#     url: mysql://username:password@host:port/database
+#   postgres_db:
+#     url: mysql://username:password@host:port/database
+#   redis_0:
+#     url: redis://host:port:/0
+
+# session:
+#   max_age: 3600 * 24 * 7
+#   redis: redis://host:port/0
+#   memcached:
+#     host: 192.168.1.100
+#     port: 11211
+
+jwt:
+  key: cloudoll_jwt
+  exp: 3600 * 24 * 7

@@ -11,3 +11,6 @@ aiomcache==0.8.2
 aiohttp-session[secure]==2.12.1
 watchfiles==1.1.0
 envyaml==1.10.211231
+psutil==7.0.0
+tabulate==0.9.0
+concurrent_log_handler==0.9.28

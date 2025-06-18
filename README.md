@@ -1,67 +1,4 @@
-# cloudoll 云端玩具
-
-## 更新日志
-
-`2.2.28` 2023-07-04
-- 多数据库支持
-- 优化orm
-- 
-`2.0.14` 2023-07-04
-- 加入cli,devtoll
-- 优化orm
-- 
-`2.0.13` 2023-07-04
-- 修复已知 问题
-- 
-`2.0.12` 2023-07-04
-- 修复已知 问题
-- 
-`2.0.11` 2023-07-04
-- 修复已知 问题
-- 
-`2.0.10` 2023-07-04
-- 修复已知 问题
-- 
-`2.0.9` 2023-07-04
-- 修复已知 问题
-- 
-`2.0.8` 2023-07-04
-- 修复已知 问题
-- 
-`2.0.7` 2023-07-04
-- 修复logging 问题
-
-`2.0.5` 2023-07-04
-- 修复redis在 3.11+环境下的问题
-
-`2.0.4` 2023-07-04
-- 切换热更为adev
-
-
-`2.0.2` 2023-07-03
-- 优化一系列问题
-- 可以热加载
-
-`2.0.0` 2023-06-09
-- 优化一系列问题
-- orm 执行更优雅
-
-`0.1.6` 2022-11-03
-- orm 允许更新为空数据
-- server 文件上传加入大小限制
-- smtp 出错异常处理
-
-`0.1.5` 2022-09-19
-- 修复logging level 错误的问题
-- 修正默认依赖
- 
-`0.1.4` 2022-09-12
-- 优化orm 超时的问题
-- 增加websocket 支持
-
-
 ## Documentation
-
 
 [Docs](https://cloudoll.chuchur.com)
 
@@ -128,7 +65,7 @@ from cloudoll.web import get
 
 @get('/')
 async def home():
-    return {"name": "chuchur" ,"msg": "ok"}
+    return {"name": "cloudoll" ,"msg": "ok"}
 ```
 
 运行:
@@ -143,7 +80,7 @@ $ open http://localhost:9001
 
 ```json
 { 
-    "name": "chuchur" ,
+    "name": "cloudoll" ,
     "msg": "ok" ,
     "timestamp": 1681993906410 
 }
@@ -176,7 +113,7 @@ $ vi templates/index.html
     <title>Home</title>
 </head>
 <body>
-    <p>My name is {{name} }</p>
+    <p>Hello {{name} }</p>
 </body>
 </html>
 ```
@@ -190,11 +127,11 @@ from cloudoll.web import get, render_view
 
 @get('/')
 async def home():
-    data = {"name": "chuchur" ,"msg": "ok"}
+    data = {"name": "cloudoll" ,"msg": "ok"}
     return render_view("index.html",data)
 ```
 
-这时 页面正常渲染 ,可以看到  `“My name is chuchur”`
+这时 页面正常渲染 ,可以看到  `“Hello cloudoll.`
 
 恭喜, 你已经成功的写好了一个视图页面.
 
@@ -218,17 +155,20 @@ $ mkdir -p static/css
 // /static/js/index.js
 document.addEventListener('DOMContentLoaded',function(){
     document.body.addEventListener('click',function(){
-        alert('hello world.')
+        alert('hello cloudoll.')
     })
 })
 ```
 在 `css` 目录新建 `index.css` ,内容如下:
 ```css
  /* /static/css/index.css */
-html,body {
-    width: 100%;
-    height: 100%;
-    color: red;
+html,
+body {
+  width: 100%;
+  height: 100%;
+  color: rgb(0, 229, 255);
+  margin: 0;
+  padding: 0;
 }
 ```
 
@@ -300,7 +240,7 @@ def mid_robot():
     return robot
 ```
 
-重新启动之后, 现在可以使用 `curl http://localhost:7001/news -A "Baiduspider"` 看看效果。
+重新启动之后, 现在可以使用 `curl http://localhost:9001/news -A "Baiduspider"` 看看效果。
 
 更多参见中间件文档。
 
@@ -337,13 +277,13 @@ server:
     append_version: true
     follow_symlinks: true
 database:
-	mysql:
-		host: 127.0.0.1
-		port: 3306
-		user: root
-		password: abcd
-		db: blog
-		charset: utf8mb4
+  mysql:
+    host: 127.0.0.1
+    port: 3306
+    user: root
+    password: abcd
+    db: blog
+    charset: utf8mb4
 ```
 
 默认开发会使用默认的`local`作为配置。 启动时 通过 `env` 加载对应的配置。 如 `python3 app.py --env=prod` 会加载 `conf.prod.yaml`
@@ -367,5 +307,11 @@ cloudoll gen -t users
 ## 开发调试
 
 ```sh
-cloudoll start
+cloudoll start --name myapp
+```
+
+## 生产环境
+
+```sh
+cloudoll start --name myapp -env prod --mode production
 ```

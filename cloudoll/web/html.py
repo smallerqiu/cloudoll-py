@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__author__ = "chuchur/chuchur.com"
+__author__ = "Qiu / smallerqiu@gmail.com"
 from html.parser import HTMLParser
 
 

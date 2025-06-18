@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__author__ = "chuchur/chuchur.com"
+__author__ = "Qiu / smallerqiu@gmail.com"
 
 import argparse
 import asyncio
 import hashlib
 import os
 import base64
-import importlib
+import importlib.util
 import inspect
 import json
 from errno import EADDRINUSE
+from pathlib import Path
+import sys
+import time
 from urllib import parse
 from aiohttp import web, hdrs
 from aiohttp.web import Response
@@ -27,7 +30,7 @@ from aiohttp_session import (
 from .settings import get_config
 import aiomcache
 from redis import asyncio as aioredis
-from ..logging import warning, info
+from ..logging import info
 from ..orm.model import Model
 from . import jwt
 from decimal import Decimal
@@ -43,7 +46,6 @@ class RequestHandler(object):
         self.fn = fn
 
     async def __call__(self, request):
-        info(f"{request.method} {request.path}")
         return await _render_result(request, self.fn)
 
 
@@ -60,46 +62,44 @@ async def _set_session_route(request):
 
 
 def _auto_reg_module(module_dir: str):
-    module_path = os.path.join(os.path.abspath("."), module_dir)
-    if not os.path.exists(module_path):
-        info(f"{module_dir} not detected")
-        return
-    for filename in os.listdir(module_dir):
-        if filename.startswith("__") or filename.startswith("."):
+    base_path = Path(module_dir).resolve()
+    if str(base_path.parent) not in sys.path:
+        sys.path.insert(0, str(base_path.parent))
+    for py_file in base_path.rglob("*.py"):
+        if py_file.name == "__init__.py":
             continue
-        full_path = os.path.join(os.path.abspath("."), module_dir, filename)
-        if os.path.isdir(full_path):
-            _auto_reg_module(module_dir + os.sep + filename)
-        elif filename.endswith(".py"):
-            module_name = (
-                module_dir.replace(os.sep, ".")
-                + "."
-                + filename[:-3].replace(os.sep, ".")
-            )
-            importlib.import_module(module_name)
+        relative_path = py_file.relative_to(base_path.parent)
+        module_name = ".".join(relative_path.with_suffix("").parts)
+
+        spec = importlib.util.spec_from_file_location(module_name, py_file)
+        if spec and spec.loader:
+            module = importlib.util.module_from_spec(spec)
+            module.__package__ = module_name.rpartition(".")[0]
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
 
 
 async def _render_result(request, func):
     content_type = request.content_type
-    # 获取函数参数的名称和默认值
+    # Get the names and default values of function parameters
     props = inspect.getfullargspec(func)
     args = list(props.args)
     if "self" in args:
         args.remove("self")
 
+    await _set_session_route(request)
     if len(args) == 2 and content_type == "multipart/form-data":
-        await _set_session_route(request)
         multipart = await request.multipart()
         field = await multipart.next()
         result = await func(request, field)
     elif len(args) == 1:
-        await _set_session_route(request)
-        if content_type == "multipart/form-data":
-            data = await request.post()
-        elif content_type == "application/json":
-            data = await request.json()
-        else:
-            data = await request.post()
+        # :todo post body is none
+        # if content_type == "multipart/form-data":
+        #     data = await request.post()
+        # elif content_type == "application/json":
+        #     data = await request.post()
+        # else:
+        data = await request.post()
         query_string = request.query_string
         body = {}
         for k in data:
@@ -143,7 +143,12 @@ def _sa_ignore_middleware():
     async def set_ignore(ctx, handler):
         hashstr = _sa_ignore_hash(ctx.method, ctx.path)
         ctx.is_sa_ignore = hashstr in ctx.app.ignore_paths
-        return await handler(ctx)
+        start_time = time.time()
+        response = await handler(ctx)
+        end_time = time.time()
+        elapsed_ms = (end_time - start_time) * 1000
+        info(f"{ctx.method} {response.status} {ctx.path} {elapsed_ms:.2f}ms")
+        return response
 
     return set_ignore
 
@@ -162,6 +167,7 @@ class Application(object):
         try:
             if not entry_model:
                 return
+
             entry = importlib.import_module(entry_model, ".")
 
             life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "on_task"]
@@ -170,7 +176,7 @@ class Application(object):
                     cy = getattr(self, cycle)
                     cy.append(getattr(entry, cycle))
         except ImportError:
-            warning(f"Entry model:{entry_model} can not find.")
+            info(f"Entry model:{entry_model} can not find.")
 
     def _init_parse(self):
         try:
@@ -200,7 +206,7 @@ class Application(object):
 
         # middlewares
         _auto_reg_module("middlewares")
-        info("auto register middlewares")
+        info("Auto-registration middleware")
 
         conf_server = config.get("server")
         client_max_size = 1024**2 * 2
@@ -226,7 +232,7 @@ class Application(object):
         self.app.on_startup.append(self._init_session)
         # router:
         _auto_reg_module("controllers")
-        info("auto register controllers")
+        info("Auto-registration controller")
 
         self.app.add_routes(self._route_table)
 
@@ -238,15 +244,15 @@ class Application(object):
         if conf_server is not None:
             conf_st = conf_server.get("static")
             if conf_st:
-                temp = os.path.join(os.path.abspath("."), "static")
-                self.app.router.add_static(**conf_st, path=temp)
+                self.app.router.add_static(**conf_st, path=Path("static"))
                 info("Suggest using nginx or others instead.")
-
-        temp = os.path.join(os.path.abspath("."), "templates")
-        if os.path.exists(temp):
+        templates_dir = Path("templates")
+        if templates_dir.exists():
             from jinja2 import Environment, FileSystemLoader
 
-            self.env = Environment(loader=FileSystemLoader(temp), autoescape=True)
+            self.env = Environment(
+                loader=FileSystemLoader(templates_dir), autoescape=True
+            )
 
         return self
 
@@ -309,7 +315,7 @@ class Application(object):
                 secure=secure,
             )
             setup(apps, storage)
-            info("start redis session.")
+            info("starting a redis session.")
         elif mcache_conf:
             host = mcache_conf.get("host")
             port = mcache_conf.get("port", 11211)
@@ -324,7 +330,7 @@ class Application(object):
                 secure=secure,
             )
             setup(apps, storage)
-            info("start memcached session.")
+            info("starting a memcached session.")
         else:
             dig = hashlib.sha256(cookie_name.encode()).digest()
             fernet_key = base64.urlsafe_b64encode(dig)
@@ -340,7 +346,7 @@ class Application(object):
                 httponly=httponly,
             )
             setup(apps, storage)
-            info("start local cookie.")
+            info("starting local cookie.")
 
     def run(self, **kw):
         """
@@ -351,12 +357,16 @@ class Application(object):
         defaults = {"host": "0.0.0.0", "port": 9001, "path": None}
         conf = self.config.get("server", {})
         conf = chainMap(defaults, conf, kw)
-        info(f"Server running on http://{conf['host']}:{conf['port']}")
-        info("(Press CTRL+C to quit.)")
+
+        async def log(_):
+            # make sure this tip is printed after the server starts
+            info(f"Server running on http://{conf.host}:{conf.port}")
+
+        self.app.on_startup.append(log)
         web.run_app(
             self.app,
             loop=self._loop,
-            host="0.0.0.0",
+            host=conf["host"],
             port=conf["port"],
             path=conf["path"],
             access_log=None,
@@ -507,7 +517,10 @@ def delete(path: str, name=None, sa_ignore=False):
 
 
 def routes(path: str, sa_ignore=False):
-    # todo: sa_ignore
+    if sa_ignore:
+        for method in hdrs.METH_ALL:
+            hashstr = _sa_ignore_hash(method, path)
+            app.app.ignore_paths.add(hashstr)
     return app.route_table.view(path)
 
 

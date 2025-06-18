@@ -2,7 +2,7 @@ from redis import asyncio as aioredis
 from .parse import parse_coon
 from .base import MeteBase, QueryTypes
 from typing import Any
-from ..logging import print_info, print_error
+from ..logging import info, error
 import traceback
 import aiomysql
 from aiomysql import Pool as MYPool
@@ -10,7 +10,7 @@ from aiomysql import Pool as MYPool
 import aiopg as pg
 from aiopg.pool import Pool as PGPool
 
-__ALL__ = "create_engine"
+__all__ = "create_engine"
 
 
 async def create_engine(**kw):
@@ -26,7 +26,7 @@ async def create_engine(**kw):
         driver = kw.get("type")
         configs = kw
 
-    # print_info("DB Config:", configs, query)
+    # info("DB Config:", configs, query)
 
     if driver == "mysql":
         return await Mysql().create_engine(**configs, **query)
@@ -61,7 +61,7 @@ class Postgres(MeteBase):
 
         async with self.pool.acquire() as conn:
             if conn.echo:
-                print_info("sql", sql, params)
+                info("sql", sql, params)
 
             async with conn.cursor() as cursor:
                 # current_cursor = getattr(cursor, 'lastrowid', None)
@@ -137,11 +137,11 @@ class Postgres(MeteBase):
                 maxsize=kw.get("maxsize", 10),  # aiopg
                 minsize=kw.get("minsize", 5),  # aiopg
             )
-            print_info(f"Database connection successfuly for postgres/{kw.get('db')}")
+            info(f"Database connection successfuly for postgres/{kw.get('db')}")
         except Exception as e:
-            print_error(e)
+            error(e)
             # print(traceback.format_exc())
-            print_error(
+            error(
                 f"Database connection failed,the instance : postgres/{kw.get('db')}"
             )
 
@@ -179,7 +179,7 @@ class Mysql(MeteBase):
             return None
         async with self.pool.acquire() as conn:
             if conn.echo:
-                print_info("sql", sql, params)
+                info("sql", sql, params)
 
             async with conn.cursor() as cursor:
                 # current_cursor = getattr(cursor, 'lastrowid', None)
@@ -243,10 +243,10 @@ class Mysql(MeteBase):
                 cursorclass=AttrDictCursor,
                 loop=loop,
             )
-            print_info(f"Database connection successfuly for mysql/{kw.get('db')}.")
+            info(f"Database connection successfuly for mysql/{kw.get('db')}.")
         except Exception as e:
             # print(traceback.format_exc())
-            print_error(
+            error(
                 f"Database connection failed,the instance : mysql/{kw.get('db')}"
             )
         return self

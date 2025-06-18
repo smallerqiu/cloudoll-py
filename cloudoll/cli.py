@@ -1,12 +1,13 @@
+from pathlib import Path
 import click
 import asyncio
 import os
 import sys
-from .logging import print_error
+from .logging import error
 from . import __version__
 from typing import Any
-from .utils.cli_main import run_app, run_gen
-sys.path.append(os.path.abspath("."))
+from .clitool.cli_main import run_app, run_gen
+from .clitool.process import ProcessManager
 
 
 @click.group()
@@ -19,11 +20,30 @@ life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "cleanup_ctx"]
 
 
 @cli.command()
-@click.option("-p", "--path", help="Model's relative path,save models or create tables", default="models.py",)
-@click.option("-c", "--create", help="For create model or table, model / table", default="model")
-@click.option("-t", "--table", help="Table's name or Model's name, split by `,` or 'ALL'", required=True,)
-@click.option("-env", "--environment", help="Environment, local / test / prod", default="local")
-@click.option("-db", "--database", help="Database name, pick the database in conf.{env}.yaml", default="mysql",)
+@click.option(
+    "-p",
+    "--path",
+    help="Model's relative path,save models or create tables",
+    default="models.py",
+)
+@click.option(
+    "-c", "--create", help="For create model or table, model / table", default="model"
+)
+@click.option(
+    "-t",
+    "--table",
+    help="Table's name or Model's name, split by `,` or 'ALL'",
+    required=True,
+)
+@click.option(
+    "-env", "--environment", help="Environment, local / test / prod", default="local"
+)
+@click.option(
+    "-db",
+    "--database",
+    help="Database name, pick the database in conf.{env}.yaml",
+    default="mysql",
+)
 def gen(**config: Any) -> None:
     """Help to create models or tables."""
 
@@ -33,7 +53,7 @@ def gen(**config: Any) -> None:
             sa = await run_gen(**config)
         except Exception as e:
             # traceback.print_exc()
-            print_error('Error: %s', e)
+            error("Error: %s", e)
             click.echo("input `cloudoll --help` for more helps.")
         finally:
             await sa.close()
@@ -42,34 +62,99 @@ def gen(**config: Any) -> None:
 
 
 @cli.command()
-@click.option("-env", "--environment", help="Environment, local / test / prod", default="local")
+@click.option(
+    "-env", "--environment", help="Environment, local / test / prod", default="local"
+)
 @click.option("-p", "--port", help="Server's port", default=None)
 @click.option("-h", "--host", help="Server's host", default=None)
-@click.option("-m", "--mode", help="development or production mode", default='development')
-@click.option("-path", "--path", help="Unix file system path to serve on. Specifying a path will cause hostname and port arguments to be ignored.",)
-@click.option("-e", "--entry", help="Entry point model name. delfault name app", default="app")
+@click.option(
+    "-m", "--mode", help="development or production mode", default="development"
+)
+@click.option(
+    "-path",
+    "--path",
+    help="Unix file system path to serve on. Specifying a path will cause hostname and port arguments to be ignored.",
+)
+@click.option(
+    "-n",
+    "--name",
+    help="Your service name",
+    required=True,
+)
+@click.option(
+    "-e", "--entry", help="Entry point model name. delfault name app", default="app"
+)
 def start(**config: Any) -> None:
-    """Start a services."""
+    """Start a service."""
     try:
         active_config = {k: v for k, v in config.items() if v is not None}
         run_app(**active_config)
     except Exception as e:
-        print_error('Error: %s', e)
+        error(f"Error: {e}")
         # traceback.format_exc()
         sys.exit(2)
 
 
-_project_existing = click.Path(dir_okay=True)
+@cli.command()
+@click.option(
+    "-n",
+    "--name",
+    help="Your service name.",
+    required=True,
+)
+def stop(name):
+    """Stop a service."""
+    ProcessManager.safe_exit(name)
 
 
 @cli.command()
-@click.argument("project-name", type=_project_existing, required=True)
+@click.option(
+    "-n",
+    "--name",
+    help="Your service name",
+    required=True,
+)
+@click.option(
+    "-f",
+    "--force",
+    help="Force restart even if the service is not running",
+    required=False,
+)
+def restart(name, force):
+    """Restart a service."""
+    pid = ProcessManager.get_running_pid(name)
+    if not pid:
+        click.echo("⚠️  Cloudoll server not running.")
+        if not force:
+            click.echo(f"⚠️  Service {name} not running，use --force to force restart")
+            return
+
+    ProcessManager.safe_exit(name)
+
+    args = ProcessManager.load_start_args(name)
+    if not args:
+        click.echo(
+            "❌ Can't find historical startup parameters, you can add --force option",
+            err=True,
+        )
+        raise click.Abort()
+    os.execvp(sys.executable, [sys.executable, sys.argv[0], *args])
+
+
+@cli.command()
+def list():
+    """List all services."""
+    ProcessManager.list()
+
+
+@cli.command()
+@click.argument("project-name", type=click.Path(dir_okay=True), required=True)
 def create(project_name) -> None:
-    full_path = os.path.join(os.path.abspath("."), project_name)
-    # log = logging.getLogger('cloudoll.create')
-    if os.path.exists(full_path):
-        print_error(f"Project name `{project_name}` already exist.")
-        # return None
+    project_dir = Path(project_name)
+    if not project_dir.exists():
+        error(f"Project name `{project_name}` already exist.")
+    else:
+        project_dir.mkdir(parents=True)
 
 
 if __name__ == "__main__":

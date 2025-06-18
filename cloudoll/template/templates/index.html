@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="static/css/index.css">
+    <script src="static/js/index.js"></script>
+    <title>Cloudoll</title>
+</head>
+
+<body>
+    <p class="hello-text">Hello {{name}}</p>
+    <div class="main">
+        <div class="ws">
+            <h3>WebSocket test</h3>
+            <div class="msg-list ws-msg-list"></div>
+            <div class="space-box">
+                <input type="text" class="ws-input" />
+                <button class="ws-btn">send</button>
+            </div>
+        </div>
+        <div class="es">
+            <h3>EventSource test</h3>
+            <div class="msg-list es-msg-list"></div>
+            <div><button class="es-btn">send task</button></div>
+        </div>
+        <div class="auth">
+            <div class="api-box">
+                <h3>Api test</h3>
+                <div class="space-box">
+                    <select id="api-method">
+                        <option value="get">get</option>
+                        <option value="post">post</option>
+                        <option value="delete">delete</option>
+                        <option value="put">put</option>
+                    </select>
+                    <input placeholder="url" type="text" id="api-url" value="http://localhost:9001/api/test"/>
+                    <button class="btn-api">go</button>
+                </div>
+                <div id="api-result">no result...</div>
+            </div>
+            <div class="login">
+                <h3>Auth test</h3>
+                <div class="login-box">
+                    <input placeholder="username: admin" type="text" />
+                    <input placeholder="password: lovecloudoll" type="password" />
+                    <button>login</button>
+                </div>
+            </div>
+            <div class="upload-box">
+                <h3>Upload file test</h3>
+                <div class="login-box">
+                    <input placeholder="username" type="file" />
+                </div>
+                <button>upload</button>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

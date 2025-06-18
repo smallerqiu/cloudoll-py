@@ -2,7 +2,7 @@
 name = "cloudoll"
 version = "2.0.23"
 authors = [
-  { name="chuchur", email="chuchur@qq.com" },
+  { name="Qiu", email="smallerqiu@gmail.com" },
 ]
 description = "辅助快速创建可分布的微服务。"
 readme = "README.md"

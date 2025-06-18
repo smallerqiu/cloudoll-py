@@ -1,188 +1,141 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-__author__ = "chuchur/chuchur.com"
-
-import logging as loger
 import os
+import platform
+import logging
 from datetime import datetime
-from logging.handlers import RotatingFileHandler
-from logging import INFO, DEBUG, ERROR, CRITICAL, DEBUG
+from pathlib import Path
+from logging import Handler
+from concurrent_log_handler import ConcurrentRotatingFileHandler
 import colorlog
 
-__ALL__ = (
-    "debug",
-    "info",
-    "warning",
-    "error",
-    "exception",
-    "critical",
-    "print_info",
-    "print_error",
-    "print_warn",
-)
-_COLORS = {
-    # 终端输出日志颜色配置
-    "DEBUG": "white",
-    "INFO": "green",
-    "WARNING": "yellow",
-    "ERROR": "red",
-    "CRITICAL": "bold_red",
-}
+
+__all__ = ["debug", "info", "warning", "error", "exception", "critical", "setLevel"]
 
 
-class ColorAnsi:
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    BLUE = "\033[94m"
-    END = "\033[0m"
+LOG_MAX_BYTES = 20 * 1024 * 1024
+LOG_BACKUP_COUNT = 3
+
+def _get_log_dir():
+    if "CLOUDOLL_LOG_DIR" in os.environ:
+        return Path(os.environ["CLOUDOLL_LOG_DIR"])
+    home = Path.home()
+    if platform.system() == "Windows":
+        log_dir = home / "AppData/Local/cloudoll/logs"
+    else:
+        log_dir = home / ".cloudoll/logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    except Exception:
+        log_dir = Path("/tmp/cloudoll/logs")
+        log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return log_dir
 
 
-_FORMATS = {
-    # 终端输出格式
-    # "console_format": "%(log_color)s[%(levelname)s]-%(asctime)s-%(pathname)s-%(module)s-%(funcName)s-[line:%(lineno)d]: %(message)s",
-    "console_format": "%(log_color)s%(asctime)s %(levelname)s %(message)s",
-    # 日志输出格式
-    # "log_format": "[%(levelname)s]-%(asctime)s-%(pathname)s-%(module)s-%(funcName)s-[line:%(lineno)d]: %(message)s",
-    "log_format": "%(asctime)s %(levelname)s %(message)s",
-}
+class DailyFileHandler(Handler):
+    """Automatically rotate log files on a daily basis"""
 
-_LOG_SIZE = 1024 * 1024 * 1  # 1MB 日志最大1MB
-_LOG_FILES_COUNT = 3  # 最多保留3个日志文件
+    def __init__(self, base_name, level=logging.INFO, filter_exact=False):
+        super().__init__(level)
+        self.base_name = base_name
+        self.filter_exact = filter_exact
+        self.current_date = None
+        self.handler = None
+        self._log_dir = _get_log_dir()
+        self._update_handler(force=True)
 
+    def _get_filename(self):
+        today = datetime.now().strftime("%Y-%m-%d")
+        suffix = "-error.log" if self.filter_exact else "-all.log"
+        return str(self._log_dir / f"{today}{suffix}")
 
-class HandleLog:
-    """
-    建日志记录器(logging.getLogger)
-    设置日志级别(logger.setLevel)
-    创建日志文件(logging.FileHandler)
-    设置日志格式(logging.Formatter)
-    日志处理程序记录到记录器(addHandler)
-    """
-
-    def __init__(self):
-        # cur_path = os.path.dirname(os.path.realpath(__file__))  # 当前项目路径
-        # log_path = os.path.join(os.path.normpath(os.getcwd() + os.sep + os.pardir), 'logs')
-        # self.__logger = logging.getLogger()
-        self.getLogger()
-        log_path = os.path.join(os.path.normpath(os.getcwd() + os.sep), "logs")
-        # now_time = datetime.now().strftime("%Y-%m-%d")  # 当前日期格式化
-        if not os.path.exists(log_path):
-            os.mkdir(log_path)  # 若不存在logs文件夹，则自动创建
-        self.log_path = log_path
-        self.log_path_prefix = None  # 当前日期格式化
-        self.all_handle = None
-        self.error_handle = None
-
-        # console
-        # if __debug__:
-        console_handle = colorlog.StreamHandler()
-        console_fmt = colorlog.ColoredFormatter(
-            _FORMATS["console_format"], log_colors=_COLORS
-        )
-        console_handle.setFormatter(console_fmt)
-        console_handle.setLevel(DEBUG)
-        self.__logger.addHandler(console_handle)
-
-    def setLevel(self, level):
-        self.__logger.setLevel(level)
-
-    def getLogger(self, name=None):
-        self.__logger = loger.getLogger("cloudoll")  # 创建日志记录器
-        self.__logger.setLevel(INFO)
-        # self._set_handle()
-        return self.__logger
-
-    def __create_handler(self, log_path, level):
-        handler = RotatingFileHandler(
-            log_path,
-            maxBytes=_LOG_SIZE,
-            backupCount=_LOG_FILES_COUNT,
-            encoding="utf-8",
-        )
-        formatter = loger.Formatter(_FORMATS["log_format"], datefmt="%Y-%m-%d %H:%M-%S")
-        handler.setFormatter(formatter)
-        handler.setLevel(level=level)
-        self.__logger.addHandler(handler)
-        return handler
-
-    def __free(self):
-        if self.all_handle:
-            self.__logger.removeHandler(self.all_handle)
-            self.all_handle.close()
-        if self.error_handle:
-            self.__logger.removeHandler(self.error_handle)
-            self.error_handle.close()
-
-    def log(self, method):
-        logger = self.__logger
-        log_path_prefix = datetime.now().strftime("%Y-%m-%d")  # 当前日期格式化
-        if self.log_path_prefix != log_path_prefix:
-            self.log_path_prefix = log_path_prefix
-            self.__free()
-            # 收集所有日志信息文件
-            all_log_path = os.path.join(self.log_path, "%s-all.log" % log_path_prefix)
-            # 收集错误日志信息文件
-            error_log_path = os.path.join(
-                self.log_path, "%s-error.log" % log_path_prefix
+    def _update_handler(self, force=False):
+        today = datetime.now().date()
+        if force or self.current_date != today:
+            if self.handler:
+                self.handler.close()
+            path = self._get_filename()
+            self.handler = ConcurrentRotatingFileHandler(
+                path,
+                maxBytes=LOG_MAX_BYTES,
+                backupCount=LOG_BACKUP_COUNT,
+                encoding="utf-8",
             )
+            self.handler.setFormatter(
+                logging.Formatter(
+                    fmt="%(asctime)s [%(levelname)-8s] %(message)s",
+                    # datefmt="%Y-%m-%d %H:%M:%S.%f",
+                )
+            )
+            self.handler.setLevel(self.level)
+            if self.filter_exact:
+                self.handler.addFilter(lambda record: record.levelno == self.level)
+            self.current_date = today
 
-            # set handle
-            # self.__logger.setLevel(logging.INFO)  # 设置默认日志记录器记录级别
-            # all
-            self.all_handle = self.__create_handler(all_log_path, INFO)
-            # error
-            self.error_handle = self.__create_handler(error_log_path, ERROR)
+    def emit(self, record):
+        self._update_handler()
+        self.handler.emit(record)
 
-        return getattr(logger, method, None)
-
-
-_handler = None
-
-
-def print_format(color_ansi, type, *args):
-    ft = color_ansi + "{}" + ColorAnsi.END
-    timestamp = ft.format(datetime.now().strftime("%Y-%m-%d %H:%M:%S") + " " + type)
-    text = " ".join(ft.format(str(arg)) for arg in args)
-    print(timestamp, text)
-
-
-def print_info(*args):
-    print_format(ColorAnsi.GREEN, "INFO", *args)
+    def close(self):
+        if self.handler:
+            self.handler.close()
+        super().close()
 
 
-def print_error(*args):
-    print_format(ColorAnsi.RED, "ERROR", *args)
+def _init_logger(name="cloudoll", level=logging.INFO):
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.propagate = False
+
+    if logger.handlers:
+        return logger
+
+    console = logging.StreamHandler()
+    formatter = colorlog.ColoredFormatter(
+        fmt="%(log_color)s%(asctime)s [%(levelname)-8s] %(message)s",
+        # datefmt="%Y-%m-%d %H:%M:%S.%f",
+        log_colors={
+            "DEBUG": "cyan",
+            "INFO": "white",
+            "WARNING": "bold_yellow",
+            "ERROR": "bold_red",
+            "CRITICAL": "bold_white,bg_red",
+        },
+    )
+    console.setFormatter(formatter)
+    console.setLevel(logging.DEBUG)
+    logger.addHandler(console)
+
+    logger.addHandler(DailyFileHandler("all", logging.INFO))
+    logger.addHandler(DailyFileHandler("error", logging.ERROR, filter_exact=True))
+
+    return logger
 
 
-def print_warn(*args):
-    print_format(ColorAnsi.YELLOW, "WARN", *args)
+_logger = _init_logger()
 
 
-def _get_handle():
-    global _handler
-    handler = _handler if _handler else HandleLog()
-    _handler = handler
-    return handler
+def debug(msg, *args, **kwargs):
+    _logger.debug(msg, *args, **kwargs)
 
 
-def setLevel(level: int):
-    _get_handle().setLevel(level)
+def info(msg, *args, **kwargs):
+    _logger.info(msg, *args, **kwargs)
 
 
-def getLogger(name=None):
-    return _get_handle().getLogger(name=name)
+def warning(msg, *args, **kwargs):
+    _logger.warning(msg, *args, **kwargs)
 
 
-debug = _get_handle().log("debug")
+def error(msg, *args, **kwargs):
+    _logger.error(msg, *args, **kwargs)
 
-info = _get_handle().log("info")
 
-warning = _get_handle().log("warning")
+def exception(msg, *args, **kwargs):
+    _logger.exception(msg, *args, **kwargs)
 
-error = _get_handle().log("error")
 
-exception = _get_handle().log("exception")
+def critical(msg, *args, **kwargs):
+    _logger.critical(msg, *args, **kwargs)
 
-critical = _get_handle().log("critical")
+
+def setLevel(level):
+    _logger.setLevel(level)

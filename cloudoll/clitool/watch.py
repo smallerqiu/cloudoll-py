@@ -8,13 +8,14 @@ import sys
 from contextlib import suppress
 from multiprocessing import Process
 from watchfiles import awatch, DefaultFilter
-from ..logging import info, warning, error
+from ..logging import info, warning, error, debug
 import contextlib
 from typing import Iterator, Optional
 from typing import Optional, Union
 from aiohttp import web
 import traceback
-from .common import check_port_open
+from ..utils.common import check_port_open
+
 
 class CloudollFilter(DefaultFilter):
     def __init__(self, ignore_dirs: tuple = None) -> None:
@@ -79,7 +80,13 @@ def mian_app(tty_path, config, entry, env):
             with asyncio.Runner() as runner:
                 app_runner = runner.run(create_main_app(config, entry, env))
                 try:
-                    runner.run(start_main_app(app_runner, config["server"]["port"]))
+                    runner.run(
+                        start_main_app(
+                            app_runner,
+                            config["server"]["host"],
+                            config["server"]["port"],
+                        )
+                    )
                     runner.get_loop().run_forever()
                 except KeyboardInterrupt:
                     pass
@@ -90,7 +97,11 @@ def mian_app(tty_path, config, entry, env):
             loop = asyncio.new_event_loop()
             runner = loop.run_until_complete(create_main_app(config, entry, env))
             try:
-                loop.run_until_complete(start_main_app(runner, config["server"]["port"]))
+                loop.run_until_complete(
+                    start_main_app(
+                        runner, config["server"]["host"], config["server"]["port"]
+                    )
+                )
                 loop.run_forever()
             except KeyboardInterrupt:
                 pass
@@ -105,10 +116,10 @@ async def create_main_app(config, entry, env):
     return web.AppRunner(App.app, shutdown_timeout=0.1)
 
 
-async def start_main_app(runner, port):
+async def start_main_app(runner, host, port):
     await runner.setup()
-    site = web.TCPSite(runner, host="0.0.0.0", port=port)
-    info(f"Server running on http://0.0.0.0:{port}")
+    site = web.TCPSite(runner, host=host, port=port)
+    info(f"Server running on http://{host}:{port}")
     info("(Press CTRL+C to quit)")
     await site.start()
 
@@ -173,9 +184,10 @@ class AppTask(WatchTask):
     async def _stop_dev_server(self) -> None:
         if self._process.is_alive():
             info("stopping server process...")
-            if self._process.pid:
-                info("sending SIGINT")
-                os.kill(self._process.pid, signal.SIGINT)
+            # if self._process.pid:
+            #     info("sending SIGINT")
+            #     os.kill(self._process.pid, signal.SIGINT)
+            self._process.terminate()
             self._process.join(5)
             if self._process.exitcode is None:
                 warning("process has not terminated, sending SIGKILL")

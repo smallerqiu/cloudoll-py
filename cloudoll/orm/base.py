@@ -40,7 +40,7 @@ class MeteBase:
     #             await fun(cursor)
     #             await conn.commit()
     #         except Exception as e:
-    #             print_error(e)
+    #             error(e)
     #             await conn.rollback()
     #         finally:
     #             if cursor:

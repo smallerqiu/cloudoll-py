@@ -23,10 +23,10 @@ config = ....(database.postgres)
 pool = await Postgres().create_engine(**config)
 result = await pool.query("sql")
 """
-__author__ = "chuchur/chuchur.com"
+__author__ = "Qiu / smallerqiu@gmail.com"
 
 from aiopg import create_pool, Pool, Cursor, Connection
-from ..logging import print_error
+from ..logging import error
 from .base import MeteBase
 from typing import Any
 
@@ -64,7 +64,7 @@ class Postgres(MeteBase):
                 maxsize=kw.get("pool_size", 10),
             )
         except Exception as e:
-            # print_error(e)
-            print_error(f"Database connection failed,the instance : {kw.get('db')}")
+            # error(e)
+            error(f"Database connection failed,the instance : {kw.get('db')}")
 
         return self

@@ -8,7 +8,7 @@ import datetime
 from ..utils.common import Object
 from typing import Tuple
 
-__ALL__ = ("models", "Model")
+__all__ = ("models", "Model")
 
 
 class ModelMetaclass(type):

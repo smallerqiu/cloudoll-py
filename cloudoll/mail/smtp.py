@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__author__ = "chuchur"
+__author__ = "Qiu"
 
 """
 MAIL = {
     "smtp_server": "smtp.qq.com",
     "account": "123456789@qq.com",
-    "account_name": "chuchur",
+    "account_name": "qiu",
     "password": "abcdefg",
     "prot": 465,  # 587
     "debug_level": 1,
@@ -20,13 +20,13 @@ m.subject = "test title"
 m.content = "long long ago..."
 
 # 嵌入html 和 html 调用附件
-m.addfile("/home/chuchur/img/a.jpg") # cid 0
-m.addfile("/home/chuchur/img/b.jpg") # cid 1
+m.addfile("/home/qiu/img/a.jpg") # cid 0
+m.addfile("/home/qiu/img/b.jpg") # cid 1
 m.addhtml("<html><body><h1>Hello</h1>" + '<p><img src="cid:0"><img src="cid:1"></p>' + "</body></html>")
 
 # 多个收件人
 m.add_to_addr("李彦宏", "liyanhong@baidu.com")
-m.add_to_addr("马云", "jackma@alibaba.com")
+m.add_to_addr("Jack ma", "jackma@alibaba.com")
 
 # 附件
 m.addfile(filepathA)
@@ -46,7 +46,7 @@ from email.mime.multipart import MIMEMultipart
 
 from email.utils import parseaddr, formataddr
 import mimetypes
-from ..logging import print_info, print_error
+from ..logging import info, error
 
 
 def _format_addr(s):
@@ -78,10 +78,10 @@ class Client(object):
             password = self._password
             if account is None or password is None:
                 raise KeyError("请设置账号密码")
-            print_info("登录中...")
+            info("登录中...")
             self._server.login(account, password)
         except BaseException as e:
-            print_error(e)
+            error(e)
             raise
 
     def send(self):
@@ -107,7 +107,7 @@ class Client(object):
             self._server.sendmail(self._account, to_addr, msg.as_string())
             self._server.quit()
         except BaseException as er:
-            print_error(er)
+            error(er)
 
     def add_to_addr(self, nick, addr):
         """
@@ -139,7 +139,7 @@ class Client(object):
             if len(mime_types) > 0:
                 mime_type = mime_types[0]
             else:
-                print_error("无法匹配附件类型,可以尝试安装httpd服务")
+                error("无法匹配附件类型,可以尝试安装httpd服务")
             ## 这里如果拿不到type 需要安装httpd ,dnf install httpd
             [t, n] = mime_type.split("/")
             filename = os.path.basename(filepath)  # 'a.txt'

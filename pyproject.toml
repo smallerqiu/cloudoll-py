@@ -32,7 +32,10 @@ dependencies = [
   "aiohttp_session[secure]",
   "PyYAML",
   "click",
-  "envyaml"
+  "envyaml",
+  "psutil",
+  "tabulate",
+  "concurrent_log_handler"
 ]
 
 [project.urls]

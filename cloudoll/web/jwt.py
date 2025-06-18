@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__author__ = "chuchur/chuchur.com"
+__author__ = "Qiu / smallerqiu@gmail.com"
 
 import jwt, datetime
-from ..logging import print_error
+from ..logging import error
 from typing import Union
 
 def encode(payload, key, exp: Union[int, str] = 3600)->str:
@@ -36,5 +36,5 @@ def decode(token, key):
             return None
         return payload  # 返回自定义内容
     except Exception as e:
-        print_error(e)
+        error(e)
         return None

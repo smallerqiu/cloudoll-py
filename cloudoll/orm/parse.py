@@ -6,7 +6,7 @@ import collections.abc as collections_abc
 _implicit_encoding = "ascii"
 _implicit_errors = "strict"
 
-__ALL__ = "parse_coon"
+__all__ = "parse_coon"
 
 
 def parse_coon(url: str):

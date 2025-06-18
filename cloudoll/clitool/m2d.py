@@ -1,7 +1,8 @@
 import enum
 import os
+from pathlib import Path
 import re
-from ..logging import print_info, print_warn
+from ..logging import info, warning
 import importlib
 
 
@@ -19,7 +20,7 @@ async def create_model(pool, table_name) -> str:
     Create table
     :params table name
     """
-    print_info(f"create model from {table_name}")
+    info(f"create model from {table_name}")
     # rows = await pool.all(f"show full COLUMNS from `{table_name}`", None)
     rows = await get_table_cols(pool, table_name)
     # print(rows)
@@ -124,7 +125,7 @@ async def create_models(pool, save_path: str = None, tables: list = None):
         content += await create_model(pool, t)
     if save_path:
         first_append = True
-        if os.path.exists(save_path):
+        if Path(save_path).exists():
             with open(save_path, "r", encoding="utf-8") as f:
                 t = f.readlines(5)
                 first_append = import_line not in t
@@ -147,7 +148,7 @@ async def create_table(pool, models: list, tables: list = None):
             continue
 
         if tb.startswith("v_"):
-            print_warn(f"{tb} look like a view so skip.")
+            warning(f"{tb} look like a view so skip.")
             continue
 
         # sql = f"DROP TABLE IF EXISTS `{tb}`;\n"
@@ -164,7 +165,7 @@ async def create_table(pool, models: list, tables: list = None):
         sql += ",\n".join(sqls)
         sql += ") ENGINE=InnoDB;"
 
-        print_info(f"create table {tb} ...\n\n")
+        info(f"create table {tb} ...\n\n")
         # print(sql)
         await pool.query(sql, None)
 

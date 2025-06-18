@@ -1,7 +1,7 @@
 from typing import Any
 from ..web.settings import get_config
-from ..logging import print_info
-from .common import Object, chainMap
+from ..logging import info, error
+from ..utils.common import Object, chainMap
 from .watch import AppTask
 from aiohttp import web
 from ..web import app
@@ -9,17 +9,34 @@ from pathlib import Path
 from .m2d import create_models, create_tables
 from ..orm import create_engine
 import os
+from .process import ProcessManager
+import sys
 
 
 def run_app(**config_kwargs: Any):
     config = Object(config_kwargs)
-    print_info("Current mode: ", config.mode)
+    info("current mode: %s", config.mode)
     app_config = get_config(config.environment)
     # print(environment, host, port, mode, path, entry)
     # return
-    if config.mode == 'production':
-        App = app.create(env=config.environment, config=app_config, entry_model=config.entry)
-        App.run()
+    if config.mode == "production":
+        ProcessManager.ensure_runtime_dir()
+        ProcessManager.save_start_args(config.name, sys.argv[1:])
+        # ProcessManager.cleanup(config.name)
+
+        pid = ProcessManager.get_running_pid(config.name)
+        if pid:
+            error(f"⚠️  {config.name} is already running with PID {pid}. Exiting.")
+            return
+        ProcessManager.register_signal_handlers(config.name)
+        try:
+            App = app.create(
+                env=config.environment, config=app_config, entry_model=config.entry
+            )
+            ProcessManager.save_pid(config.name, os.getpid())
+            App.run()
+        finally:
+            ProcessManager.cleanup(config.name)
     else:
         aux_app = web.Application(
             logger=None,
@@ -30,7 +47,9 @@ def run_app(**config_kwargs: Any):
         server = chainMap(defaults, conf_server, env_server)
         app_config["server"] = server
         aux_port = int(server.port) + 1
-        task = AppTask(Path(".").resolve(), app_config, entry=config.entry, env=config.environment)
+        task = AppTask(
+            Path(".").resolve(), app_config, entry=config.entry, env=config.environment
+        )
         aux_app.cleanup_ctx.append(task.cleanup_ctx)
         web.run_app(
             aux_app,
@@ -58,14 +77,14 @@ async def run_gen(**config_kwargs: Any):
     sa = await create_engine(**db_config)
     if sa.pool is None:
         return
-    model_path = os.path.join(os.path.abspath("."), config.path)
+    model_path = Path(config.path)
     tables = None
     if config.table != "ALL":
         tables = config.table.split(",")
 
     if config.create == "model":
         await create_models(sa, config.path, tables=tables)
-        print_info(f"Model save at:{model_path}")
+        info(f"Model save at:{model_path}")
     elif config.create == "table":
         if model_path is None:
             raise ValueError("Need package name or model name.")
