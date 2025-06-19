@@ -4,7 +4,7 @@ version = "2.0.23"
 authors = [
   { name="Qiu", email="smallerqiu@gmail.com" },
 ]
-description = "辅助快速创建可分布的微服务。"
+description = "Assist in quickly creating distributable microservices based on aiohttp, with a focus on simplicity and ease of use."
 readme = "README.md"
 requires-python = ">=3.6"
 license="MIT"

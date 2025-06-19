@@ -1,6 +1,7 @@
-## Documentation
+# 🔥🔥🔥 Cloudoll
+Quickly create web applications based on Python.
 
-[Docs](https://cloudoll.chuchur.com)
+## Documentation
 
 [Docs](https://cloudoll.chuchur.com)
 
@@ -24,13 +25,34 @@
 
 [Deployment](https://cloudoll.chuchur.com/deployment)
 
+## Install
+```sh
+pip install cloudoll
 
-## 环境准备
+```
 
-- 操作系统：支持 macOS，Linux，Windows
-- 运行环境：最低要求 3.6.0。
+## Environment 
 
-## 快速开始
+- Operating System: Supports macOS, Linux, Windows
+- Runtime Environment: Minimum requirement 3.6.0.
+
+## Quick Start
+
+Now you can use `cloudoll create myapp` to create a new project, 3 steps to start:
+
+1. create a new project
+```sh
+$ cloudoll create myapp
+```
+2. cd to project directory
+```sh
+$ cd myapp
+```
+3. start dev server
+```sh
+cloudoll start -n myapp
+```
+You can also manually create a project step by step. 
 
 ```sh
 $ mkdir cloudoll-demo && cd cloudoll-demo
@@ -38,7 +60,7 @@ $ pip3 install cloudoll
 $ vi app.py
 ```
 
-`app.py` 内容如下:
+`app.py` content:
 
 ```python
 ## /app.py
@@ -49,7 +71,7 @@ if __name__ == "__main__":
     app.create().run()
 ```
 
-### 编写 Controller
+### Controller
 
 ```sh
 $ mkdir -p controllers/home
@@ -57,7 +79,7 @@ $ touch controllers/home/__init__.py
 $ vi controllers/home/index.py
 ```
 
-`controllers/home/index.py` 内容如下:
+`controllers/home/index.py` content:
 
 ```python
 # /controllers/home/index.py
@@ -68,15 +90,15 @@ async def home():
     return {"name": "cloudoll" ,"msg": "ok"}
 ```
 
-运行:
+run:
 ```sh
 $ python3 app.py
 $ open http://localhost:9001
 ```
 
-在浏览器打开 [http://127.0.0.1:9001/](http://127.0.0.1:9001/)
+Open in browser [http://127.0.0.1:9001/](http://127.0.0.1:9001/)
 
-就能看到:
+you can see the result:
 
 ```json
 { 
@@ -86,20 +108,20 @@ $ open http://localhost:9001
 }
 ```
 
-恭喜, 你已经成功的写好了一个 `Restful API`接口. 
+Congratulations, you have successfully written one `Restful API` with `cloudoll`. 
 
 
-### 模板渲染
+### Template rendering
 
-绝大多数情况，我们都需要读取数据后渲染模板，然后呈现给用户。故我们需要引入对应的模板引擎。
+In most cases, we need to read the data, render the template, and then present it to the user. Therefore, we need to introduce the corresponding template engine.
 
-在本例中，我们使用 [Nunjucks](https://mozilla.github.io/nunjucks/) 来渲染
+in this demo，we using [Nunjucks](https://mozilla.github.io/nunjucks/) to render template.
 ```sh
 $ mkdir templates
 $ vi templates/index.html
 ```
 
-`index.html` 内容如下:
+`index.html` contents:
 
 ```html
 <!-- /templates/index.html -->
@@ -113,13 +135,13 @@ $ vi templates/index.html
     <title>Home</title>
 </head>
 <body>
-    <p>Hello {{name} }</p>
+    <p>Hello {{name}}</p>
 </body>
 </html>
 ```
 
 
-修改 `/controllers/home/index.py` 内容如下:
+edit `/controllers/home/index.py` contents:
 
 ```python
 # /controllers/home/index.py
@@ -131,26 +153,26 @@ async def home():
     return render_view("index.html",data)
 ```
 
-这时 页面正常渲染 ,可以看到  `“Hello cloudoll.`
+at this time ,we can see  `“Hello cloudoll.`
 
-恭喜, 你已经成功的写好了一个视图页面.
+ok , we wrotten a view page.
 
-### 静态资源
+### static files
 
-我们想在模版里面嵌入静态资源,如图片,js ,css , 这个时候就得用到静态资源. 我们把这些`js` ,`css` ,`image`  都放到 `static` 目录
+We want to embed static resources such as images, JS, and CSS in the template, which requires the use of static resources. We place these `js`, `css`, and `image` files in the `static` directory.
 
-线上环境建议部署到 CDN，或者使用 `nginx` 等相关服务器
+For online environments, it is recommended to deploy to a CDN or use servers like `nginx`.
 
 ```sh
 $ mkdir -p static/img
 $ mkdir -p static/js
 $ mkdir -p static/css
 ```
-在 `img`目录 放入在张图 名`logo.png`
+in `img` directory ,we can put images resources.
 
-在 `js` 目录新建 `index.js` ,内容如下:
+make a new js file `index.js` ,contents:
 
-点击页面 弹出 "hello world"
+clike the body , we can see the alert tip "hello world"
 ```js
 // /static/js/index.js
 document.addEventListener('DOMContentLoaded',function(){
@@ -159,7 +181,7 @@ document.addEventListener('DOMContentLoaded',function(){
     })
 })
 ```
-在 `css` 目录新建 `index.css` ,内容如下:
+make a new css file `index.css` ,contents:
 ```css
  /* /static/css/index.css */
 html,
@@ -172,7 +194,7 @@ body {
 }
 ```
 
-修改视图 `/templates/index.html` ,在 `head` 引入 静态资源, 内容如下:
+edit the view page `/templates/index.html` ,in `head` we import the css file, like this:
 
 ```html
 <!-- /templates/index.html -->
@@ -188,19 +210,18 @@ body {
     <title>Home</title>
 </head>
 <body>
-    <p>My name is {{name} }</p>
+    <p>My name is {{name}}</p>
 </body>
 </html>
 ```
 
-我们新建一个配置文件, 在配置文件里面配置静态 资源.
-
+we create a config file, and config static resource.
 ```sh
 $ mkdir config
 $ vi config/conf.local.yaml
 ```
 
-`/config/conf.local.yaml` 内容如下:
+`/config/conf.local.yaml` contents:
 
 ```yaml
 server:
@@ -208,21 +229,20 @@ server:
     prefix: /static
 ```
 
+after reload the page , our changes will be reflected.
 
-刷新页面之后, 我们所改动即可呈现.
+### Middleware
 
-### 编写 Middleware
+Suppose there is a requirement: our news site prohibits access by Baidu crawlers.
 
-假设有个需求：我们的新闻站点，禁止百度爬虫访问。
-
-所以可以通过 `Middleware` 判断 User-Agent，如下：
+so we need to write a middleware to check User-Agent. like this:
 
 ```sh
 $ mkdir middlewares
 $ vi middlewares/robot.py
 ```
 
-修改 `middlewares/robot.py`, 内容如下:
+edit `middlewares/robot.py`, contents:
 
 ```python
 # /middlewares/robot.py
@@ -239,15 +259,13 @@ def mid_robot():
 
     return robot
 ```
+after restart the  server, you can use `curl http://localhost:9001/news -A "Baiduspider"` to see the effect.
+we can see more information in [Middleware](https://cloudoll.chuchur.com/middleware)
 
-重新启动之后, 现在可以使用 `curl http://localhost:9001/news -A "Baiduspider"` 看看效果。
+### Configuration
+When writing business logic, it is inevitable to have configuration files. Managing configurations through code involves adding configurations for multiple environments within the code, and passing the parameter of the current environment during startup.
 
-更多参见中间件文档。
-
-### 配置文件
-写业务的时候，不可避免的需要有配置文件，使用代码管理配置，在代码中添加多个环境的配置，在启动时传入当前环境的参数即可.
-
-cloudoll 支持根据环境来加载配置，定义多个环境的配置文件
+cloudoll support loading configurations based on the environment, defining configuration files for multiple environments
 
 ```ini
 config
@@ -256,15 +274,13 @@ config
 `- conf.test.yaml
 ```
 
-我们创建配置文件：
-
+now, we create a config file:
 ```sh
 $ mkdir -p config/conf.local.yaml
 $ vi config/conf.local.yaml
 ```
 
-如下是 mysql 和 server 的配置：
-
+the flollowing is mysql and server's configuration:
 ```yaml
 server:
   host: 192.168.0.1
@@ -285,33 +301,36 @@ database:
     db: blog
     charset: utf8mb4
 ```
-
-默认开发会使用默认的`local`作为配置。 启动时 通过 `env` 加载对应的配置。 如 `python3 app.py --env=prod` 会加载 `conf.prod.yaml`
+the `local` will be used as default configuration, when you start your application, it will load the `local` configuration. like `cloudoll start -n myapp -env local` will load the `conf.local.yaml` configuration.
 
 # cli 
 
-## 生成模型
+## Create model
 
-从数据库导出 `users` 表模型
+export model from database
 ```sh
 cloudoll gen -t users 
 ```
-更多参数 :
-- -p (--path) 导出的模型路径
-- -c (--create) 值 model(默认) 生成模型, 值table 建表
-- -t (--table) 要生的模型或要建的表名,以`,`分开, `ALL` 所有表
-- -env (--environment) 读取配置名 ,值 local(默认) / test / prod 
-- -db (--database) 数据库实例名,取决于配置文件,如果有多个数据库
-- -h (--help) 帮助
+More parameters:
+- -p (--path) the path to save the model
+- -c (--create) to create model or create tables, default is create model
+- -t (--table) The model or table name to be generated, separated by `,`, `ALL` for all tables
+- -env (--environment) to load the configuration file , default is `local`
+- -db (--database) Database instance name, depends on the configuration file, if there are multiple databases
+- -h (--help) help
 
-## 开发调试
+## Development and debugging
 
 ```sh
-cloudoll start --name myapp
+cloudoll start --name myapp -env local -m development
 ```
 
-## 生产环境
+## Production Environment
 
 ```sh
 cloudoll start --name myapp -env prod --mode production
 ```
+
+you can use `clodoll stop myapp` to stop your application ,
+or use `cloudoll restart myapp` to restart your application.
+`cloudoll list` to see all your applications.

@@ -19,6 +19,7 @@ from aiohttp import web, hdrs
 from aiohttp.web import Response
 from aiohttp.web_ws import WebSocketResponse, WSMsgType
 from aiohttp.web_response import StreamResponse
+from aiohttp.web_request import Request
 from aiohttp.typedefs import LooseHeaders
 from aiohttp_session import (
     get_session,
@@ -45,11 +46,11 @@ class RequestHandler(object):
     def __init__(self, fn):
         self.fn = fn
 
-    async def __call__(self, request):
+    async def __call__(self, request: Request):
         return await _render_result(request, self.fn)
 
 
-async def _set_session_route(request):
+async def _set_session_route(request: Request):
     params = dict()
     # match
     rt = request.match_info
@@ -79,7 +80,7 @@ def _auto_reg_module(module_dir: str):
             spec.loader.exec_module(module)
 
 
-async def _render_result(request, func):
+async def _render_result(request: Request, func):
     content_type = request.content_type
     # Get the names and default values of function parameters
     props = inspect.getfullargspec(func)
@@ -93,7 +94,6 @@ async def _render_result(request, func):
         field = await multipart.next()
         result = await func(request, field)
     elif len(args) == 1:
-        # :todo post body is none
         if content_type == "multipart/form-data":
             data = await request.post()
         elif content_type == "application/json":
@@ -208,7 +208,7 @@ class Application(object):
         _auto_reg_module("middlewares")
         info("Auto-registration middleware")
 
-        conf_server = config.get("server")
+        conf_server = config.get("server", {})
         client_max_size = 1024**2 * 2
         if conf_server is not None:
             client_max_size = conf_server.get("client_max_size", client_max_size)
@@ -242,7 +242,7 @@ class Application(object):
 
         # static
         if conf_server is not None:
-            conf_st = conf_server.get("static")
+            conf_st = conf_server.get("static", {})
             if conf_st:
                 self.app.router.add_static(**conf_st, path=Path("static"))
                 info("Suggest using nginx or others instead.")
@@ -467,7 +467,7 @@ class JsonEncoder(json.JSONEncoder):
 
 
 async def WebSocket(
-    request,
+    request: Request,
     timeout: float = 10.0,
     receive_timeout: Optional[float] = None,
     autoclose: bool = True,
@@ -492,7 +492,7 @@ async def WebSocket(
 
 
 async def WebStream(
-    request,
+    request: Request,
     status: int = 200,
     reason: Optional[str] = None,
     headers: Optional[LooseHeaders] = None,

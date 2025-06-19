@@ -11,6 +11,10 @@ from cloudoll.orm import create_engine
 import os
 from cloudoll.clitool.process import ProcessManager
 import sys
+from importlib.resources import files
+import shutil
+from cloudoll.clitool.spinner import spinner_running
+import threading
 
 
 def run_app(**config_kwargs: Any):
@@ -91,3 +95,40 @@ async def run_gen(**config_kwargs: Any):
             raise ValueError("Need package name or model name.")
         await create_tables(sa, model_path, tables=tables)
     return sa
+
+
+def create_project(project_name: str) -> None:
+    """
+    Create a new Cloudoll project with the specified name.
+    """
+    project_dir = Path(project_name)
+    if project_dir.exists():
+        error(f"Project name `{project_name}` already exist.")
+        return
+    else:
+        project_dir.mkdir(parents=True)
+
+    stop = {"stop": False}
+    t = threading.Thread(target=spinner_running, args=(stop,))
+    t.start()
+    try:
+        from cloudoll import template
+
+        template_path = files(template)
+        # shutil.copytree(template_path, project_dir, dirs_exist_ok=True)
+        for item in template_path.iterdir():
+            dst = project_dir / item.name
+            if item.is_dir():
+                shutil.copytree(str(item), dst)
+            else:
+                shutil.copy2(str(item), dst)
+    finally:
+        stop["stop"] = True
+        t.join()
+
+    info(f"Project `{project_name}` created successfully at {project_dir.resolve()}.")
+    info(
+        "Run `cd %s && cloudoll start -n %s` to start your project.",
+        project_name,
+        project_name,
+    )

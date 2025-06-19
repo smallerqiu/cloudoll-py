@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cloudoll"
-version = "2.4.0"  # 建议与 setup.py 保持同步（或迁移进来）
-description = "辅助快速创建可分布的微服务。"
+version = "3.0.0" 
+description = "Assist in quickly creating distributable microservices based on aiohttp, with a focus on simplicity and ease of use."
 authors = [
   {name = "Qiu", email = "smallerqiu@gmail.com"},
 ]
 readme = "README.md"
 requires-python = ">=3.6.0"
 license = "MIT"
-keywords = ["微服务", "分布式", "aiohttp", "cloudoll"]
+keywords = ["Microservices", "aiohttp", "cloudoll"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.6",

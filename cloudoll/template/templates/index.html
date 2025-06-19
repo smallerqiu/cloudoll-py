@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
@@ -36,25 +36,28 @@
                         <option value="delete">delete</option>
                         <option value="put">put</option>
                     </select>
-                    <input placeholder="url" type="text" id="api-url" value="http://localhost:9001/api/test"/>
+                    <input placeholder="url" type="text" id="api-url" value="http://localhost:9001/api/test" />
                     <button class="btn-api">go</button>
                 </div>
+                <div id="api-request" contenteditable="true">{ "name": "cloudoll", "age": 18 } </div>
                 <div id="api-result">no result...</div>
             </div>
             <div class="login">
                 <h3>Auth test</h3>
                 <div class="login-box">
-                    <input placeholder="account: admin" type="text" autocomplete="off" autofocus="" />
-                    <input placeholder="password: lovecloudoll" type="password" autocomplete="off" />
-                    <button>login</button>
+                    <input placeholder="account: admin" type="text" id="account" autocomplete="off" autofocus="" />
+                    <input placeholder="password: lovecloudoll" type="password" id="password" autocomplete="off" />
+                    <button class="btn-login">login</button>
                 </div>
+                <div class="login-result">no result...</div>
             </div>
             <div class="upload-box">
                 <h3>Upload file test</h3>
+                <div class="upload-result">no result...</div>
                 <div class="login-box">
                     <input placeholder="username" type="file" />
                 </div>
-                <button>upload</button>
+                <button class="btn-upload">upload</button>
             </div>
         </div>
     </div>

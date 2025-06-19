@@ -4,11 +4,11 @@ document.addEventListener('DOMContentLoaded', function () {
     let refws = document.querySelector('.ws-msg-list');
     ws.onopen = function (evt) {
         console.log("ws connected...");
-        refws.innerHTML += '已连接...\n';
+        refws.innerHTML += 'connected...\n';
     };
     ws.onmessage = function (evt) {
         console.log("Received Message: " + evt.data);
-        refws.innerHTML += '消息:' + evt.data + '\n';
+        refws.innerHTML += 'message:' + evt.data + '\n';
     };
     ws.onerror = function (evt) {
         console.log('Error ', evt);
@@ -67,6 +67,15 @@ document.addEventListener('DOMContentLoaded', function () {
             name: 'cloudoll',
             age: 18
         }
+        try {
+            let dataInput = document.querySelector('#api-request');
+            if (dataInput.innerHTML.trim()) {
+                data = JSON.parse(dataInput.innerHTML);
+            }
+        } catch (e) {
+            console.log(document.querySelector('#api-request').innerHTML)
+            return;
+        }
         if (method === 'post' || method === 'put') {
             options.body = JSON.stringify(data)
             options.headers['Content-Type'] = 'application/json';
@@ -112,9 +121,60 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
     // login
-
+    btnLogin = document.querySelector('.btn-login');
+    btnLogin.onclick = function () {
+        let username = document.getElementById('account').value;
+        let password = document.getElementById('password').value;
+        let result = document.querySelector('.login-result');
+        let url = '/api/account/login';
+        let options = {
+            method: 'post',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                account: username,
+                password: password
+            })
+        };
+        fetch(url, options)
+            .then(async (r) => {
+                let json = await r.json();
+                if (r.ok) {
+                    result.innerHTML = JSON.stringify(json, null, 4);
+                } else {
+                    result.innerHTML = json.message || 'login failed';
+                }
+            })
+            .catch((err) => {
+                result.innerHTML = err.message || 'login failed';
+            });
+    }
     // upload
-
-
+    btnUpload = document.querySelector('.btn-upload');
+    btnUpload.onclick = function () {
+        let fileInput = document.querySelector('input[type="file"]');
+        let formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        if (!fileInput.files.length) {
+            alert('please select a file to upload');
+            return;
+        }
+        let result = document.querySelector('.upload-result');
+        result.innerHTML = 'uploading...';
+        fetch('/api/upload', {
+            method: 'post',
+            body: formData
+        }).then(async (r) => {
+            let json = await r.json();
+            if (r.ok) {
+                result.innerHTML = JSON.stringify(json, null, 4);
+            } else {
+                result.innerHTML = json.message || 'upload failed';
+            }
+        }).catch((err) => {
+            result.innerHTML = err.message || 'upload failed';
+        });
+    }
 
 })

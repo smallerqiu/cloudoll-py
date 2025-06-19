@@ -6,7 +6,7 @@ import sys
 from cloudoll.logging import error
 from cloudoll import __version__
 from typing import Any
-from cloudoll.clitool.cli_main import run_app, run_gen
+from cloudoll.clitool.cli_main import run_app, run_gen, create_project
 from cloudoll.clitool.process import ProcessManager
 
 
@@ -56,6 +56,7 @@ def gen(**config: Any) -> None:
             error("Error: %s", e)
             click.echo("input `cloudoll --help` for more helps.")
             sys.exit(2)
+
     asyncio.run(start())
 
 
@@ -148,11 +149,7 @@ def list():
 @cli.command()
 @click.argument("project-name", type=click.Path(dir_okay=True), required=True)
 def create(project_name) -> None:
-    project_dir = Path(project_name)
-    if not project_dir.exists():
-        error(f"Project name `{project_name}` already exist.")
-    else:
-        project_dir.mkdir(parents=True)
+    create_project(project_name)
 
 
 if __name__ == "__main__":
