@@ -33,5 +33,5 @@ install_requires=[
     "click"
 ]
 [project.urls]
-Homepage = "https://gitee.com/chuchur/cloudoll-py"
-Issues = "https://gitee.com/chuchur/cloudoll-py/issues"
+Homepage = "https://github.com/smallerqiu/cloudoll-py"
+Issues = "https://github.com/smallerqiu/cloudoll-py/issues"

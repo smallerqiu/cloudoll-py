@@ -39,8 +39,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://gitee.com/chuchur/cloudoll-py"
-Repository = "https://gitee.com/chuchur/cloudoll-py"
+Homepage = "https://github.com/smallerqiu/cloudoll-py"
+Repository = "https://github.com/smallerqiu/cloudoll-py"
 
 [project.scripts]
 cloudoll = "cloudoll.cli:cli"
