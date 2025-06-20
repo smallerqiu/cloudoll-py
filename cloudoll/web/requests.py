@@ -1,28 +1,38 @@
 import aiohttp
 import asyncio
-from typing import Optional, Dict, Any, Union
+# import ssl
+from typing import Optional, Dict, Union, List, Any
+
+JSONType = Union[Dict[str, Any], List[Any], str, int, float, bool, None]
 
 
 class AsyncRequest:
     def __init__(
         self,
-        timeout: int = 30,
-        max_retries: int = 3,
+        timeout: float = 30.0,
+        max_retries: int = 1,
         retry_delay: float = 1.0,
-        session: Optional[aiohttp.ClientSession] = None,
+        keep_alive: bool = True,
+        use_cookies: bool = False,
+        proxy: Optional[str] = None,
+        # session: Optional[aiohttp.ClientSession] = None,
+        # connector: Optional[aiohttp.BaseConnector] = None,
+        # ssl: Union[bool, ssl.SSLContext] = True,
     ):
-        """
-        Asynchronous HTTP request client
-
-        :param timeout: Request timeout(Second)
-        :param max_retries: Maximum retry attempts
-        :param retry_delay: Retry delay(Second)
-        :param session: Reusable aiohttp session
-        """
-        self.timeout = aiohttp.ClientTimeout(total=timeout)
+        self.timeout = timeout
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self._session = session
+        # self.session = session
+        # self.connector = connector
+        self.use_cookies = use_cookies
+        self.keep_alive = keep_alive
+        
+        self.session = aiohttp.ClientSession(
+            proxy=proxy,
+            connector=aiohttp.TCPConnector(keepalive_timeout=self.timeout) if self.keep_alive else None,
+            timeout=aiohttp.ClientTimeout(total=self.timeout),
+            cookie_jar=aiohttp.CookieJar() if self.use_cookies else None,
+        )
 
     async def request(
         self,
@@ -30,32 +40,19 @@ class AsyncRequest:
         url: str,
         params: Optional[Dict[str, Any]] = None,
         data: Optional[Union[Dict[str, Any], str, bytes]] = None,
-        json_data: Optional[Any] = None,
+        json_data: Optional[JSONType] = None,
         headers: Optional[Dict[str, str]] = None,
         cookies: Optional[Dict[str, str]] = None,
         allow_redirects: bool = True,
         raise_for_status: bool = True,
-    ) -> aiohttp.ClientResponse:
-        """
-        Perform asynchronous HTTP requests
-
-        :param method: HTTP方法 (GET, POST, PUT, DELETE等)
-        :param url: Request URL
-        :param params: URL query parameters
-        :param data: Request body data (Forms or raw data)
-        :param json_data: JSON formatted request body data
-        :param headers: Request headers
-        :param cookies: Cookies
-        :param allow_redirects: Whether to allow redirects
-        :param raise_for_status: Whether to raise an exception for HTTP errors
-        :return: aiohttp.ClientResponse
-        """
-        session = self._session or aiohttp.ClientSession(timeout=self.timeout)
+        proxy: Optional[str] = None,
+        # parse_json: bool = False,
+    ) -> Union[dict, str, aiohttp.ClientResponse]:
         last_exception = None
 
         for attempt in range(self.max_retries):
             try:
-                async with session.request(
+                response  = await self.session.request(
                     method=method,
                     url=url,
                     params=params,
@@ -64,28 +61,29 @@ class AsyncRequest:
                     headers=headers,
                     cookies=cookies,
                     allow_redirects=allow_redirects,
-                ) as response:
-                    if raise_for_status:
-                        response.raise_for_status()
-                    return response
+                    proxy=proxy,
+                ) 
+                return response
 
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 last_exception = e
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay * (attempt + 1))
                 continue
+            # finally:
+            #     if use_temp_session:
+            #         await session.close()
 
-        if self._session is None:
-            await session.close()
-
-        raise last_exception or RuntimeError("Request failed")
+        raise last_exception or RuntimeError(
+            f"Request failed after {self.max_retries} attempts"
+        )
 
     async def get(
         self,
         url: str,
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        **kwargs
+        **kwargs,
     ) -> aiohttp.ClientResponse:
         """Send a GET request"""
         return await self.request("GET", url, params=params, headers=headers, **kwargs)
@@ -96,7 +94,7 @@ class AsyncRequest:
         data: Optional[Union[Dict[str, Any], str, bytes]] = None,
         json_data: Optional[Any] = None,
         headers: Optional[Dict[str, str]] = None,
-        **kwargs
+        **kwargs,
     ) -> aiohttp.ClientResponse:
         """Send a POST request"""
         return await self.request(
@@ -109,7 +107,7 @@ class AsyncRequest:
         data: Optional[Union[Dict[str, Any], str, bytes]] = None,
         json_data: Optional[Any] = None,
         headers: Optional[Dict[str, str]] = None,
-        **kwargs
+        **kwargs,
     ) -> aiohttp.ClientResponse:
         """Send a PUT request"""
         return await self.request(
@@ -123,10 +121,10 @@ class AsyncRequest:
         return await self.request("DELETE", url, headers=headers, **kwargs)
 
     async def close(self) -> None:
-        """Close the aiohttp session if it exists """
-        if self._session is not None:
-            await self._session.close()
-            self._session = None
+        """Close the aiohttp session if it exists"""
+        if self.session is not None and not self.keep_alive:
+            await self.session.close()
+            self.session = None
 
     async def __aenter__(self):
         return self
