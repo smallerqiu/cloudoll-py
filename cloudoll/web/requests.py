@@ -1,5 +1,6 @@
 import aiohttp
 import asyncio
+
 # import ssl
 from typing import Optional, Dict, Union, List, Any
 
@@ -26,10 +27,14 @@ class AsyncRequest:
         # self.connector = connector
         self.use_cookies = use_cookies
         self.keep_alive = keep_alive
-        
-        self.session = aiohttp.ClientSession(
+
+        self.session: aiohttp.ClientSession = aiohttp.ClientSession(
             proxy=proxy,
-            connector=aiohttp.TCPConnector(keepalive_timeout=self.timeout) if self.keep_alive else None,
+            connector=(
+                aiohttp.TCPConnector(keepalive_timeout=self.timeout)
+                if self.keep_alive
+                else None
+            ),
             timeout=aiohttp.ClientTimeout(total=self.timeout),
             cookie_jar=aiohttp.CookieJar() if self.use_cookies else None,
         )
@@ -52,7 +57,7 @@ class AsyncRequest:
 
         for attempt in range(self.max_retries):
             try:
-                response  = await self.session.request(
+                response = await self.session.request(
                     method=method,
                     url=url,
                     params=params,
@@ -62,7 +67,7 @@ class AsyncRequest:
                     cookies=cookies,
                     allow_redirects=allow_redirects,
                     proxy=proxy,
-                ) 
+                )
                 return response
 
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
@@ -84,7 +89,7 @@ class AsyncRequest:
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
         **kwargs,
-    ) -> aiohttp.ClientResponse:
+    ) -> Union[dict, str, aiohttp.ClientResponse]:
         """Send a GET request"""
         return await self.request("GET", url, params=params, headers=headers, **kwargs)
 
@@ -95,7 +100,7 @@ class AsyncRequest:
         json_data: Optional[Any] = None,
         headers: Optional[Dict[str, str]] = None,
         **kwargs,
-    ) -> aiohttp.ClientResponse:
+    ) -> Union[dict, str, aiohttp.ClientResponse]:
         """Send a POST request"""
         return await self.request(
             "POST", url, data=data, json_data=json_data, headers=headers, **kwargs
@@ -108,7 +113,7 @@ class AsyncRequest:
         json_data: Optional[Any] = None,
         headers: Optional[Dict[str, str]] = None,
         **kwargs,
-    ) -> aiohttp.ClientResponse:
+    ) -> Union[dict, str, aiohttp.ClientResponse]:
         """Send a PUT request"""
         return await self.request(
             "PUT", url, data=data, json_data=json_data, headers=headers, **kwargs
@@ -116,15 +121,14 @@ class AsyncRequest:
 
     async def delete(
         self, url: str, headers: Optional[Dict[str, str]] = None, **kwargs
-    ) -> aiohttp.ClientResponse:
+    ) -> Union[dict, str, aiohttp.ClientResponse]:
         """Send a DELETE request"""
         return await self.request("DELETE", url, headers=headers, **kwargs)
 
     async def close(self) -> None:
         """Close the aiohttp session if it exists"""
-        if self.session is not None and not self.keep_alive:
+        if self.session is not None:
             await self.session.close()
-            self.session = None
 
     async def __aenter__(self):
         return self
