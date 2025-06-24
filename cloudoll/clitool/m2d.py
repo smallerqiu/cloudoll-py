@@ -27,7 +27,7 @@ async def create_model(pool, table_name) -> str:
     tb = f"\nclass {snake_to_camel(table_name)}(Model):\n\n"
     tb += f"\t__table__ = '{table_name}'\n\n"
     for f in rows:
-        fields = get_col(f, pool.driver)
+        fields: dict = get_col(f, pool.driver)
         # print("fields",fields)
         name = fields["name"]
         column_type = fields["column_type"]
@@ -193,7 +193,8 @@ async def create_tables(pool, model_name: str, tables: list):
     else:
         raise ImportError(f"Module {model_name} not found or invalid.")
 
-def get_col(field, driver="mysql"):
+
+def get_col(field, driver="mysql") -> dict:
     if driver == "mysql":
         fields = {
             "name": field["Field"],
@@ -235,6 +236,8 @@ def get_col(field, driver="mysql"):
             "comment": field["comment"],
         }
         return fields
+    else:
+        raise ValueError(f"Database {driver} not support.")
 
 
 def get_col_sql(field):

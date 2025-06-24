@@ -19,7 +19,7 @@ from cloudoll.utils.common import check_port_open
 
 class CloudollFilter(DefaultFilter):
     def __init__(self, ignore_dirs: tuple = ()) -> None:
-        self.ignore_dirs = self.ignore_dirs + tuple("logs")
+        self.ignore_dirs: tuple = self.ignore_dirs + tuple("logs")
         if ignore_dirs:
             self.ignore_dirs = self.ignore_dirs + ignore_dirs
 
@@ -112,7 +112,7 @@ def mian_app(tty_path, config, entry, env):
 
 async def create_main_app(config, entry, env):
     await check_port_open(config["server"]["port"])
-    App = app.create(env=env, config=config, entry_model=entry)
+    App: Application = app.create(env=env, config=config, entry_model=entry)
     return web.AppRunner(App.app, shutdown_timeout=0.1)
 
 

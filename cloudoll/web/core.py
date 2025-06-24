@@ -157,7 +157,7 @@ class Application(object):
     def __init__(self):
         self._loop = None
         self.env = None
-        self.app = None
+        self.app: web.Application = None
         self._route_table = web.RouteTableDef()
         self._middleware = []
         self.config = {}
