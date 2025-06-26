@@ -27,10 +27,10 @@ class ProcessManager:
     def get_run_dir():
         home = Path.home()
         if platform.system() == "Windows":
-            run_dir =  home / f"AppData/Local/cloudoll"
+            run_dir = home / f"AppData/Local/cloudoll"
         else:
             run_dir = home / f".cloudoll"
-            
+
         try:
             run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         except (PermissionError, OSError):
@@ -41,7 +41,7 @@ class ProcessManager:
     @staticmethod
     def get_pid_path(name: str):
         run_dir = ProcessManager.get_run_dir()
-        return run_dir / f"cloudoll-{name}.pid"
+        return run_dir / f"{name}.pid"
 
     @staticmethod
     def save_pid(name: str, pid: int) -> None:
@@ -57,6 +57,7 @@ class ProcessManager:
 
     @staticmethod
     def safe_exit(service_name: str):
+        pid = 0
         try:
             pid = ProcessManager.get_running_pid(service_name)
             if not pid:
@@ -111,8 +112,6 @@ class ProcessManager:
             valid_identifiers = [
                 f"--name {service_name}",
                 f"-n {service_name}",
-                f"--name={service_name}",
-                f"-n={service_name}",
             ]
             cmdline = " ".join(psutil.Process(os.getpid()).cmdline())
             return (
@@ -205,7 +204,16 @@ class ProcessManager:
             return
 
         fmt = "{:<15} {:<8} {:<8} {:<12} {:<8} {:<10} {:<15}"
-        headers = ["Services", "PID", "Status", "RunTime", "CPU%", "Mem(MB)", "Process"]
+        headers = [
+            "Services",
+            "PID",
+            "Status",
+            "Env",
+            "RunTime",
+            "CPU%",
+            "Mem(MB)",
+            "Process",
+        ]
         rows = []
         for pid_file in sorted(pid_dir.glob("*.pid")):
             service = pid_file.stem
@@ -225,11 +233,19 @@ class ProcessManager:
                 uptime = datetime.now() - start_time
                 runtime = str(uptime).split(".")[0]
 
+                "env"
+                args = ProcessManager.load_start_args(service)
+                env_value = "-"
+                if "-env" in args:
+                    index = args.index("-env")
+                    if index + 1 < len(args):
+                        env_value = args[index + 1]
                 rows.append(
                     [
                         service,
                         pid,
                         "🟢 Running",
+                        env_value,
                         runtime,
                         f"{cpu_percent:.1f}",
                         f"{mem_mb:.1f}",
@@ -239,4 +255,4 @@ class ProcessManager:
             except Exception as e:
                 rows.append([service, "???", "error", "-", "-", "-", str(e)])
 
-        click.echo(tabulate(rows, headers=headers, tablefmt="rounded_outline"))
+        click.echo(tabulate(rows, headers=headers, tablefmt="rounded_grid"))
