@@ -417,7 +417,8 @@ class Expression(FieldBase):
         is_fun = isinstance(l, Function)
         p = []
         q = []
-        if not is_fun:
+        if not is_fun and not isinstance(l, Field):
+            # select no need ()
             q.append("(")
         if isinstance(l, Field):
             q.append(l.full_name)
@@ -449,7 +450,7 @@ class Expression(FieldBase):
         elif r is not None:
             q.append("?")
             p.append(r)
-        if not is_fun:
+        if not is_fun and not isinstance(l, Field):
             q.append(")")
         q = [str(num) for num in q]
         return "".join(q), p

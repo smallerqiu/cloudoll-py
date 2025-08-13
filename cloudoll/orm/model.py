@@ -379,6 +379,8 @@ class Model(metaclass=ModelMetaclass):
 
             if matches:
                 sql = re.sub(pattern, replacement, sql)
+            # pg don not support `
+            sql = sql.replace("`", '"')
 
         return sql
 
