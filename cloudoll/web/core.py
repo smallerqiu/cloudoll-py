@@ -282,8 +282,13 @@ class Application(object):
     async def _init_database(self, apps):
         conf_db = self.config.get("database")
         if conf_db:
-            for db_key in conf_db:
-                apps.db[db_key] = await create_engine(**conf_db[db_key])
+            # for db_key in conf_db:
+            #     apps.db[db_key] = await create_engine(**conf_db[db_key])
+            
+            tasks = [create_engine(**conf_db[db_key]) for db_key in conf_db]
+            engines = await asyncio.gather(*tasks)
+            for db_key, engine in zip(conf_db.keys(), engines):
+                apps.db[db_key] = engine
 
     async def _init_session(self, apps):
         config = self.config or {}
