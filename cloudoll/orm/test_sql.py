@@ -64,26 +64,26 @@ class C(Model):
 
 
 if __name__ == "__main__":
-    sql = (
+    sql, arg = (
         B.use()
         .select(
             B.proxy_order_no.As("host_no"),
             B.proxy_order_no.count().As("total_count"),
             C.region.As("region"),
-            C.is_failed.avg_when(C.is_failed == False, 1, 0).As("avg_val"),
-            C.is_failed.min_when(C.is_failed == False, 1, 0).As("min_val"),
-            C.is_failed.max_when(C.is_failed == False, 1, 0).As("max_val"),
+            C.is_failed.avg_when(C.is_failed == False, C.finish_load).As("avg_val"),
+            C.is_failed.min_when(C.is_failed == False, C.finish_load).As("min_val"),
+            C.is_failed.max_when(C.is_failed == False, C.finish_load).As("max_val"),
             C.is_failed.sum_when(C.is_failed == False, 1, 0).As("success_count"),
             C.is_failed.sum_when(C.is_failed == True, 1, 0).As("failure_count"),
         )
         .join(C, C.pack_id == B.id)
         .where(
             B.channel_type == 1,
-            B.type == 1,
+            B.type == int(1),
             B.proxy_order_no.In(tuple(["aa"])),
         )
         .group_by(B.proxy_order_no, C.region)
-        ._sql()
+        .test()
     )
-    sql = B()._exchange_sql(sql)
-    print(sql)
+    # sql = B()._exchange_sql(sql)
+    print(sql, arg)

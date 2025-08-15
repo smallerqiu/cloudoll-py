@@ -141,7 +141,7 @@ class FieldBase(object):
 
     def max_when(self, *arg):
         """
-        input: max_when(A.field > 10 ,A.field) \n 
+        input: max_when(A.field > 10 ,A.field) \n
         output: max(case when A.field > 10 then A.field end)
         """
         return Function(self, OP.MAX_WHEN, arg)
@@ -151,7 +151,7 @@ class FieldBase(object):
 
     def min_when(self, *arg):
         """
-        input: min_when(A.field > 10 ,A.field) \n 
+        input: min_when(A.field > 10 ,A.field) \n
         output: min(case when A.field > 10 then A.field end)
         """
         return Function(self, OP.MIN_WHEN, arg)
@@ -288,14 +288,14 @@ class ExpList(FieldBase):
 def deconstruct(args):
     f = args[0] if len(args) > 0 else None
     v1 = args[1] if len(args) > 1 else 1
-    v2 = args[2] if len(args) > 2 and args[2] is not None else 'NULL'
+    v2 = args[2] if len(args) > 2 and args[2] is not None else "NULL"
     c = None
     v = None
     if isinstance(f, FieldBase):
         c = f"{f.lhs.full_name} {f.op} ?"
         v = f.rhs
     if isinstance(v1, FieldBase):
-        v1 = v1.name
+        v1 = v1.full_name
     return c, v, v1, v2
 
 
@@ -355,32 +355,46 @@ class Function(FieldBase):
             return f"json_contains({col_name},json_object({key},?))", [_v]
         elif op == OP.JSON_CONTAINS_ARRAY:
             if is_field:
-                return f"json_contains({col_name},json_array({self.rpt.full_name}))", None
+                return (
+                    f"json_contains({col_name},json_array({self.rpt.full_name}))",
+                    None,
+                )
             return f"json_contains({col_name},json_array(?))", [self.rpt]
         elif op == OP.COUNT:
             return f"COUNT({col_name})", None
         elif op == OP.COUNT_WHEN:
             c, v, v1, v2 = deconstruct(self.rpt)
+            if v2 == "NULL":
+                return f"COUNT(CASE WHEN {c} THEN {v1} END)", [v]
             return f"COUNT(CASE WHEN {c} THEN {v1} ELSE {v2} END)", [v]
         elif op == OP.SUM:
             return f"SUM({col_name})", None
         elif op == OP.SUM_WHEN:
             c, v, v1, v2 = deconstruct(self.rpt)
+            if v2 == "NULL":
+                return f"SUM(CASE WHEN {c} THEN {v1} END)", [v]
             return f"SUM(CASE WHEN {c} THEN {v1} ELSE {v2} END)", [v]
         elif op == OP.AVG:
             return f"AVG({col_name})", None
         elif op == OP.AVG_WHEN:
             c, v, v1, v2 = deconstruct(self.rpt)
+            print("avg", v2)
+            if v2 == "NULL":
+                return f"AVG(CASE WHEN {c} THEN {v1} END)", [v]
             return f"AVG(CASE WHEN {c} THEN {v1} ELSE {v2} END)", [v]
         elif op == OP.MAX:
             return f"MAX({col_name})", None
         elif op == OP.MAX_WHEN:
             c, v, v1, v2 = deconstruct(self.rpt)
+            if v2 == "NULL":
+                return f"MAX(CASE WHEN {c} THEN {v1} END)", [v]
             return f"MAX(CASE WHEN {c} THEN {v1} ELSE {v2} END)", [v]
         elif op == OP.MIN:
             return f"MIN({col_name})", None
         elif op == OP.MIN_WHEN:
             c, v, v1, v2 = deconstruct(self.rpt)
+            if v2 == "NULL":
+                return f"MIN(CASE WHEN {c} THEN {v1} END)", [v]
             return f"MIN(CASE WHEN {c} THEN {v1} ELSE {v2} END)", [v]
         elif op == OP.GROUP_CONCAT:
             arg = self.rpt

@@ -339,7 +339,7 @@ class Model(metaclass=ModelMetaclass):
         return self
 
     def test(self):
-        return self._sql()
+        return self._sql(), self.__params__
 
     async def one(self):
         self.limit(1)
