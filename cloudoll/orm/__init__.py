@@ -61,7 +61,7 @@ class Postgres(MeteBase):
 
         async with self.pool.acquire() as conn:
             if conn.echo:
-                info("sql", sql, params)
+                info("sql: %s ,%s", sql, params)
 
             async with conn.cursor() as cursor:
                 # current_cursor = getattr(cursor, 'lastrowid', None)
@@ -175,7 +175,7 @@ class Mysql(MeteBase):
             return None
         async with self.pool.acquire() as conn:
             if conn.echo:
-                info("sql", sql, params)
+                info("sql: %s , %s", sql, params)
 
             async with conn.cursor() as cursor:
                 # current_cursor = getattr(cursor, 'lastrowid', None)
