@@ -47,7 +47,7 @@ class MeteBase:
     #                 await cursor.close()
     #         self.pool.release(conn)
     async def query(
-        self, sql, params=None, query_type: QueryTypes = 2, size: int = 10
+        self, sql, params=None, query_type: QueryTypes = QueryTypes.ONE, size: int = 10
     ): ...
 
     async def all(self, sql, params):
