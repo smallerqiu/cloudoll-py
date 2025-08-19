@@ -6,7 +6,6 @@ __author__ = "Qiu / smallerqiu@gmail.com"
 import argparse
 import asyncio
 import hashlib
-import os
 import base64
 import importlib.util
 import inspect
@@ -17,7 +16,7 @@ import time
 from urllib import parse
 from aiohttp import web, hdrs
 from aiohttp.web import Response
-from aiohttp.web_ws import WebSocketResponse, WSMsgType
+from aiohttp.web_ws import WebSocketResponse,WSMsgType
 from aiohttp.web_response import StreamResponse
 from aiohttp.web_request import Request
 from aiohttp.typedefs import LooseHeaders
@@ -157,7 +156,7 @@ class Application(object):
     def __init__(self):
         self._loop = None
         self.env = None
-        self.app: web.Application = None
+        self.app: Optional[web.Application] = None
         self._route_table = web.RouteTableDef()
         self._middleware = []
         self.config = {}

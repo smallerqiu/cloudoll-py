@@ -1,3 +1,6 @@
+from typing import Optional
+
+
 class objdict(dict):
     def __getattr__(self, attr):
         try:
@@ -502,7 +505,7 @@ class Field(FieldBase):
         **kwargs,
     ):
         super().__init__()
-        self.full_name = None
+        self.full_name: Optional[str] = None
         self._value = None
         self.name = name
         self.column_type = column_type

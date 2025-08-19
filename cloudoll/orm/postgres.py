@@ -25,17 +25,16 @@ result = await pool.query("sql")
 """
 __author__ = "Qiu / smallerqiu@gmail.com"
 
-from aiopg import create_pool, Pool, Cursor, Connection
+from aiopg import create_pool
 from cloudoll.logging import error
 from cloudoll.orm.base import MeteBase
-from typing import Any, Optional
 
 
 class Postgres(MeteBase):
-    def __init__(self):
-        self.pool: Optional[Pool] = None
-        self.cursor: Optional[Cursor] = None
-        self.conn: Optional[Connection] = None
+    # def __init__(self):
+    #     self.pool: Optional[Pool] = None
+        # self.cursor: Optional[Cursor] = None
+        # self.conn: Optional[Connection] = None
         # self.__MODELS__ = []
 
     # def __call__(cls, *args: Any, **kwds: Any) -> Any:

@@ -9,6 +9,7 @@ from aiomysql import Pool as MYPool
 
 import aiopg as pg
 from aiopg.pool import Pool as PGPool
+from typing import Optional
 
 __all__ = ["create_engine"]
 
@@ -46,7 +47,7 @@ async def create_engine(**kw):
 
 class Postgres(MeteBase):
     def __init__(self, pool=None):
-        self.pool: PGPool = pool
+        # self.pool: Optional[PGPool] = pool
         self.driver = "postgres"
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
@@ -75,18 +76,18 @@ class Postgres(MeteBase):
                     await cursor.execute(sql, params)
 
                 result = None
-
-                if query_type == QueryTypes.ALL:
+    
+                if query_type == QueryTypes.ALL and cursor.description is not None:
                     columns = [desc[0] for desc in cursor.description]
                     rows = await cursor.fetchall()
                     result = [dict(zip(columns, row)) for row in rows]
                     return result
-                elif query_type == QueryTypes.ONE:
+                elif query_type == QueryTypes.ONE and cursor.description is not None:
                     columns = [desc[0] for desc in cursor.description]
                     row = await cursor.fetchone()
                     result = dict(zip(columns, row)) if row else {}
                     return result
-                elif query_type == QueryTypes.MANY:
+                elif query_type == QueryTypes.MANY and cursor.description is not None:
                     columns = [desc[0] for desc in cursor.description]
                     rows = await cursor.fetchmany(size)
                     result = [dict(zip(columns, row)) for row in rows]
@@ -160,14 +161,14 @@ class AttrDictCursor(aiomysql.DictCursor):
 
 class Mysql(MeteBase):
     def __init__(self, pool=None):
-        self.pool: MYPool = pool
+        # self.pool: Optional[MYPool] = pool
         self.driver = "mysql"
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         self.__init__(*args, **kwds)
         return self
 
-    async def query(self, sql, params=None, query_type: QueryTypes = 2, size: int = 10):
+    async def query(self, sql, params=None, query_type: QueryTypes = QueryTypes.ONE, size: int = 10):
         sql = sql.replace("?", "%s")
         if not self.pool:
             raise ValueError("must be create_engine first.")

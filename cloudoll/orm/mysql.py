@@ -24,9 +24,7 @@ result = await pool.query("sql")
 """
 __author__ = "Qiu / smallerqiu@gmail.com"
 
-from typing import Any
 from aiomysql import create_pool, DictCursor
-from aiomysql.pool import Pool
 
 # from aiomysql.cursors import Cursor
 # from aiomysql.connection import Connection
@@ -51,8 +49,8 @@ class AttrDictCursor(DictCursor):
 
 
 class Mysql(MeteBase):
-    def __init__(self):
-        self.pool: Pool = None
+    # def __init__(self):
+        # self.pool: Optional[Pool] = None
         # self.cursor: Cursor = None
         # self.conn: Connection = None
         # self.__MODELS__ = []

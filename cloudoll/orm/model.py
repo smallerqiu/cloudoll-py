@@ -150,7 +150,7 @@ class Model(metaclass=ModelMetaclass):
     @classmethod
     def use(cls, pool=None):
         cls.__pool__ = pool
-        cls.__ispg = cls.__pool__.driver == "postgres" if pool else False
+        cls.__ispg = pool.driver == "postgres" if pool else False
         return cls()
 
     def select(cls, *args):

@@ -1,5 +1,8 @@
+from abc import abstractmethod
 from enum import Enum
-from typing import Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
+from aiomysql.pool import Pool as MyPool
+from aiopg import Pool as PGPool
 
 
 class QueryTypes(Enum):
@@ -16,6 +19,10 @@ class QueryTypes(Enum):
 
 
 class MeteBase:
+    def __init__(self):
+        self.pool: Optional[MyPool | PGPool] = None
+        # self.cursor: Optional[Cursor] = None
+        # self.conn: Optional[Connection] = None
 
     async def __aexit__(self):
         await self.close()
@@ -46,9 +53,10 @@ class MeteBase:
     #             if cursor:
     #                 await cursor.close()
     #         self.pool.release(conn)
+    @abstractmethod
     async def query(
         self, sql, params=None, query_type: QueryTypes = QueryTypes.ONE, size: int = 10
-    ): ...
+    ) -> Union[None, int, Tuple[Any, Any], Dict, List[Dict]]: ...
 
     async def all(self, sql, params):
         return await self.query(sql, params, QueryTypes.ALL)
@@ -61,6 +69,7 @@ class MeteBase:
 
     async def count(self, sql, params):
         return await self.query(sql, params, QueryTypes.COUNT)
+
     async def group_count(self, sql, params):
         return await self.query(sql, params, QueryTypes.GROUP_COUNT)
 
@@ -73,7 +82,7 @@ class MeteBase:
     async def delete(self, sql, params):
         return await self.query(sql, params, QueryTypes.DELETE)
 
-    async def create(self, sql, params) -> Tuple[bool, int]:
+    async def create(self, sql, params):
         return await self.query(sql, params, QueryTypes.CREATE)
 
     async def create_batch(self, sql, params):
