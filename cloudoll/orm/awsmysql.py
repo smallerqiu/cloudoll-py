@@ -10,7 +10,7 @@ from cloudoll.orm.base import MeteBase, QueryTypes
 from cloudoll.logging import info, error
 
 
-class AwsPostgres(MeteBase):
+class AwsMysql(MeteBase):
     def __init__(self):
         self.driver = "aws-mysql"
         provider = SqlAlchemyPooledConnectionProvider()
@@ -27,6 +27,7 @@ class AwsPostgres(MeteBase):
             "plugins": kw.get("plugins", ""),
             "autocommit": True,
         }
+        return self
 
     async def query(self, sql, params=None, query_type=QueryTypes.ONE, size=10):
         sql = sql.replace("?", "%s")

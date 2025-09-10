@@ -150,14 +150,18 @@ class Model(metaclass=ModelMetaclass):
     @classmethod
     def use(cls, pool=None):
         cls.__pool__ = pool
-        cls.__ispg = pool.driver == "postgres" if pool else False
+        cls.__is_pg = (
+            pool.driver in ["postgres", "postgressql", "aws-postgres"]
+            if pool
+            else False
+        )
         return cls()
 
     def select(cls, *args):
         cols = []
         for col in args:
             if isinstance(col, Field):
-                cols.append(col.name if cls.__ispg else col.full_name)
+                cols.append(col.name if cls.__is_pg else col.full_name)
             elif isinstance(col, Function):
                 q, p = col.sql()
                 cols.append(q)
@@ -200,7 +204,7 @@ class Model(metaclass=ModelMetaclass):
             if isinstance(f, str):
                 by.append(f)
             else:
-                by.append(f"{f.lhs.name if self.__ispg else f.lhs.full_name} {f.op}")
+                by.append(f"{f.lhs.name if self.__is_pg else f.lhs.full_name} {f.op}")
         if self.__order_by__ is not None:
             by = self.__order_by__ + by
         self.__order_by__ = by
@@ -209,7 +213,7 @@ class Model(metaclass=ModelMetaclass):
     def group_by(self, *args):
         by = []
         for f in args:
-            by.append(f.name if self.__ispg else f.full_name)
+            by.append(f.name if self.__is_pg else f.full_name)
         if self.__group_by__ is not None:
             by = self.__group_by__ + by
         self.__group_by__ = by
@@ -365,7 +369,7 @@ class Model(metaclass=ModelMetaclass):
         return await self.__pool__.all(sql, args)
 
     def _exchange_sql(self, sql: str):
-        if self.__ispg:
+        if self.__is_pg:
             sql = sql.replace("CURDATE()", "CURRENT_DATE")
             sql = sql.replace("NOW()", "CURRENT_TIMESTAMP")
 

@@ -3,6 +3,9 @@ from cloudoll.orm.parse import parse_coon
 import aiopg as pg
 from .mysql import Mysql
 from .postgres import Postgres
+from .awspostgres import AwsPostgres
+from .awsmysql import AwsMysql
+
 __all__ = ["create_engine"]
 
 
@@ -23,9 +26,13 @@ async def create_engine(**kw):
 
     if driver == "mysql":
         return await Mysql().create_engine(**configs, **query)
-    elif driver == "postgres" or driver == "postgressql":
+    elif driver == "aws-mysql":
+        return await AwsMysql().create_engine(**configs, **query)
+    elif driver in ["aws-postgres", "aws-postgressql"]:
+        return await AwsPostgres().create_engine(**configs, **query)
+    elif driver in ["postgres", "postgressql"]:
         return await Postgres().create_engine(**configs, **query)
-    elif driver == "redis" or driver == "rediss":
+    elif driver in ["redis", "rediss"]:
         """
         redis://[[username]:[password]]@localhost:6379/0
         rediss://[[username]:[password]]@localhost:6379/0
@@ -35,5 +42,3 @@ async def create_engine(**kw):
         return await aioredis.from_url(url, **query)
     else:
         raise ValueError("Not support this database type.")
-
-

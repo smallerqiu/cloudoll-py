@@ -26,6 +26,7 @@ class AwsPostgres(MeteBase):
             "plugins": kw.get("plugins", ""),
             "autocommit": True,
         }
+        return self
 
     async def query(self, sql, params=None, query_type=QueryTypes.ONE, size=10):
         sql = sql.replace("?", "%s").replace("`", '"')
