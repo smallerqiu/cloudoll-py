@@ -19,8 +19,8 @@ class QueryTypes(Enum):
 
 
 class MeteBase:
-    def __init__(self):
-        self.pool: Optional[MyPool | PGPool] = None
+    # def __init__(self):
+        # self.pool: Optional[MyPool | PGPool] = None
         # self.cursor: Optional[Cursor] = None
         # self.conn: Optional[Connection] = None
 
@@ -28,9 +28,7 @@ class MeteBase:
         await self.close()
 
     async def close(self):
-        if self.pool:
-            self.pool.close()
-            await self.pool.wait_closed()
+        ...
 
     # async def begin_transaction(self):
     #     conn = await self._set_conn()

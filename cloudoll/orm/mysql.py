@@ -1,42 +1,11 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-from cloudoll.orm import Mysql
-
-# for config folder conf.{env}.yaml
-
-database:
-  mysql:
-    type: mysql  # important ,default mysql
-    host: 127.0.0.1
-    port: 3306
-    user: root
-    password: 123456
-    db: test
-    charset:utf8mb4
-    pool_size:5
-
-# to get yaml config
-config = ....(database.mysql)
-
-pool = await Mysql().create_engine(**config)
-result = await pool.query("sql")
-"""
-__author__ = "Qiu / smallerqiu@gmail.com"
-
-from aiomysql import create_pool, DictCursor
-
-# from aiomysql.cursors import Cursor
-# from aiomysql.connection import Connection
+from typing import Any, Optional
+import aiomysql
 from cloudoll.logging import error
-
-# from inspect import isclass, isfunction
-from cloudoll.orm.base import MeteBase
+from cloudoll.orm.base import MeteBase, QueryTypes
+from cloudoll.logging import info, error
 
 
 class AttrDict(dict):
-    """Dict that can get attribute by dot, and doesn't raise KeyError"""
-
     def __getattr__(self, name):
         try:
             return self[name]
@@ -44,39 +13,100 @@ class AttrDict(dict):
             return None
 
 
-class AttrDictCursor(DictCursor):
+class AttrDictCursor(aiomysql.DictCursor):
     dict_type = AttrDict
 
 
 class Mysql(MeteBase):
-    # def __init__(self):
-        # self.pool: Optional[Pool] = None
-        # self.cursor: Cursor = None
-        # self.conn: Connection = None
-        # self.__MODELS__ = []
+    def __init__(self):
+        self.pool: aiomysql.Pool
+        self.driver = "mysql"
 
-    # def __call__(cls, *args: Any, **kwds: Any) -> Any:
-    #     cls.__init__(*args, **kwds)
-    #     return cls()
+    def __call__(self, *args: Any, **kwds: Any) -> Any:
+        self.__init__(*args, **kwds)
+        return self
 
-    # @classmethod
+    async def close(self):
+        if self.pool:
+            self.pool.close()
+            await self.pool.wait_closed()
+
+    async def query(
+        self, sql, params=None, query_type: QueryTypes = QueryTypes.ONE, size: int = 10
+    ):
+        sql = sql.replace("?", "%s")
+        if not self.pool:
+            raise ValueError("must be create_engine first.")
+        if self.pool._closing or self.pool._closed:
+            return None
+        async with self.pool.acquire() as conn:
+            if conn.echo:
+                info("sql: %s , %s", sql, params)
+
+            async with conn.cursor() as cursor:
+                cursor: aiomysql.Cursor = cursor
+                if (
+                    query_type == QueryTypes.CREATEBATCH
+                    or query_type == QueryTypes.UPDATEBATCH
+                ):
+                    await cursor.executemany(sql, params)
+                else:
+                    await cursor.execute(sql, params)
+
+                await conn.commit()
+
+                if query_type == QueryTypes.ALL:
+                    return await cursor.fetchall()
+                elif query_type == QueryTypes.ONE:
+                    return await cursor.fetchone()
+                elif query_type == QueryTypes.MANY:
+                    return await cursor.fetchmany(size)
+                elif query_type == QueryTypes.COUNT:
+                    rows = await cursor.fetchone()
+                    count = 0
+                    if rows is None:
+                        return count
+                    for row in rows:
+                        count = rows[row]
+                    return count
+                elif query_type == QueryTypes.GROUP_COUNT:
+                    result = await cursor.fetchall()
+                    return 0 if not result else len(result)
+                elif query_type == QueryTypes.CREATE:
+                    result = cursor.rowcount > 0
+                    id = cursor.lastrowid
+                    return result, id
+                elif query_type == QueryTypes.CREATEBATCH:
+                    count = cursor.rowcount
+                    id = cursor.lastrowid
+                    return count, id
+                elif query_type == QueryTypes.UPDATE:
+                    return cursor.rowcount > 0
+                elif query_type == QueryTypes.UPDATEBATCH:
+                    return cursor.rowcount
+                elif query_type == QueryTypes.DELETE:
+                    return cursor.rowcount > 0
+
+        self.pool.release(conn)
+
     async def create_engine(self, loop=None, **kw):
         try:
-            self.pool = await create_pool(
+            self.pool = await aiomysql.create_pool(
                 host=kw.get("host", "localhost"),
                 port=kw.get("port", 3306),
-                user=kw.get("user"),
+                user=kw.get("username"),
                 password=str(kw.get("password", "")),
                 db=kw.get("db"),
                 echo=kw.get("echo", False),
                 charset=kw.get("charset", "utf8"),
                 autocommit=False,  # kw.get("autocommit", False),
                 maxsize=kw.get("maxsize", 10),
-                minsize=kw.get("pool_size", 5),
+                minsize=kw.get("minsize", 5),
                 cursorclass=AttrDictCursor,
-                connect_timeout=kw.get("connect_timeout", 10),
                 loop=loop,
             )
+            info(f"Database connection successfully for mysql/{kw.get('db')}.")
         except Exception as e:
-            error(f"Database connection failed,the instance : {kw.get('db')}")
+            # print(traceback.format_exc())
+            error(f"Database connection failed,the instance : mysql/{kw.get('db')}")
         return self

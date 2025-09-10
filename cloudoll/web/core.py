@@ -16,7 +16,7 @@ import time
 from urllib import parse
 from aiohttp import web, hdrs
 from aiohttp.web import Response
-from aiohttp.web_ws import WebSocketResponse,WSMsgType
+from aiohttp.web_ws import WebSocketResponse, WSMsgType
 from aiohttp.web_response import StreamResponse
 from aiohttp.web_request import Request
 from aiohttp.typedefs import LooseHeaders
@@ -28,8 +28,6 @@ from aiohttp_session import (
     cookie_storage,
 )
 from cloudoll.web.settings import get_config
-import aiomcache
-from redis import asyncio as aioredis
 from cloudoll.logging import info
 from cloudoll.orm.model import Model
 from cloudoll.web import jwt
@@ -62,6 +60,7 @@ async def _set_session_route(request: Request):
 
 
 def _auto_reg_module(module_dir: str):
+    info(f"Auto-registration {module_dir}")
     base_path = Path(module_dir).resolve()
     if str(base_path.parent) not in sys.path:
         sys.path.insert(0, str(base_path.parent))
@@ -129,8 +128,8 @@ async def _render_result(request: Request, func):
 
 def _sa_ignore_hash(method, path):
     md5 = hashlib.md5()
-    hashstr = f"{method}{path}"
-    md5.update(hashstr.encode("utf-8"))
+    hash_str = f"{method}{path}"
+    md5.update(hash_str.encode("utf-8"))
     return md5.hexdigest()
 
 
@@ -140,8 +139,8 @@ def _parse_int(num):
 
 def _sa_ignore_middleware():
     async def set_ignore(ctx, handler):
-        hashstr = _sa_ignore_hash(ctx.method, ctx.path)
-        ctx.is_sa_ignore = hashstr in ctx.app.ignore_paths
+        hash_str = _sa_ignore_hash(ctx.method, ctx.path)
+        ctx.is_sa_ignore = hash_str in ctx.app.ignore_paths
         start_time = time.time()
         response = await handler(ctx)
         end_time = time.time()
@@ -162,12 +161,17 @@ class Application(object):
         self.config = {}
         self.clean_up = False
 
-    def _load_life_cycle(self, entry_model=None):
+    def _load_life_cycle(self, entry_model=None, func_name=None):
         try:
             if not entry_model:
                 return
 
             entry = importlib.import_module(entry_model, ".")
+
+            if func_name:
+                func = getattr(entry, func_name)
+                func(self)
+                return
 
             life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "on_task"]
             for cycle in life_cycle:
@@ -199,15 +203,17 @@ class Application(object):
             config = get_config(env or "local")
         self.config = config
 
+        # try to load func and override configuration
+        self._load_life_cycle(entry_model, func_name="on_create")
+
         sa_ignore_mid = _sa_ignore_middleware()
         sa_ignore_mid.__middleware_version__ = 1
         self._middleware.append(sa_ignore_mid)
 
         # middlewares
         _auto_reg_module("middlewares")
-        info("Auto-registration middleware")
 
-        conf_server = config.get("server", {})
+        conf_server = self.config.get("server", {})
         client_max_size = 1024**2 * 2
         if conf_server is not None:
             client_max_size = conf_server.get("client_max_size", client_max_size)
@@ -218,12 +224,16 @@ class Application(object):
             client_max_size=_parse_int(client_max_size),
         )
 
+        # load life
+        # entry = conf_server.get("entry", entry_model)
+        # self._load_life_cycle(entry)
+
         # database
         self.app.ignore_paths = set()
         self.app.db = Object()
         self.app.on_startup.append(self._init_database)
         self.app.on_cleanup.append(self._close_database)
-        self.app.config = config
+        self.app.config = self.config
         self.app.env = env
         self.app.jwt_encode = self.jwt_encode
         self.app.jwt_decode = self.jwt_decode
@@ -231,13 +241,8 @@ class Application(object):
         self.app.on_startup.append(self._init_session)
         # router:
         _auto_reg_module("controllers")
-        info("Auto-registration controller")
 
         self.app.add_routes(self._route_table)
-
-        # load life
-        entry = conf_server.get("entry", entry_model)
-        self._load_life_cycle(entry)
 
         # static
         if conf_server is not None:
@@ -283,7 +288,7 @@ class Application(object):
         if conf_db:
             # for db_key in conf_db:
             #     apps.db[db_key] = await create_engine(**conf_db[db_key])
-            
+
             tasks = [create_engine(**conf_db[db_key]) for db_key in conf_db]
             engines = await asyncio.gather(*tasks)
             for db_key, engine in zip(conf_db.keys(), engines):
@@ -309,6 +314,8 @@ class Application(object):
                 cfg, qs = parse_coon(redis_url)
                 redis_url = f"{cfg['type']}://{cfg['username']}:{cfg['password']}@{cfg['host']}:{cfg['port']}/{cfg['db']}"
 
+            from redis import asyncio as aioredis
+
             redis = await aioredis.from_url(redis_url, **qs)
             apps.redis = redis
             storage = redis_storage.RedisStorage(
@@ -323,6 +330,8 @@ class Application(object):
         elif mcache_conf:
             host = mcache_conf.get("host")
             port = mcache_conf.get("port", 11211)
+
+            import aiomcache
 
             mc = aiomcache.Client(host, port)
             apps.memcached = mc
@@ -382,12 +391,14 @@ class Application(object):
     def add_router(self, path, method, name, sa_ignore):
         def inner(handler):
             handler = RequestHandler(handler)
-            self.router.add_route(method, path, handler, name=name)
+            if self.router is not None:
+                self.router.add_route(method, path, handler, name=name)
             return handler
 
         if sa_ignore:
-            hashstr = _sa_ignore_hash(method, path)
-            self.app.ignore_paths.add(hashstr)
+            if self.app is not None:
+                hash_str = _sa_ignore_hash(method, path)
+                self.app.ignore_paths.add(hash_str)
         return inner
 
     def add_middleware(self, func):
@@ -414,27 +425,39 @@ class Application(object):
 
     @property
     def router(self):
-        return self.app.router
+        if self.app is not None:
+            return self.app.router
+        return None
 
     @property
     def middlewares(self):
-        return self.app.middlewares
+        if self.app is not None:
+            return self.app.middlewares
+        return None
 
     @property
     def on_startup(self):
-        return self.app.on_startup
+        if self.app is not None:
+            return self.app.on_startup
+        return None
 
     @property
     def on_shutdown(self):
-        return self.app.on_shutdown
+        if self.app is not None:
+            return self.app.on_shutdown
+        return None
 
     @property
     def on_cleanup(self):
-        return self.app.on_cleanup
+        if self.app is not None:
+            return self.app.on_cleanup
+        return None
 
     @property
     def on_task(self):
-        return self.app.cleanup_ctx
+        if self.app is not None:
+            return self.app.cleanup_ctx
+        return None
 
 
 class View(web.View):
@@ -525,8 +548,8 @@ def delete(path: str, name=None, sa_ignore=False):
 def routes(path: str, sa_ignore=False):
     if sa_ignore:
         for method in hdrs.METH_ALL:
-            hashstr = _sa_ignore_hash(method, path)
-            app.app.ignore_paths.add(hashstr)
+            hash_str = _sa_ignore_hash(method, path)
+            app.app.ignore_paths.add(hash_str)
     return app.route_table.view(path)
 
 
