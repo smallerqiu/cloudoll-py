@@ -45,7 +45,7 @@ class Postgres(MeteBase):
                 else:
                     await cursor.execute(sql, params)
 
-                await conn.commit()
+                # await conn.commit()
                 result = None
 
                 if query_type == QueryTypes.ALL and cursor.description is not None:
