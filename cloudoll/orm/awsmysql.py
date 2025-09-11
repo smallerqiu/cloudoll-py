@@ -20,11 +20,10 @@ class AwsMysql(MeteBase):
         ConnectionProviderManager.release_resources()
 
     async def create_engine(self, **kw):
+        self._dsn = f"host={kw.get("host")} database={kw.get("db")} user={kw.get("username")} password={kw.get("password","")}"
         self._params = {
-            "host": kw.get("host"),
-            "database": kw.get("db"),
-            "user": kw.get("username"),
             "plugins": kw.get("plugins", ""),
+            "wrapper_dialect": kw.get("wrapper_dialect", ""),
             "autocommit": True,
         }
         return self
@@ -32,10 +31,10 @@ class AwsMysql(MeteBase):
     async def query(self, sql, params=None, query_type=QueryTypes.ONE, size=10):
         sql = sql.replace("?", "%s")
         try:
-            with AwsWrapperConnection.connect(Connect, **self._params) as conn:
+            with AwsWrapperConnection.connect(
+                Connect, self._dsn, **self._params
+            ) as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute(sql, params)
-
                     if (
                         query_type == QueryTypes.CREATEBATCH
                         or query_type == QueryTypes.UPDATEBATCH

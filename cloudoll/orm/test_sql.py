@@ -42,7 +42,7 @@ class B(Model):
 
 class C(Model):
 
-    __table__ = "i_network_speed_result"
+    __table__ = "c"
 
     id = models.BigIntegerField(primary_key=True, max_length=64, not_null=True)
     pack_id = models.BigIntegerField(max_length=64, default="0", not_null=True)

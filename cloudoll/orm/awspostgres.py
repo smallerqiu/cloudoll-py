@@ -1,4 +1,4 @@
-from psycopg import Connection
+import psycopg
 from aws_advanced_python_wrapper import AwsWrapperConnection
 from aws_advanced_python_wrapper.connection_provider import ConnectionProviderManager
 from aws_advanced_python_wrapper.sql_alchemy_connection_provider import (
@@ -19,11 +19,10 @@ class AwsPostgres(MeteBase):
         ConnectionProviderManager.release_resources()
 
     async def create_engine(self, **kw):
+        self._dsn = f"host={kw.get("host")} dbname={kw.get("db")} user={kw.get("username")} password={kw.get("username")}"
         self._params = {
-            "host": kw.get("host"),
-            "dbname": kw.get("db"),
-            "user": kw.get("username"),
             "plugins": kw.get("plugins", ""),
+            "wrapper_dialect": kw.get("wrapper_dialect"),
             "autocommit": True,
         }
         return self
@@ -31,17 +30,15 @@ class AwsPostgres(MeteBase):
     async def query(self, sql, params=None, query_type=QueryTypes.ONE, size=10):
         sql = sql.replace("?", "%s").replace("`", '"')
         try:
-            with AwsWrapperConnection.connect(Connection, **self._params) as conn:
+            with AwsWrapperConnection.connect(
+                psycopg.Connection.connect, self._dsn, **self._params
+            ) as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute(sql, params)
-
-                    # current_cursor = getattr(cursor, 'lastrowid', None)
                     if (
                         query_type == QueryTypes.CREATEBATCH
                         or query_type == QueryTypes.UPDATEBATCH
                     ):
-                        # aiopg don't support executemany
-                        raise RuntimeError("postgres don't support executemany")
+                        cursor.executemany(sql, params)
                     else:
                         cursor.execute(sql, params)
 
@@ -52,12 +49,16 @@ class AwsPostgres(MeteBase):
                         rows = cursor.fetchall()
                         result = [dict(zip(columns, row)) for row in rows]
                         return result
-                    elif query_type == QueryTypes.ONE and cursor.description is not None:
+                    elif (
+                        query_type == QueryTypes.ONE and cursor.description is not None
+                    ):
                         columns = [desc[0] for desc in cursor.target_cursor.description]
                         row = cursor.fetchone()
                         result = dict(zip(columns, row)) if row else {}
                         return result
-                    elif query_type == QueryTypes.MANY and cursor.description is not None:
+                    elif (
+                        query_type == QueryTypes.MANY and cursor.description is not None
+                    ):
                         columns = [desc[0] for desc in cursor.target_cursor.description]
                         rows = cursor.fetchmany(size)
                         result = [dict(zip(columns, row)) for row in rows]
