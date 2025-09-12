@@ -33,7 +33,7 @@ class AwsPostgres(MeteBase):
             with AwsWrapperConnection.connect(
                 psycopg.Connection.connect, self._dsn, **self._params
             ) as conn:
-                with conn.cursor() as cursor:
+                with conn.cursor(dictionary=True) as cursor:
                     if (
                         query_type == QueryTypes.CREATEBATCH
                         or query_type == QueryTypes.UPDATEBATCH
