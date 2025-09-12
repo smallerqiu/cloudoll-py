@@ -3,8 +3,7 @@ from cloudoll.orm.parse import parse_coon
 import aiopg as pg
 from .mysql import Mysql
 from .postgres import Postgres
-from .awspostgres import AwsPostgres
-from .awsmysql import AwsMysql
+
 
 __all__ = ["create_engine"]
 
@@ -27,8 +26,12 @@ async def create_engine(**kw):
     if driver == "mysql":
         return await Mysql().create_engine(**configs, **query)
     elif driver == "aws-mysql":
+        from .awsmysql import AwsMysql
+
         return await AwsMysql().create_engine(**configs, **query)
     elif driver in ["aws-postgres", "aws-postgressql"]:
+        from .awspostgres import AwsPostgres
+
         return await AwsPostgres().create_engine(**configs, **query)
     elif driver in ["postgres", "postgressql"]:
         return await Postgres().create_engine(**configs, **query)

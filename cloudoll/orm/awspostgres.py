@@ -7,7 +7,7 @@ from aws_advanced_python_wrapper.sql_alchemy_connection_provider import (
 
 from cloudoll.orm.base import MeteBase, QueryTypes
 from cloudoll.logging import info, error
-
+from psycopg2.extras import RealDictCursor
 
 class AwsPostgres(MeteBase):
     def __init__(self):
@@ -33,7 +33,7 @@ class AwsPostgres(MeteBase):
             with AwsWrapperConnection.connect(
                 psycopg.Connection.connect, self._dsn, **self._params
             ) as conn:
-                with conn.cursor(dictionary=True) as cursor:
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                     if (
                         query_type == QueryTypes.CREATEBATCH
                         or query_type == QueryTypes.UPDATEBATCH

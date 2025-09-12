@@ -1,4 +1,5 @@
 import aiopg
+from psycopg2.extras import RealDictCursor
 from cloudoll.logging import error
 from cloudoll.orm.base import MeteBase, QueryTypes
 from cloudoll.logging import info, error
@@ -35,7 +36,7 @@ class Postgres(MeteBase):
             if conn.echo:
                 info("sql: %s ,%s", sql, params)
 
-            async with conn.cursor() as cursor:
+            async with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 # current_cursor = getattr(cursor, 'lastrowid', None)
                 if (
                     query_type == QueryTypes.CREATEBATCH
@@ -48,21 +49,12 @@ class Postgres(MeteBase):
                 # await conn.commit()
                 result = None
 
-                if query_type == QueryTypes.ALL and cursor.description is not None:
-                    columns = [desc[0] for desc in cursor.description]
-                    rows = await cursor.fetchall()
-                    result = [dict(zip(columns, row)) for row in rows]
-                    return result
-                elif query_type == QueryTypes.ONE and cursor.description is not None:
-                    columns = [desc[0] for desc in cursor.description]
-                    row = await cursor.fetchone()
-                    result = dict(zip(columns, row)) if row else {}
-                    return result
-                elif query_type == QueryTypes.MANY and cursor.description is not None:
-                    columns = [desc[0] for desc in cursor.description]
-                    rows = await cursor.fetchmany(size)
-                    result = [dict(zip(columns, row)) for row in rows]
-                    return result
+                if query_type == QueryTypes.ALL: 
+                    return await cursor.fetchall()
+                elif query_type == QueryTypes.ONE:
+                    return await cursor.fetchone()
+                elif query_type == QueryTypes.MANY:
+                    return await cursor.fetchmany(size)
                 elif query_type == QueryTypes.COUNT:
                     result = await cursor.fetchone()
                     count = 0
