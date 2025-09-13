@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cloudoll"
-version = "3.0.7" 
+version = "3.0.8" 
 description = "Assist in quickly creating distributable microservices based on aiohttp, with a focus on simplicity and ease of use."
 authors = [
   {name = "Qiu", email = "smallerqiu@gmail.com"},

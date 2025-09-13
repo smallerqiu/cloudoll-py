@@ -19,7 +19,7 @@ class AttrDictCursor(aiomysql.DictCursor):
 
 class Mysql(MeteBase):
     def __init__(self):
-        self.pool: aiomysql.Pool
+        self.pool: Optional[aiomysql.Pool] = None
         self.driver = "mysql"
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
