@@ -9,6 +9,7 @@ from cloudoll.orm.base import MeteBase, QueryTypes
 from cloudoll.logging import info, error
 from psycopg2.extras import RealDictCursor
 
+
 class AwsPostgres(MeteBase):
     def __init__(self):
         self.driver = "aws-postgres"
@@ -44,25 +45,12 @@ class AwsPostgres(MeteBase):
 
                     result = None
 
-                    if query_type == QueryTypes.ALL and cursor.description is not None:
-                        columns = [desc[0] for desc in cursor.target_cursor.description]
-                        rows = cursor.fetchall()
-                        result = [dict(zip(columns, row)) for row in rows]
-                        return result
-                    elif (
-                        query_type == QueryTypes.ONE and cursor.description is not None
-                    ):
-                        columns = [desc[0] for desc in cursor.target_cursor.description]
-                        row = cursor.fetchone()
-                        result = dict(zip(columns, row)) if row else {}
-                        return result
-                    elif (
-                        query_type == QueryTypes.MANY and cursor.description is not None
-                    ):
-                        columns = [desc[0] for desc in cursor.target_cursor.description]
-                        rows = cursor.fetchmany(size)
-                        result = [dict(zip(columns, row)) for row in rows]
-                        return result
+                    if query_type == QueryTypes.ALL:
+                        return cursor.fetchall()
+                    elif query_type == QueryTypes.ONE:
+                        return cursor.fetchone()
+                    elif query_type == QueryTypes.MANY:
+                        return cursor.fetchmany(size)
                     elif query_type == QueryTypes.COUNT:
                         result = cursor.fetchone()
                         count = 0
