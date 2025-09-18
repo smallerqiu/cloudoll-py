@@ -75,5 +75,5 @@ class AwsMysql(MeteBase):
                     elif query_type == QueryTypes.DELETE:
                         return cursor.rowcount > 0
         except Exception as e:
-            error(f"[AWS PG] query error: {e}, SQL: {sql}")
+            error(f"[AWS MYSQL] query error: {e}, SQL: {sql} ,params: {params}")
             raise e
