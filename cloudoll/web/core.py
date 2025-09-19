@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import sys
 import time
+from types import SimpleNamespace
 from urllib import parse
 from aiohttp import web, hdrs
 from aiohttp.web import Response
@@ -483,7 +484,7 @@ class JsonEncoder(json.JSONEncoder):
             return str(o)
         elif isinstance(o, set):
             return list(o)
-        elif isinstance(o, Model):
+        elif isinstance(o, Model) or isinstance(o, SimpleNamespace):
             return o.__dict__
         elif isinstance(o, bytes):
             return o.decode("utf-8")
