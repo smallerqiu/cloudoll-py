@@ -34,7 +34,7 @@ class AwsMysql(MeteBase):
             with AwsWrapperConnection.connect(
                 Connect, self._dsn, **self._params
             ) as conn:
-                with conn.cursor(dictionary=True) as cursor:
+                with conn.cursor() as cursor:
                     if (
                         query_type == QueryTypes.CREATEBATCH
                         or query_type == QueryTypes.UPDATEBATCH
