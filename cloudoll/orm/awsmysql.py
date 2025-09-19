@@ -8,7 +8,19 @@ from aws_advanced_python_wrapper.sql_alchemy_connection_provider import (
 
 from cloudoll.orm.base import MeteBase, QueryTypes
 from cloudoll.logging import info, error
+from types import SimpleNamespace
 
+
+def dict_to_namespace(row):
+    return SimpleNamespace(**row)
+def wrap_result(result):
+    if result is None:
+        return result
+    if isinstance(result, list):
+        return [dict_to_namespace(r) for r in result]
+    elif isinstance(result, dict):
+        return dict_to_namespace(result)
+    return result
 
 class AwsMysql(MeteBase):
     def __init__(self):
@@ -34,7 +46,7 @@ class AwsMysql(MeteBase):
             with AwsWrapperConnection.connect(
                 Connect, self._dsn, **self._params
             ) as conn:
-                with conn.cursor() as cursor:
+                with conn.cursor(dictionary=True) as cursor:
                     if (
                         query_type == QueryTypes.CREATEBATCH
                         or query_type == QueryTypes.UPDATEBATCH
@@ -44,11 +56,11 @@ class AwsMysql(MeteBase):
                         cursor.execute(sql, params)
 
                     if query_type == QueryTypes.ALL:
-                        return cursor.fetchall()
+                        return wrap_result(cursor.fetchall())
                     elif query_type == QueryTypes.ONE:
-                        return cursor.fetchone()
+                        return wrap_result(cursor.fetchone())
                     elif query_type == QueryTypes.MANY:
-                        return cursor.fetchmany(size)
+                        return wrap_result(cursor.fetchmany(size))
                     elif query_type == QueryTypes.COUNT:
                         rows = cursor.fetchone()
                         count = 0
