@@ -11,16 +11,34 @@ from cloudoll.logging import info, error
 from types import SimpleNamespace
 
 
-def dict_to_namespace(row):
-    return SimpleNamespace(**row)
-def wrap_result(result):
-    if result is None:
-        return result
-    if isinstance(result, list):
-        return [dict_to_namespace(r) for r in result]
-    elif isinstance(result, dict):
-        return dict_to_namespace(result)
-    return result
+class AttrDict(dict):
+    """支持 item.a 和 item['a'] 两种访问方式"""
+
+    def __getattr__(self, item):
+        try:
+            return self[item]
+        except KeyError:
+            raise AttributeError(f"'AttrDict' object has no attribute '{item}'")
+
+    def __setattr__(self, key, value):
+        self[key] = value
+
+    def __delattr__(self, item):
+        try:
+            del self[item]
+        except KeyError:
+            raise AttributeError(f"'AttrDict' object has no attribute '{item}'")
+
+
+def wrap_result(data):
+    if data is None:
+        return None
+    elif isinstance(data, list):
+        return [AttrDict(row) if isinstance(row, dict) else row for row in data]
+    elif isinstance(data, dict):
+        return AttrDict(data)
+    return data
+
 
 class AwsMysql(MeteBase):
     def __init__(self):
