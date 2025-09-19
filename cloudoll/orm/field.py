@@ -238,7 +238,6 @@ class FieldBase(object):
 
     def contains(self, args):
         return Function(self, OP.CONTAINS, args)
-        # return AO(f"contains({self.full_name},?)", args)
 
     def As(self, args):
         return Expression(self, OP.AS, args)
@@ -351,7 +350,6 @@ class Function(FieldBase):
             return f"{col_name} < NOW() - INTERVAL {self.rpt} SECOND", None
         elif op == OP.CONTAINS:
             return f"{col_name} LIKE CONCAT('%%',?,'%%')", [self.rpt]
-            # return f"CONTAINS({col_name},?)", [self.rpt]
         elif op == OP.JSON_CONTAINS_OBJECT:
             _k, _v = self.rpt
             key = _k.full_name if isinstance(_k, Field) else f"'{_k}'"
@@ -465,8 +463,13 @@ class Expression(FieldBase):
         elif self.op == OP.AS:
             q.append(r)
         elif r is not None:
-            q.append("?")
-            p.append(r)
+            if isinstance(r, (list, tuple)):
+                # fix op is `in``
+                q.append(f"({','.join(['?'] * len(r))})")
+                p.extend(r)
+            else:
+                q.append("?")
+                p.append(r)
         if not is_fun and not isinstance(l, Field):
             q.append(")")
         q = [str(num) for num in q]
