@@ -80,7 +80,10 @@ OP = objdict(
 
 
 class FieldBase:
-    full_name: Optional[str]
+    full_name: str
+    lhs: Optional["FieldBase"]
+    rhs: Optional["FieldBase"]
+    op: Optional[str]
 
     def _op(op, inverse=False):
         def inner(self, rhs):
@@ -187,6 +190,9 @@ class FieldBase:
         return Function(self, OP.DATE_FORMAT, args)
 
     def is_today(self):
+        """
+        output:  DATE({col_name}) = CURDATE()
+        """
         return Function(self, OP.IS_TODAY)
 
     def is_this_week(self):
@@ -235,6 +241,10 @@ class FieldBase:
         return Function(self, OP.BEFORE_SECONDS, args)
 
     def json_contains_object(self, key, value):
+        """
+        input: A.id.json_contains_object("id", 5)
+        output: json_contains(`a`.id,json_object('admin',?)
+        """
         return Function(self, OP.JSON_CONTAINS_OBJECT, (key, value))
 
     def json_contains_array(self, args):
@@ -273,7 +283,7 @@ class ExpList(FieldBase):
         q = []
         if isinstance(lpt, Expression):
             _q, _p = lpt.sql()
-            q = q + _q
+            q.append(_q)
             p = p + _p
         else:
             q.append("?")
@@ -281,7 +291,7 @@ class ExpList(FieldBase):
         q.append(f" {self.op} ")
         if isinstance(rpt, Expression):
             _q, _p = rpt.sql()
-            q = q + _q
+            q.append(_q)
             p = p + _p
         else:
             q.append("?")
@@ -297,7 +307,7 @@ def deconstruct(args):
     v2 = args[2] if len(args) > 2 and args[2] is not None else "NULL"
     c = None
     v = None
-    if isinstance(f, FieldBase):
+    if isinstance(f, FieldBase) and f.lhs:
         c = f"{f.lhs.full_name} {f.op} ?"
         v = f.rhs
     if isinstance(v1, FieldBase):
@@ -314,7 +324,6 @@ class Function(FieldBase):
     def sql(self):
         op = self.op
         col_name = self.col.full_name
-        is_field = isinstance(self.rpt, Field)
         # todo:
         if op == OP.DATE_FORMAT:
             return f"{op}({col_name},?)", [self.rpt]
@@ -354,12 +363,14 @@ class Function(FieldBase):
             return f"{col_name} < NOW() - INTERVAL {self.rpt} SECOND", None
         elif op == OP.CONTAINS:
             return f"{col_name} LIKE CONCAT('%%',?,'%%')", [self.rpt]
-        elif op == OP.JSON_CONTAINS_OBJECT:
+        elif op == OP.JSON_CONTAINS_OBJECT and isinstance(self.rpt, (dict | tuple)):
+            #todo: json_contains
             _k, _v = self.rpt
             key = _k.full_name if isinstance(_k, Field) else f"'{_k}'"
             return f"json_contains({col_name},json_object({key},?))", [_v]
         elif op == OP.JSON_CONTAINS_ARRAY:
-            if is_field:
+            #todo: json_contains
+            if isinstance(self.rpt, Field):
                 return (
                     f"json_contains({col_name},json_array({self.rpt.full_name}))",
                     None,
@@ -515,7 +526,7 @@ class Field(FieldBase):
         **kwargs,
     ):
         super().__init__()
-        self.full_name: Optional[str] = None
+        # self.full_name: Optional[str] = None
         self._value = None
         self.name = name
         self.column_type = column_type
