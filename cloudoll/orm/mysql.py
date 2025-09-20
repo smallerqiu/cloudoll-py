@@ -34,6 +34,8 @@ class Mysql(MeteBase):
     async def query(
         self, sql, params=None, query_type: QueryTypes = QueryTypes.ONE, size: int = 10
     ):
+        for i, p in enumerate(params):
+                print(f"Param[{i}] = {p} (type: {type(p)})")
         sql = sql.replace("?", "%s")
         if not self.pool:
             raise ValueError("must be create_engine first.")

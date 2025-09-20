@@ -237,7 +237,7 @@ class Model(metaclass=ModelMetaclass):
         else:
             for item in args:
                 if isinstance(item, Model):
-                    for k in item.__dict__:
+                    for k in item.__fields__:
                         if (
                             action == "u" and item[k].value is not None
                         ) or action == "i":
@@ -301,7 +301,7 @@ class Model(metaclass=ModelMetaclass):
         for item in items:
             value = []
             if isinstance(item, Model):
-                for k in item.__dict__:
+                for k in item.__fields__:
                     value.append(item[k].value)
             elif isinstance(item, dict):  # for object
                 for k, v in item.items():
