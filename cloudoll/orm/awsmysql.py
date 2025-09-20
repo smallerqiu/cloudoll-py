@@ -60,6 +60,8 @@ class AwsMysql(MeteBase):
 
     async def query(self, sql, params=None, query_type=QueryTypes.ONE, size=10):
         sql = sql.replace("?", "%s")
+        for i, p in enumerate(params):
+                print(f"Param[{i}] = {p} (type: {type(p)})")
         try:
             with AwsWrapperConnection.connect(
                 Connect, self._dsn, **self._params
@@ -105,5 +107,7 @@ class AwsMysql(MeteBase):
                     elif query_type == QueryTypes.DELETE:
                         return cursor.rowcount > 0
         except Exception as e:
+            for i, p in enumerate(params):
+                print(f"Param[{i}] = {p} (type: {type(p)})")
             error(f"[AWS MYSQL] query error: {e}, SQL: {sql} ,params: {params}")
             raise e

@@ -63,7 +63,7 @@ class C(Model):
     is_timeout = models.BooleanField(default="true", not_null=True)
 
 
-if __name__ == "__main__":
+def test_query():
     sql, arg = (
         B.use()
         .select(
@@ -87,3 +87,24 @@ if __name__ == "__main__":
     )
     # sql = B()._exchange_sql(sql)
     print(sql, arg)
+
+
+def test_a():
+    role_id = ("5", 4, 7, 6)
+    sql, arg = (
+        B.use()
+        .join(A, A.id == B.id)
+        .where(
+            B.proxy_order_no.In(role_id),
+            B.channel_type == 0,
+            A.id.In(role_id),
+            A.id.between(1, 2),
+        )
+        .test()
+    )
+    print(sql, arg)
+
+
+if __name__ == "__main__":
+    # test_query()
+    test_a()
