@@ -20,15 +20,14 @@ class QueryTypes(Enum):
 
 class MeteBase:
     # def __init__(self):
-        # self.pool: Optional[MyPool | PGPool] = None
-        # self.cursor: Optional[Cursor] = None
-        # self.conn: Optional[Connection] = None
+    # self.pool: Optional[MyPool | PGPool] = None
+    # self.cursor: Optional[Cursor] = None
+    # self.conn: Optional[Connection] = None
 
     async def __aexit__(self):
         await self.close()
 
-    async def close(self):
-        ...
+    async def close(self): ...
 
     # async def begin_transaction(self):
     #     conn = await self._set_conn()
@@ -59,29 +58,29 @@ class MeteBase:
     async def all(self, sql, params):
         return await self.query(sql, params, QueryTypes.ALL)
 
-    async def one(self, sql, params):
+    async def one(self, sql, params) -> Union[dict , None]:
         return await self.query(sql, params, QueryTypes.ONE)
 
     async def many(self, sql, params, size: int):
         return await self.query(sql, params, QueryTypes.MANY, size)
 
-    async def count(self, sql, params):
+    async def count(self, sql, params) -> int:
         return await self.query(sql, params, QueryTypes.COUNT)
 
-    async def group_count(self, sql, params):
+    async def group_count(self, sql, params) -> int:
         return await self.query(sql, params, QueryTypes.GROUP_COUNT)
 
-    async def update(self, sql, params):
+    async def update(self, sql, params) -> bool:
         return await self.query(sql, params, QueryTypes.UPDATE)
 
     async def update_batch(self, sql, params):
         return await self.query(sql, params, QueryTypes.UPDATEBATCH)
 
-    async def delete(self, sql, params):
+    async def delete(self, sql, params) -> bool:
         return await self.query(sql, params, QueryTypes.DELETE)
 
-    async def create(self, sql, params):
+    async def create(self, sql, params) -> Tuple[bool, int]:
         return await self.query(sql, params, QueryTypes.CREATE)
 
-    async def create_batch(self, sql, params):
+    async def create_batch(self, sql, params) -> Tuple[bool, int]:
         return await self.query(sql, params, QueryTypes.CREATEBATCH)

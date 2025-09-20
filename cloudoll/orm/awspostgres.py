@@ -7,7 +7,6 @@ from aws_advanced_python_wrapper.sql_alchemy_connection_provider import (
 
 from cloudoll.orm.base import MeteBase, QueryTypes
 from cloudoll.logging import info, error
-# from psycopg2.extras import RealDictCursor
 from psycopg.rows import dict_row
 
 

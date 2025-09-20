@@ -484,7 +484,9 @@ class JsonEncoder(json.JSONEncoder):
             return str(o)
         elif isinstance(o, set):
             return list(o)
-        elif isinstance(o, Model) or isinstance(o, SimpleNamespace):
+        elif isinstance(o, Model):
+            return o.to_dict()
+        elif isinstance(o, SimpleNamespace):
             return o.__dict__
         elif isinstance(o, bytes):
             return o.decode("utf-8")

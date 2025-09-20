@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional, override
 
 
 class objdict(dict):
@@ -79,7 +79,9 @@ OP = objdict(
 )
 
 
-class FieldBase(object):
+class FieldBase:
+    full_name: Optional[str]
+
     def _op(op, inverse=False):
         def inner(self, rhs):
             if inverse:
@@ -88,9 +90,11 @@ class FieldBase(object):
 
         return inner
 
+    @override
     def __eq__(self, rhs):
         return Expression(self, OP.EQ, rhs)
 
+    @override
     def __ne__(self, rhs):
         return Expression(self, OP.NE, rhs)
 
@@ -228,7 +232,7 @@ class FieldBase(object):
         return Function(self, OP.BEFORE_MINUTES, args)
 
     def before_seconds(self, args):
-        return Function(self, OP.BEFORE_SECOBDS, args)
+        return Function(self, OP.BEFORE_SECONDS, args)
 
     def json_contains_object(self, key, value):
         return Function(self, OP.JSON_CONTAINS_OBJECT, (key, value))
@@ -267,7 +271,7 @@ class ExpList(FieldBase):
 
         p = []
         q = []
-        if isinstance(lpt, Exception):
+        if isinstance(lpt, Expression):
             _q, _p = lpt.sql()
             q = q + _q
             p = p + _p
@@ -275,13 +279,13 @@ class ExpList(FieldBase):
             q.append("?")
             p.append(lpt)
         q.append(f" {self.op} ")
-        if isinstance(rpt, Exception):
-            _q, _p = lpt.sql()
+        if isinstance(rpt, Expression):
+            _q, _p = rpt.sql()
             q = q + _q
             p = p + _p
         else:
             q.append("?")
-            p.append(lpt)
+            p.append(rpt)
 
         return "".join(q), p
         # return f"{lpt.sql() if isinstance(lpt,Expression) else lpt} {self.op} {rpt.sql() if isinstance(rpt,Expression) else rpt}"
@@ -400,10 +404,11 @@ class Function(FieldBase):
         elif op == OP.GROUP_CONCAT:
             arg = self.rpt
             extra = None
-            if len(arg) == 0:
-                extra = col_name
-            elif len(arg) == 1 and isinstance(arg[0], FieldBase):
-                extra = f"{arg[0].op} {arg[0].col.name}"
+            if arg:
+                if len(arg) == 0:
+                    extra = col_name
+                elif len(arg) == 1 and isinstance(arg[0], FieldBase):
+                    extra = f"{arg[0].op} {arg[0].col.name}"
             else:
                 # todo : DISTINCT name ORDER BY name ASC SEPARATOR '; '
                 extra = col_name
@@ -411,6 +416,8 @@ class Function(FieldBase):
             return f"GROUP_CONCAT({extra})", None
         elif op == OP.DISTINCT:
             return f"DISTINCT {col_name}", None
+        else:
+            return None, None
 
 
 class Expression(FieldBase):
@@ -494,7 +501,7 @@ class Field(FieldBase):
         self,
         name,  # 列名
         column_type,  # 类型
-        default=None,  # 默认值
+        default: Optional[Any] = None,  # 默认值
         primary_key=False,  # 主键
         charset=None,  # 编码
         max_length=None,  # 长度

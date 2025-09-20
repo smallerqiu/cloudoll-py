@@ -1,3 +1,4 @@
+from cloudoll.orm.base import MeteBase
 from cloudoll.orm.field import Field, Function, Expression
 from cloudoll.logging import warning
 from functools import reduce
@@ -6,7 +7,7 @@ import copy
 import re
 import datetime
 from cloudoll.utils.common import Object
-from typing import Tuple
+from typing import Any, Optional, Tuple
 
 __all__ = ("models", "Model")
 
@@ -22,46 +23,37 @@ class ModelMetaclass(type):
     def __new__(mcs, name, bases, attrs):
         if name == "Model":
             return type.__new__(mcs, name, bases, attrs)
-        # debug("Found model:%s" % name)
-        # 表名
         table_name = attrs.get("__table__", None) or name
         primary_key = None
         fields = []
-        # mappings = dict()
         for k, v in attrs.items():
             if isinstance(v, Field):
                 v.name = k
                 v.full_name = f"`{table_name}`.{k}"
-                # mappings[k] = v
                 if v.primary_key:
                     if primary_key:
                         warning(f"Duplicate primary key for {table_name}")
                     primary_key = k
-                # else:
                 fields.append(k)
 
         if not primary_key:
             warning(f"{table_name} Missing primary key")
-
-        # for k in mappings.keys():
-        #     attrs.pop(k)
-
-        # escaped_fields = list(map(lambda f: "`%s`" % f, fields))
-        # attrs["__mappings__"] = mappings
-        attrs["__table__"] = table_name
-        attrs["__primary_key__"] = primary_key
-        attrs["__fields__"] = fields
-        attrs["__pool__"] = None
-        attrs["__join__"] = None
-        attrs["__where__"] = None
-        attrs["__having__"] = None
-        attrs["__params__"] = None
-        attrs["__cols__"] = "*"
-        attrs["__order_by__"] = None
-        attrs["__group_by__"] = None
-        attrs["__limit__"] = None
-        attrs["__offset__"] = None
-
+        defaults = {
+            "__table__": table_name,
+            "__primary_key__": primary_key,
+            "__fields__": fields,
+            "__pool__": MeteBase,
+            "__join__": None,
+            "__where__": None,
+            "__having__": None,
+            "__params__": None,
+            "__cols__": "*",
+            "__order_by__": None,
+            "__group_by__": None,
+            "__limit__": None,
+            "__offset__": None,
+        }
+        attrs.update(defaults)
         model = type.__new__(mcs, name, bases, attrs)
         return model
 
@@ -73,9 +65,24 @@ class ModelMetaclass(type):
 
 
 class Model(metaclass=ModelMetaclass):
+    __table__: str
+    __primary_key__: Optional[str]
+    __fields__: list
+    __pool__: MeteBase
+    __join__: Optional[str]
+    __where__: object
+    __having__: object
+    __params__: Optional[list]
+    __cols__: str
+    __order_by__: Optional[list]
+    __group_by__: Optional[list]
+    __limit__: Optional[str]
+    __offset__: Optional[str]
+    __is_pg__: bool
+
     def __init__(self, **kw):
         for k in self.__fields__:
-            f = getattr(self, k, None)
+            f: Field = getattr(self, k)
             f.value = None
         for k, v in kw.items():
             self[k] = v
@@ -88,11 +95,9 @@ class Model(metaclass=ModelMetaclass):
     def __repr__(self):
         return "<Model: %s>" % self.__class__.__name__
 
-    @property
-    def __dict__(self):
-        fields = self.__fields__
+    def to_dict(self):
         _dict = {}
-        for key in fields:
+        for key in self.__fields__:
             f = getattr(self, key)
             _dict[key] = f.value
         return _dict
@@ -148,8 +153,8 @@ class Model(metaclass=ModelMetaclass):
         self.__offset__ = None
 
     @classmethod
-    def use(cls, pool=None):
-        cls.__pool__ = pool
+    def use(cls, pool):
+        cls.__pool__: MeteBase = pool
         cls.__is_pg = (
             pool.driver in ["postgres", "postgressql", "aws-postgres"]
             if pool
@@ -157,34 +162,35 @@ class Model(metaclass=ModelMetaclass):
         )
         return cls()
 
-    def select(cls, *args):
+    def select(self, *args):
         cols = []
         for col in args:
             if isinstance(col, Field):
-                cols.append(col.name if cls.__is_pg else col.full_name)
+                cols.append(col.name if self.__is_pg else col.full_name)
             elif isinstance(col, Function):
                 q, p = col.sql()
                 cols.append(q)
             elif isinstance(col, Expression):
                 q, p = col.sql()
                 cols.append(q)
-                cls._merge_params(p)
-        cls.__cols__ = ",".join(cols) if len(cols) else "*"
-        return cls
+                self._merge_params(p)
+        self.__cols__ = ",".join(cols) if len(cols) else "*"
+        return self
 
-    def join(cls, model, *exp):
+    def join(self, model, *exp):
         ex = reduce(operator.and_, exp)
+        q = ""
         if isinstance(ex, Expression) or isinstance(ex, Function):
-            exp, q = ex.sql()
-            cls._merge_params(q)
+            q, p = ex.sql()
+            self._merge_params(p)
         else:
-            exp = ex
-        join = f"{model.__table__} ON " + exp
-        if cls.__join__ is None:
-            cls.__join__ = join
+            q = ex
+        join = f"{model.__table__} ON {q if q else ''}"
+        if self.__join__ is None:
+            self.__join__ = join
         else:
-            cls.__join__ += join
-        return cls
+            self.__join__ += join
+        return self
 
     def where(self, *exp):
         if self.__where__ is not None:
@@ -356,9 +362,6 @@ class Model(metaclass=ModelMetaclass):
             result = Object(rs) if self.__join__ is not None else self(**rs)
             self._reset()
             return result
-            # return self(**rs)
-            # return Object(rs)
-            # return cls(**rs)
         return None
 
     async def all(self):
@@ -416,7 +419,7 @@ class Model(metaclass=ModelMetaclass):
                 sql += f" where `{pk}`=?"
                 params.append(pkv)
             else:
-                raise "Need where or primary key"
+                raise RuntimeError("Need where or primary key")
         self._reset()
         sql = self._exchange_sql(sql)
         return await self.__pool__.update(sql, params)
@@ -482,7 +485,7 @@ class Models(object):
             self,
             name=None,
             primary_key=False,
-            default=None,
+            default: Optional[Any] = None,
             charset=None,
             max_length=None,
             not_null=False,
@@ -504,7 +507,7 @@ class Models(object):
             self,
             name=None,
             primary_key=False,
-            default=None,
+            default: Optional[Any] = None,
             charset=None,
             max_length=None,
             not_null=False,
@@ -523,7 +526,12 @@ class Models(object):
 
     class BooleanField(Field):
         def __init__(
-            self, name=None, default=False, not_null=False, comment=None, unsigned=False
+            self,
+            name=None,
+            default: Optional[Any] = False,
+            not_null=False,
+            comment=None,
+            unsigned=False,
         ):
             super().__init__(
                 name,
@@ -539,7 +547,7 @@ class Models(object):
             self,
             name=None,
             primary_key=False,
-            default=None,
+            default: Optional[Any] = None,
             auto_increment=False,
             not_null=False,
             unsigned=False,
@@ -563,7 +571,7 @@ class Models(object):
             self,
             name=None,
             primary_key=False,
-            default=None,
+            default: Optional[Any] = None,
             auto_increment=False,
             not_null=False,
             unsigned=False,
@@ -586,7 +594,7 @@ class Models(object):
         def __init__(
             self,
             name=None,
-            default=None,
+            default: Optional[Any] = None,
             not_null=False,
             max_length=None,
             unsigned=False,
@@ -606,7 +614,7 @@ class Models(object):
         def __init__(
             self,
             name=None,
-            default=None,
+            default: Optional[Any] = None,
             not_null=False,
             max_length=None,
             scale_length=None,
@@ -628,7 +636,7 @@ class Models(object):
         def __init__(
             self,
             name=None,
-            default=0.0,
+            default: Optional[Any] = 0.0,
             not_null=False,
             max_length=None,
             scale_length=None,
@@ -650,7 +658,7 @@ class Models(object):
         def __init__(
             self,
             name=None,
-            default=0.0,
+            default: Optional[Any] = 0.0,
             not_null=False,
             max_length=None,
             scale_length=None,
@@ -672,7 +680,7 @@ class Models(object):
         def __init__(
             self,
             name=None,
-            default=None,
+            default: Optional[Any] = None,
             charset=None,
             max_length=None,
             not_null=False,
@@ -692,7 +700,7 @@ class Models(object):
         def __init__(
             self,
             name=None,
-            default=None,
+            default: Optional[Any] = None,
             charset=None,
             max_length=None,
             not_null=False,
@@ -712,7 +720,7 @@ class Models(object):
         def __init__(
             self,
             name=None,
-            default=None,
+            default: Optional[Any] = None,
             charset=None,
             max_length=None,
             not_null=False,
@@ -732,7 +740,7 @@ class Models(object):
         def __init__(
             self,
             name=None,
-            default=None,
+            default: Optional[Any] = None,
             max_length=None,
             not_null=False,
             created_generated=False,
@@ -754,7 +762,7 @@ class Models(object):
         def __init__(
             self,
             name=None,
-            default=None,
+            default: Optional[Any] = None,
             max_length=None,
             not_null=False,
             created_generated=False,
@@ -776,7 +784,7 @@ class Models(object):
         def __init__(
             self,
             name=None,
-            default=None,
+            default: Optional[Any] = None,
             max_length=None,
             not_null=False,
             created_generated=False,
@@ -797,7 +805,12 @@ class Models(object):
 
     class JsonField(Field):
         def __init__(
-            self, name=None, default=None, charset=None, not_null=False, comment=None
+            self,
+            name=None,
+            default: Optional[Any] = None,
+            charset=None,
+            not_null=False,
+            comment=None,
         ):
             super().__init__(
                 name,
