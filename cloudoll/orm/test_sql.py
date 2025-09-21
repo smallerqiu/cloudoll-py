@@ -87,5 +87,5 @@ def test_a():
 
 
 if __name__ == "__main__":
-    # test_query()
-    test_a()
+    test_query()
+    # test_a()

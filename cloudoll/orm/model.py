@@ -157,12 +157,16 @@ class Model(metaclass=ModelMetaclass):
         cls.__pool__: MeteBase = pool
         cls.__is_pg = (
             pool.driver in ["postgres", "postgressql", "aws-postgres"]
-            if pool
+            if pool and pool.driver
             else False
         )
         return cls()
 
     def select(self, *args):
+        """
+        eg: select(A.id, A.name) \n
+            select(A.id.As('ID') \n
+        """
         cols = []
         for col in args:
             if isinstance(col, Field):
@@ -178,6 +182,10 @@ class Model(metaclass=ModelMetaclass):
         return self
 
     def join(self, model, *exp):
+        """
+        input: .join(B, A.id == B.id)
+        output: "join B on A.id = B.id"
+        """
         ex = reduce(operator.and_, exp)
         q = ""
         if isinstance(ex, Expression) or isinstance(ex, Function):

@@ -5,6 +5,7 @@ from cloudoll.orm.base import MeteBase, QueryTypes
 from cloudoll.logging import info, error
 from typing import Any, Optional
 
+
 class Postgres(MeteBase):
     def __init__(self):
         self.pool: Optional[aiopg.Pool] = None
@@ -26,60 +27,64 @@ class Postgres(MeteBase):
         query_type: QueryTypes = QueryTypes.COUNT,
         size: int = 10,
     ):
-        sql = sql.replace("?", "%s").replace("`", '"')
-        if not self.pool:
-            raise ValueError("must be create_engine first.")
-        if self.pool._closing or self.pool._closed:
-            return None
+        try:
+            sql = sql.replace("?", "%s").replace("`", '"')
+            if not self.pool:
+                raise ValueError("must be create_engine first.")
+            if self.pool._closing or self.pool._closed:
+                return None
 
-        async with self.pool.acquire() as conn:
-            if conn.echo:
-                info("sql: %s ,%s", sql, params)
+            async with self.pool.acquire() as conn:
+                if conn.echo:
+                    info("sql: %s ,%s", sql, params)
 
-            async with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                # current_cursor = getattr(cursor, 'lastrowid', None)
-                if (
-                    query_type == QueryTypes.CREATEBATCH
-                    or query_type == QueryTypes.UPDATEBATCH
-                ):
-                    await cursor.executemany(sql, params)
-                else:
-                    await cursor.execute(sql, params)
+                async with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                    # current_cursor = getattr(cursor, 'lastrowid', None)
+                    if (
+                        query_type == QueryTypes.CREATEBATCH
+                        or query_type == QueryTypes.UPDATEBATCH
+                    ):
+                        await cursor.executemany(sql, params)
+                    else:
+                        await cursor.execute(sql, params)
 
-                # await conn.commit()
-                result = None
+                    # await conn.commit()
+                    result = None
 
-                if query_type == QueryTypes.ALL: 
-                    return await cursor.fetchall()
-                elif query_type == QueryTypes.ONE:
-                    return await cursor.fetchone()
-                elif query_type == QueryTypes.MANY:
-                    return await cursor.fetchmany(size)
-                elif query_type == QueryTypes.COUNT:
-                    result = await cursor.fetchone()
-                    count = 0
-                    if result is None:
+                    if query_type == QueryTypes.ALL:
+                        return await cursor.fetchall()
+                    elif query_type == QueryTypes.ONE:
+                        return await cursor.fetchone()
+                    elif query_type == QueryTypes.MANY:
+                        return await cursor.fetchmany(size)
+                    elif query_type == QueryTypes.COUNT:
+                        result = await cursor.fetchone()
+                        count = 0
+                        if result is None:
+                            return count
+                        for value in result:
+                            count = value
                         return count
-                    for value in result:
-                        count = value
-                    return count
-                elif query_type == QueryTypes.GROUP_COUNT:
-                    result = await cursor.fetchall()
-                    return 0 if not result else len(result)
-                elif query_type == QueryTypes.CREATE:
-                    result = cursor.rowcount > 0
-                    id = cursor.lastrowid
-                    return result, id
-                elif query_type == QueryTypes.CREATEBATCH:
-                    count = cursor.rowcount
-                    id = cursor.lastrowid
-                    return count, id
-                elif query_type == QueryTypes.UPDATE:
-                    return cursor.rowcount > 0
-                elif query_type == QueryTypes.UPDATEBATCH:
-                    return cursor.rowcount
-                elif query_type == QueryTypes.DELETE:
-                    return cursor.rowcount > 0
+                    elif query_type == QueryTypes.GROUP_COUNT:
+                        result = await cursor.fetchall()
+                        return 0 if not result else len(result)
+                    elif query_type == QueryTypes.CREATE:
+                        result = cursor.rowcount > 0
+                        id = cursor.lastrowid
+                        return result, id
+                    elif query_type == QueryTypes.CREATEBATCH:
+                        count = cursor.rowcount
+                        id = cursor.lastrowid
+                        return count, id
+                    elif query_type == QueryTypes.UPDATE:
+                        return cursor.rowcount > 0
+                    elif query_type == QueryTypes.UPDATEBATCH:
+                        return cursor.rowcount
+                    elif query_type == QueryTypes.DELETE:
+                        return cursor.rowcount > 0
+        except Exception as e:
+            error(f"[PG] query error: {e}, SQL: {sql} ,params: {params}")
+            error(e)
 
     async def create_engine(self, **kw):
         try:

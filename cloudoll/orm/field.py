@@ -1,4 +1,4 @@
-from typing import Any, Optional, override
+from typing import Any, Optional
 
 
 class objdict(dict):
@@ -93,14 +93,12 @@ class FieldBase:
 
         return inner
 
-    @override
     def __eq__(self, rhs):
         return Expression(self, OP.EQ, rhs)
 
-    @override
     def __ne__(self, rhs):
         return Expression(self, OP.NE, rhs)
-
+    
     __lt__ = _op(OP.LT)  # <
     __le__ = _op(OP.LTE)  # <=
     __gt__ = _op(OP.GT)  # >
