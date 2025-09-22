@@ -1,6 +1,6 @@
 [project]
 name = "cloudoll"
-version = "3.0.10"
+version = "3.0.11"
 authors = [
   { name="Qiu", email="smallerqiu@gmail.com" },
 ]

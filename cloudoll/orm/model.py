@@ -7,7 +7,7 @@ import copy
 import re
 import datetime
 from cloudoll.utils.common import Object
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Union
 
 __all__ = ("models", "Model")
 
@@ -47,7 +47,7 @@ class ModelMetaclass(type):
             "__where__": None,
             "__having__": None,
             "__params__": None,
-            "__cols__": "*",
+            "__cols__": None,
             "__order_by__": None,
             "__group_by__": None,
             "__limit__": None,
@@ -73,7 +73,7 @@ class Model(metaclass=ModelMetaclass):
     __where__: object
     __having__: object
     __params__: Optional[list]
-    __cols__: str
+    __cols__: list
     __order_by__: Optional[list]
     __group_by__: Optional[list]
     __limit__: Optional[str]
@@ -146,7 +146,7 @@ class Model(metaclass=ModelMetaclass):
         self.__where__ = None
         self.__having__ = None
         self.__params__ = None
-        self.__cols__ = "*"
+        self.__cols__ = []
         self.__order_by__ = None
         self.__group_by__ = None
         self.__limit__ = None
@@ -169,6 +169,15 @@ class Model(metaclass=ModelMetaclass):
         """
         cols = []
         for col in args:
+            cols.append(col)
+        self.__cols__ = cols
+        return self
+
+    def _build_select(self):
+        cols = []
+        if self.__cols__ is None:
+            return "*"
+        for col in self.__cols__:
             if isinstance(col, Field):
                 cols.append(col.name if self.__is_pg else col.full_name)
             elif isinstance(col, Function):
@@ -178,8 +187,7 @@ class Model(metaclass=ModelMetaclass):
                 q, p = col.sql()
                 cols.append(q)
                 self._merge_params(p)
-        self.__cols__ = ",".join(cols) if len(cols) else "*"
-        return self
+        return ",".join(cols) if len(cols) else "*"
 
     def join(self, model, *exp):
         """
@@ -338,6 +346,7 @@ class Model(metaclass=ModelMetaclass):
         return ""
 
     def _sql(self):
+        COLS = self._build_select()
         JOIN = self._literal("LEFT JOIN", self.__join__)
         WHERE = self._literal("WHERE", self.__where__)
         GROUPBY = self._literal("GROUP BY", self.__group_by__)
@@ -346,7 +355,7 @@ class Model(metaclass=ModelMetaclass):
         LIMIT = self._literal("LIMIT", self.__limit__)
         OFFSET = self._literal("OFFSET", self.__offset__)
         aft = " ".join([JOIN, WHERE, GROUPBY, HAVING, ORDERBY, LIMIT, OFFSET])
-        return f"SELECT {self.__cols__} FROM {self.__table__} {aft}"
+        return f"SELECT {COLS} FROM {self.__table__} {aft}"
 
     def limit(self, limit: int):
         self.__limit__ = f"{limit}"
@@ -472,19 +481,20 @@ class Model(metaclass=ModelMetaclass):
         return await self.__pool__.create_batch(sql, params)
 
     async def count(self) -> int:
-        __where__ = copy.copy(self.__where__)
-        __join__ = copy.copy(self.__join__)
+        # __where__ = copy.copy(self.__where__)
+        # __join__ = copy.copy(self.__join__)
         cls = copy.deepcopy(self)
-        JOIN = cls._literal("LEFT JOIN", __join__)
-        WHERE = cls._literal("WHERE", __where__)
+        JOIN = cls._literal("LEFT JOIN", self.__join__)
+        WHERE = cls._literal("WHERE", self.__where__)
         GROUPBY = self._literal("GROUP BY", self.__group_by__)
         aft = " ".join([JOIN, WHERE, GROUPBY])
         sql = f"SELECT COUNT(*) FROM {cls.__table__} {aft}"
         args = cls.__params__
         sql = self._exchange_sql(sql)
+        del cls
         if GROUPBY is not None and GROUPBY != "":
-            return await cls.__pool__.group_count(sql, args)
-        return await cls.__pool__.count(sql, args)
+            return await self.__pool__.group_count(sql, args)
+        return await self.__pool__.count(sql, args)
 
 
 class Models(object):

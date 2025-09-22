@@ -75,11 +75,12 @@ def test_a():
         .join(A, A.id == B.id)
         .where(
             # B.b1.In(role_id),
-            # B.b2 == 0,
+            B.b2 == 0,
+            ((B.b2 != 1)|(B.b2 != "2")),
             # A.a1.In(role_id),
             A.id.between(1, 2),
             A.id.json_contains_object(A.id, "id"),
-            A.id.json_contains_array(("3", "d")),
+            A.id.json_contains_array(("3", "a","b","c","d")),
         )
         .test()
     )
@@ -87,5 +88,5 @@ def test_a():
 
 
 if __name__ == "__main__":
-    test_query()
-    # test_a()
+    # test_query()
+    test_a()

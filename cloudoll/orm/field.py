@@ -93,11 +93,14 @@ class FieldBase:
 
         return inner
 
-    def __eq__(self, rhs):
-        return Expression(self, OP.EQ, rhs)
+    # def __eq__(self, rhs):
+    #     return Expression(self, OP.EQ, rhs)
 
-    def __ne__(self, rhs):
-        return Expression(self, OP.NE, rhs)
+    # def __ne__(self, rhs):
+    #     return Expression(self, OP.NE, rhs)
+
+    __eq__ = _op(OP.EQ)  # ==
+    __ne__ = _op(OP.NE)  # !=
     
     __lt__ = _op(OP.LT)  # <
     __le__ = _op(OP.LTE)  # <=
@@ -240,13 +243,17 @@ class FieldBase:
 
     def json_contains_object(self, key, value):
         """
-        input: A.id.json_contains_object("id", 5)
-        output: json_contains(`a`.id,json_object('admin',?)
+        input: A.id.json_contains_object("id", key,value)
+        output: json_contains(`a`.id,json_object('key',value))
         """
         return Function(self, OP.JSON_CONTAINS_OBJECT, (key, value))
 
-    def json_contains_array(self, args):
-        return Function(self, OP.JSON_CONTAINS_ARRAY, args)
+    def json_contains_array(self, *args):
+        """
+        input: A.id.json_contains_object("id", key1,key2 ...)
+        output: json_contains(`a`.id,json_array( key1, key2 ...))
+        """
+        return Function(self, OP.JSON_CONTAINS_ARRAY, *args)
 
     def contains(self, args):
         return Function(self, OP.CONTAINS, args)
@@ -333,7 +340,6 @@ class Function(FieldBase):
             return f"MONTH({col_name}) = MONTH(CURDATE())", None
         elif op == OP.IS_THIS_YEAR:
             return f"YEAR({col_name}) = YEAR(CURDATE())", None
-
         elif op == OP.LASTED_SECONDS:
             return f"{col_name} >= NOW() - INTERVAL {self.rpt} SECOND", None
         elif op == OP.LASTED_MINUTES:
@@ -346,7 +352,6 @@ class Function(FieldBase):
             return f"{col_name} >= NOW() - INTERVAL {self.rpt} MONTH", None
         elif op == OP.LASTED_DAYS:
             return f"DATE({col_name}) >= CURDATE() - INTERVAL {self.rpt} DAY", None
-
         elif op == OP.BEFORE_YEARS:
             return f"{col_name} < NOW() - INTERVAL {self.rpt} YEAR", None
         elif op == OP.BEFORE_MONTHS:
@@ -362,18 +367,17 @@ class Function(FieldBase):
         elif op == OP.CONTAINS:
             return f"{col_name} LIKE CONCAT('%%',?,'%%')", [self.rpt]
         elif op == OP.JSON_CONTAINS_OBJECT and isinstance(self.rpt, (dict | tuple)):
-            #todo: json_contains
             _k, _v = self.rpt
             key = _k.full_name if isinstance(_k, Field) else f"'{_k}'"
             return f"json_contains({col_name},json_object({key},?))", [_v]
-        elif op == OP.JSON_CONTAINS_ARRAY:
-            #todo: json_contains
-            if isinstance(self.rpt, Field):
-                return (
-                    f"json_contains({col_name},json_array({self.rpt.full_name}))",
-                    None,
-                )
-            return f"json_contains({col_name},json_array(?))", [self.rpt]
+        elif op == OP.JSON_CONTAINS_ARRAY and isinstance(self.rpt, tuple):
+            arr = []
+            for r in self.rpt:
+                arr.append(r)
+            return (
+                f"json_contains({col_name},json_array({','.join(['?'] * len(arr))}))",
+                arr,
+            )
         elif op == OP.COUNT:
             return f"COUNT({col_name})", None
         elif op == OP.COUNT_WHEN:
@@ -392,7 +396,6 @@ class Function(FieldBase):
             return f"AVG({col_name})", None
         elif op == OP.AVG_WHEN:
             c, v, v1, v2 = deconstruct(self.rpt)
-            print("avg", v2)
             if v2 == "NULL":
                 return f"AVG(CASE WHEN {c} THEN {v1} END)", [v]
             return f"AVG(CASE WHEN {c} THEN {v1} ELSE {v2} END)", [v]

@@ -1,1 +1,1 @@
-cloudoll==3.0.0
+cloudoll==3.0.11
