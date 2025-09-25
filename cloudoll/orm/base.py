@@ -53,12 +53,12 @@ class MeteBase:
     @abstractmethod
     async def query(
         self, sql, params=None, query_type: QueryTypes = QueryTypes.ONE, size: int = 10
-    ) -> Union[None, int, Tuple[Any, Any], Dict, List[Dict]]: ...
+    ) : ...
 
-    async def all(self, sql, params):
+    async def all(self, sql, params) -> List[Any]:
         return await self.query(sql, params, QueryTypes.ALL)
 
-    async def one(self, sql, params) -> Union[dict , None]:
+    async def one(self, sql, params) -> Union[dict, None]:
         return await self.query(sql, params, QueryTypes.ONE)
 
     async def many(self, sql, params, size: int):

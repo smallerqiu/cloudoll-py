@@ -7,7 +7,7 @@ import copy
 import re
 import datetime
 from cloudoll.utils.common import Object
-from typing import Any, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 __all__ = ("models", "Model")
 
@@ -381,7 +381,7 @@ class Model(metaclass=ModelMetaclass):
             return result
         return None
 
-    async def all(self):
+    async def all(self)->List[Any]:
         sql = self._sql()
         sql = self._exchange_sql(sql)
         args = self.__params__

@@ -226,8 +226,8 @@ class Application(object):
         )
 
         # load life
-        # entry = conf_server.get("entry", entry_model)
-        # self._load_life_cycle(entry)
+        entry = conf_server.get("entry", entry_model)
+        self._load_life_cycle(entry)
 
         # database
         self.app.ignore_paths = set()
