@@ -101,7 +101,7 @@ class FieldBase:
 
     __eq__ = _op(OP.EQ)  # ==
     __ne__ = _op(OP.NE)  # !=
-    
+
     __lt__ = _op(OP.LT)  # <
     __le__ = _op(OP.LTE)  # <=
     __gt__ = _op(OP.GT)  # >
@@ -250,7 +250,7 @@ class FieldBase:
 
     def json_contains_array(self, *args):
         """
-        input: A.id.json_contains_object("id", key1,key2 ...)
+        input: A.id.json_contains_array(key1,key2 ...)
         output: json_contains(`a`.id,json_array( key1, key2 ...))
         """
         return Function(self, OP.JSON_CONTAINS_ARRAY, *args)
@@ -370,10 +370,13 @@ class Function(FieldBase):
             _k, _v = self.rpt
             key = _k.full_name if isinstance(_k, Field) else f"'{_k}'"
             return f"json_contains({col_name},json_object({key},?))", [_v]
-        elif op == OP.JSON_CONTAINS_ARRAY and isinstance(self.rpt, tuple):
+        elif op == OP.JSON_CONTAINS_ARRAY:
             arr = []
-            for r in self.rpt:
-                arr.append(r)
+            if isinstance(self.rpt, tuple) or isinstance(self.rpt, list):
+                for r in self.rpt:
+                    arr.append(r)
+            elif isinstance(self.rpt, str):
+                arr.append(self.rpt)
             return (
                 f"json_contains({col_name},json_array({','.join(['?'] * len(arr))}))",
                 arr,

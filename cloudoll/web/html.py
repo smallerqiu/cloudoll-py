@@ -6,14 +6,14 @@ from html.parser import HTMLParser
 
 
 class parser(HTMLParser):
-    def __init__(self, tags: dict):
+    def __init__(self):
         """
         标签属性查找
         :params tags :{ "div":{ "id" : "list" ,"class": "table" }}
         """
         HTMLParser.__init__(self)
         self._text = []
-        self._tags = tags
+        # self._tags = tags
         self._images = []
         self._videos = []
         self._finds = []
