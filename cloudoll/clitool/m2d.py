@@ -31,6 +31,10 @@ async def create_model(pool, table_name) -> str:
         # print("fields",fields)
         name = fields["name"]
         column_type = fields["column_type"]
+        if not column_type or not hasattr(ColTypes, column_type):
+            raise ValueError(
+                f"{table_name}.{name} column_type `{column_type}` not support."
+            )
         values = []
         if fields["primary_key"]:
             values.append("primary_key=True")
