@@ -562,23 +562,17 @@ def render_error(msg, status=500) -> Response:
 
 def render_json(data, **kw) -> Response:
     res = {}
-    if isinstance(data, list):
-        res["data"] = data
-    elif isinstance(data, dict):
-        res.update(data)
-    elif isinstance(data, tuple):
-        data = dict(data)
+    if isinstance(data, dict):
         res.update(data)
     else:
         res["data"] = data
-    status = kw.get("status", 200)
-    if status == 200:
-        res["message"] = kw.get("message", "OK")
-        res["code"] = kw.get("code", 200)
+    res.setdefault("message", kw.get("message", "OK"))
+    res.setdefault("code", kw.get("code", 200))
 
     res["timestamp"] = int(datetime.now().timestamp() * 1000)
-    text = json.dumps(res, ensure_ascii=False, cls=JsonEncoder)
-    return web.json_response(text=text, **kw)
+    return web.json_response(
+        res, **kw, dumps=lambda x: json.dumps(x, ensure_ascii=False, cls=JsonEncoder)
+    )
 
 
 def middleware(func):
