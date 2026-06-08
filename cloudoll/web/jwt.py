@@ -3,11 +3,15 @@
 
 __author__ = "Qiu / smallerqiu@gmail.com"
 
-import jwt, datetime
-from cloudoll.logging import error
+import datetime
 from typing import Union
 
-def encode(payload, key, exp: Union[int, str] = 3600)->str:
+import jwt
+
+from cloudoll.logging import error
+
+
+def encode(payload, key, exp: Union[int, str] = 3600) -> str:
     """
     jwt 加密
     :params payload
@@ -16,8 +20,10 @@ def encode(payload, key, exp: Union[int, str] = 3600)->str:
     """
     headers = dict(typ="jwt", alg="HS256")
     exp_seconds = eval(exp) if isinstance(exp, str) else exp
-    exp_datetime = datetime.datetime.now() + datetime.timedelta(seconds=exp_seconds)  # 过期时间
-    payload["exp"] = exp_datetime.timestamp()
+    exp_datetime = datetime.datetime.now() + datetime.timedelta(
+        seconds=exp_seconds
+    )  # 过期时间
+    payload["exp"] = int(exp_datetime.timestamp())
     result = jwt.encode(payload=payload, key=key, algorithm="HS256", headers=headers)
     return result
 
@@ -29,12 +35,12 @@ def decode(token, key):
     :params key
     """
     try:
-        payload = jwt.decode(token, key, algorithms=['HS256'])
-        if not payload:
-            return None
-        now = datetime.datetime.now().timestamp()  # 当前时间
-        if int(now) > int(payload["exp"]):  # 登录时间过期
-            return None
+        payload = jwt.decode(token, key, algorithms=["HS256"])
+        # if not payload:
+        #     return None
+        # now = datetime.datetime.now().timestamp()  # 当前时间
+        # if int(now) > int(payload["exp"]):  # 登录时间过期
+        #     return None
         return payload  # 返回自定义内容
     except Exception as e:
         error(e)
