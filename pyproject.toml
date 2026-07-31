@@ -35,7 +35,10 @@ dependencies = [
   "envyaml",
   "psutil",
   "tabulate",
-  "concurrent_log_handler"
+  "concurrent_log_handler",
+  "aws-advanced-python-wrapper",
+  "mysql-connector-python",
+  "psycopg"
 ]
 
 [project.urls]
