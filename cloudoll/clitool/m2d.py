@@ -1,9 +1,10 @@
 import enum
-import os
-from pathlib import Path
-import re
-from cloudoll.logging import info, warning
 import importlib.util
+import os
+import re
+from pathlib import Path
+
+from cloudoll.logging import info, warning
 
 
 def snake_to_camel(snake_str):
@@ -177,7 +178,6 @@ async def create_table(pool, models: list, tables: list):
 
 
 async def create_tables(pool, model_name: str, tables: list):
-
     # parts = model_name.split('.')
     # package_name = '.'.join(parts[:-1]) or '.'
     # module_name = parts[-1]

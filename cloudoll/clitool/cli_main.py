@@ -1,20 +1,22 @@
-from typing import Any
-from cloudoll.web.settings import get_config
-from cloudoll.logging import info, error
-from cloudoll.utils.common import Object, chainMap
-from cloudoll.clitool.watch import AppTask
-from aiohttp import web
-from cloudoll.web import app
-from pathlib import Path
-from cloudoll.clitool.m2d import create_models, create_tables
-from cloudoll.orm import create_engine
 import os
-from cloudoll.clitool.process import ProcessManager
-import sys
-from importlib.resources import files
 import shutil
-from cloudoll.clitool.spinner import spinner_running
+import sys
 import threading
+from importlib.resources import files
+from pathlib import Path
+from typing import Any
+
+from aiohttp import web
+
+from cloudoll.clitool.m2d import create_models, create_tables
+from cloudoll.clitool.process import ProcessManager
+from cloudoll.clitool.spinner import spinner_running
+from cloudoll.clitool.watch import AppTask
+from cloudoll.logging import error, info
+from cloudoll.orm import create_engine
+from cloudoll.utils.common import Object, chainMap
+from cloudoll.web import app
+from cloudoll.web.settings import get_config
 
 
 def run_app(**config_kwargs: Any):

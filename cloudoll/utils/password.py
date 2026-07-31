@@ -1,6 +1,7 @@
 import hashlib
 import secrets
 import string
+
 from cryptography.fernet import Fernet
 
 

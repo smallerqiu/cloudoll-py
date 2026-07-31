@@ -1,5 +1,6 @@
 import asyncio
-from cloudoll.web import get, WebStream
+
+from cloudoll.web import WebStream, get
 
 
 @get("/es", sa_ignore=True)

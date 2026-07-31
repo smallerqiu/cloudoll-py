@@ -1,14 +1,14 @@
-from datetime import datetime
+import json
 import os
-import click
-from typing import Optional
-import psutil
-from pathlib import Path
 import platform
 import signal
 import time
-import json
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
+import click
+import psutil
 from tabulate import tabulate
 
 
@@ -27,9 +27,9 @@ class ProcessManager:
     def get_run_dir():
         home = Path.home()
         if platform.system() == "Windows":
-            run_dir = home / f"AppData/Local/cloudoll"
+            run_dir = home / "AppData/Local/cloudoll"
         else:
-            run_dir = home / f".cloudoll"
+            run_dir = home / ".cloudoll"
 
         try:
             run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -150,7 +150,7 @@ class ProcessManager:
                     return
 
                 ProcessManager.handle_shutdown(service_name)
-            except Exception as e:
+            except Exception:
                 os._exit(1)
 
         sigmap = (

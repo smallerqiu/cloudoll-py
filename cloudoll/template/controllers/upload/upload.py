@@ -1,6 +1,7 @@
-import asyncio
-from cloudoll.web import post
 from pathlib import Path
+
+from cloudoll.web import post
+
 
 @post("/api/upload", sa_ignore=True)
 async def upload(ctx, file):

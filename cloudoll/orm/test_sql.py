@@ -1,8 +1,7 @@
-from model import models, Model
+from model import Model, models
 
 
 class A(Model):
-
     __table__ = "a"
 
     id = models.BigIntegerField(
@@ -14,7 +13,6 @@ class A(Model):
 
 
 class B(Model):
-
     __table__ = "b"
 
     id = models.BigIntegerField(primary_key=True, max_length=64, not_null=True)
@@ -25,7 +23,6 @@ class B(Model):
 
 
 class C(Model):
-
     __table__ = "c"
 
     id = models.BigIntegerField(primary_key=True, max_length=64, not_null=True)
@@ -76,11 +73,11 @@ def test_a():
         .where(
             # B.b1.In(role_id),
             B.b2 == 0,
-            ((B.b2 != 1)|(B.b2 != "2")),
+            ((B.b2 != 1) | (B.b2 != "2")),
             # A.a1.In(role_id),
             A.id.between(1, 2),
             A.id.json_contains_object(A.id, "id"),
-            A.id.json_contains_array(("3", "a","b","c","d")),
+            A.id.json_contains_array(("3", "a", "b", "c", "d")),
         )
         .test()
     )

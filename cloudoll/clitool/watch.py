@@ -1,20 +1,19 @@
-from typing import AsyncIterator, Optional, Union
-from pathlib import Path
-from cloudoll.web import Application, app
 import asyncio
+import contextlib
 import os
-import signal
 import sys
+import traceback
 from contextlib import suppress
 from multiprocessing import Process
-from watchfiles import awatch, DefaultFilter
-from cloudoll.logging import info, warning, error, debug
-import contextlib
-from typing import Iterator, Optional
-from typing import Optional, Union
+from pathlib import Path
+from typing import AsyncIterator, Iterator, Optional, Union
+
 from aiohttp import web
-import traceback
+from watchfiles import DefaultFilter, awatch
+
+from cloudoll.logging import error, info, warning
 from cloudoll.utils.common import check_port_open
+from cloudoll.web import Application, app
 
 
 class CloudollFilter(DefaultFilter):
@@ -144,7 +143,7 @@ class AppTask(WatchTask):
                     await self._stop_dev_server()
                     self._start_dev_server()
                     await asyncio.sleep(1)
-        except Exception as exc:
+        except Exception:
             traceback.print_exc()
 
             raise Exception("error running dev server")

@@ -1,8 +1,6 @@
 from abc import abstractmethod
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union
-from aiomysql.pool import Pool as MyPool
-from aiopg import Pool as PGPool
+from typing import Any, List, Tuple, Union
 
 
 class QueryTypes(Enum):
@@ -53,7 +51,7 @@ class MeteBase:
     @abstractmethod
     async def query(
         self, sql, params=None, query_type: QueryTypes = QueryTypes.ONE, size: int = 10
-    ) : ...
+    ): ...
 
     async def all(self, sql, params) -> List[Any]:
         return await self.query(sql, params, QueryTypes.ALL)

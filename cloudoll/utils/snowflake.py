@@ -1,6 +1,5 @@
-import time
 import threading
-
+import time
 
 """
 # Twitter's Snowflake algorithm implementation which is used to generate distributed IDs.

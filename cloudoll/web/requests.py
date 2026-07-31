@@ -1,7 +1,7 @@
-import aiohttp
 import asyncio
-from aiohttp import BasicAuth, ClientSession
 
+import aiohttp
+from aiohttp import BasicAuth, ClientSession
 
 __all__ = ("Session", "BasicAuth")
 

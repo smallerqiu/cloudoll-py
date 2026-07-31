@@ -4,10 +4,10 @@ from aws_advanced_python_wrapper.connection_provider import ConnectionProviderMa
 from aws_advanced_python_wrapper.sql_alchemy_connection_provider import (
     SqlAlchemyPooledConnectionProvider,
 )
-
-from cloudoll.orm.base import MeteBase, QueryTypes
-from cloudoll.logging import info, error
 from psycopg.rows import dict_row
+
+from cloudoll.logging import error
+from cloudoll.orm.base import MeteBase, QueryTypes
 
 
 class AwsPostgres(MeteBase):

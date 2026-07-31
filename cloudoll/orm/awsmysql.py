@@ -1,14 +1,12 @@
-from mysql.connector import Connect
-
 from aws_advanced_python_wrapper import AwsWrapperConnection
 from aws_advanced_python_wrapper.connection_provider import ConnectionProviderManager
 from aws_advanced_python_wrapper.sql_alchemy_connection_provider import (
     SqlAlchemyPooledConnectionProvider,
 )
+from mysql.connector import Connect
 
+from cloudoll.logging import error
 from cloudoll.orm.base import MeteBase, QueryTypes
-from cloudoll.logging import info, error
-from types import SimpleNamespace
 
 
 class AttrDict(dict):

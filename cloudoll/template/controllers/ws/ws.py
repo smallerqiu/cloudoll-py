@@ -1,4 +1,4 @@
-from cloudoll.web import get, WebSocket, WSMsgType, WebSocketResponse
+from cloudoll.web import WebSocket, WSMsgType, get
 
 
 @get("/ws", sa_ignore=True)

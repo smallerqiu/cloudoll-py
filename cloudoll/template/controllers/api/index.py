@@ -1,6 +1,5 @@
-from cloudoll.web import View, routes, post, render_error
-import os
-from pathlib import Path
+from cloudoll.web import View, post, render_error, routes
+
 
 @routes("/api/test", sa_ignore=True)
 class ApiView(View):
@@ -46,4 +45,3 @@ async def login(ctx):
             "token": ctx.app.jwt_encode({"username": uname}),
         }
     return render_error("login failed", status=401)
-

@@ -1,7 +1,7 @@
-from urllib.parse import unquote
-import re
-from typing import Any, Optional, List, cast
 import collections.abc as collections_abc
+import re
+from typing import Any, List, Optional, cast
+from urllib.parse import unquote
 
 _implicit_encoding = "ascii"
 _implicit_errors = "strict"
@@ -48,7 +48,6 @@ def parse_coon(url: str):
 
         query = {}
         if configs["query"] is not None:
-
             for key, value in parse_sql(configs["query"]):
                 if key in query:
                     query[key] = to_list(query[key])

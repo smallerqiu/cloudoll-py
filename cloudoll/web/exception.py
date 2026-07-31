@@ -1,6 +1,5 @@
 from aiohttp.web_exceptions import *
 
-
 __all__ = (
     "HTTPException",
     "HTTPError",

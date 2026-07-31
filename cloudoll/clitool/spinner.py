@@ -2,6 +2,7 @@ import itertools
 import sys
 import time
 
+
 def spinner_running(stop_flag):
     for c in itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
         if stop_flag["stop"]:

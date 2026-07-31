@@ -5,39 +5,40 @@ __author__ = "Qiu / smallerqiu@gmail.com"
 
 import argparse
 import asyncio
-import hashlib
 import base64
+import hashlib
 import importlib.util
 import inspect
 import json
-from pathlib import Path
 import sys
 import time
-from types import SimpleNamespace
-from urllib import parse
-from aiohttp import web, hdrs
-from aiohttp.web import Response
-from aiohttp.web_ws import WebSocketResponse, WSMsgType
-from aiohttp.web_response import StreamResponse
-from aiohttp.web_request import Request
-from aiohttp.typedefs import LooseHeaders
-from aiohttp_session import (
-    get_session,
-    setup,
-    redis_storage,
-    memcached_storage,
-    cookie_storage,
-)
-from cloudoll.web.settings import get_config
-from cloudoll.logging import info
-from cloudoll.orm.model import Model
-from cloudoll.web import jwt
-from decimal import Decimal
-from datetime import datetime, date
-from cloudoll.utils.common import chainMap, Object
-from cloudoll.orm import create_engine, parse_coon
 import uuid
-from typing import Optional, Iterable, Callable, Awaitable
+from datetime import date, datetime
+from decimal import Decimal
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Awaitable, Callable, Iterable, Optional
+from urllib import parse
+
+from aiohttp import hdrs, web
+from aiohttp.typedefs import LooseHeaders
+from aiohttp.web import Response
+from aiohttp.web_request import Request
+from aiohttp.web_response import StreamResponse
+from aiohttp.web_ws import WebSocketResponse
+from aiohttp_session import (
+    cookie_storage,
+    get_session,
+    memcached_storage,
+    redis_storage,
+    setup,
+)
+from cloudoll.logging import info
+from cloudoll.orm import create_engine, parse_coon
+from cloudoll.orm.model import Model
+from cloudoll.utils.common import Object, chainMap
+from cloudoll.web import jwt
+from cloudoll.web.settings import get_config
 
 
 class RequestHandler(object):
@@ -100,15 +101,12 @@ async def _render_result(request: Request, func):
         else:
             data = await request.post()
         query_string = request.query_string
-        body = {}
-        for k in data:
-            body[k] = data[k]
         qs = {}
         if query_string:
             for k, v in parse.parse_qs(query_string, True).items():
                 qs[k] = v[0]
         request.qs = Object(qs)
-        request.body = Object(body)
+        request.body = data
         result = await func(request)
     else:
         result = await func()
@@ -121,7 +119,7 @@ async def _render_result(request: Request, func):
             return result
         if "content_type" in result and "text/html" in result["content_type"]:
             return result
-    except:
+    except Exception:
         pass
 
     return render_json(result)
@@ -169,7 +167,7 @@ class Application(object):
 
             entry = importlib.import_module(entry_model, ".")
 
-            if func_name:
+            if func_name and hasattr(entry, func_name):
                 func = getattr(entry, func_name)
                 func(self)
                 return
@@ -178,7 +176,8 @@ class Application(object):
             for cycle in life_cycle:
                 if hasattr(entry, cycle):
                     cy = getattr(self, cycle)
-                    cy.append(getattr(entry, cycle))
+                    if cy:
+                        cy.append(getattr(entry, cycle))
         except ImportError:
             info(f"Entry model:{entry_model} can not find.")
 
@@ -190,7 +189,7 @@ class Application(object):
             parser.add_argument("-port", type=int, help="Server Port", required=False)
             parser.add_argument("-env", type=str, help="Environment", required=False)
             self.args = parser.parse_args()
-        except:
+        except Exception:
             pass
 
     def create(self, env: str, entry_model: str, config=None):
@@ -278,10 +277,10 @@ class Application(object):
 
         # close for session
         if "redis" in apps:
-            info(f"release redis session.")
+            info("release redis session.")
             await apps.redis.close()
         if "memcached" in apps:
-            info(f"release memcached session")
+            info("release memcached session")
             apps.memcached.close()
 
     async def _init_database(self, apps):

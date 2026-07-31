@@ -1,8 +1,9 @@
 from typing import Any, Optional
+
 import aiomysql
-from cloudoll.logging import error
+
+from cloudoll.logging import error, info
 from cloudoll.orm.base import MeteBase, QueryTypes
-from cloudoll.logging import info, error
 
 
 class AttrDict(dict):
@@ -110,7 +111,7 @@ class Mysql(MeteBase):
                 loop=loop,
             )
             info(f"Database connection successfully for mysql/{kw.get('db')}.")
-        except Exception as e:
+        except Exception:
             # print(traceback.format_exc())
             error(f"Database connection failed,the instance : mysql/{kw.get('db')}")
         return self

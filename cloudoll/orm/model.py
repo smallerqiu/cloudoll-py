@@ -1,13 +1,14 @@
-from cloudoll.orm.base import MeteBase
-from cloudoll.orm.field import Field, Function, Expression
-from cloudoll.logging import warning
-from functools import reduce
-import operator
 import copy
-import re
 import datetime
+import operator
+import re
+from functools import reduce
+from typing import Any, List, Optional, Tuple
+
+from cloudoll.logging import warning
+from cloudoll.orm.base import MeteBase
+from cloudoll.orm.field import Expression, Field, Function
 from cloudoll.utils.common import Object
-from typing import Any, List, Optional, Tuple, Union
 
 __all__ = ("models", "Model")
 
@@ -381,7 +382,7 @@ class Model(metaclass=ModelMetaclass):
             return result
         return None
 
-    async def all(self)->List[Any]:
+    async def all(self) -> List[Any]:
         sql = self._sql()
         sql = self._exchange_sql(sql)
         args = self.__params__

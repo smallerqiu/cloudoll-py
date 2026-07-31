@@ -1,7 +1,7 @@
-from cloudoll.web import middleware, render_error
-from cloudoll.web import middleware, render_error, exception
-from cloudoll import logging
 import traceback
+
+from cloudoll import logging
+from cloudoll.web import exception, middleware, render_error
 
 
 @middleware

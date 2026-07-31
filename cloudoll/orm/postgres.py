@@ -1,9 +1,10 @@
+from typing import Any, Optional
+
 import aiopg
 from psycopg2.extras import RealDictCursor
-from cloudoll.logging import error
+
+from cloudoll.logging import error, info
 from cloudoll.orm.base import MeteBase, QueryTypes
-from cloudoll.logging import info, error
-from typing import Any, Optional
 
 
 class Postgres(MeteBase):
