@@ -1,4 +1,7 @@
 # 🔥🔥🔥 Cloudoll
+
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Quickly create web applications based on Python.
 
 ## Documentation
@@ -34,7 +37,51 @@ pip install cloudoll
 ## Environment 
 
 - Operating System: Supports macOS, Linux, Windows
-- Runtime Environment: Minimum requirement 3.6.0.
+- Runtime Environment: Python 3.9 or newer.
+
+Database drivers are optional. Install the drivers your application uses:
+
+```sh
+pip install 'cloudoll[mysql]'
+pip install 'cloudoll[postgres]'
+pip install 'cloudoll[aws]'
+```
+
+### Upgrading from 3.0.14
+
+- Replace arithmetic strings such as `3600 * 24 * 7` in `session.max_age`,
+  `jwt.exp`, and `server.client_max_size` with integers (for example `604800`).
+  Configuration values are no longer executed as Python code.
+- Set `session.secret_key` or `CLOUDOLL_SESSION_SECRET` to a long random secret
+  shared by all workers. Without it, each application uses an ephemeral random
+  key and sessions expire on restart. Old cookies must be discarded because
+  the previous publicly derived key was insecure. `httponly` defaults to true;
+  set `session.secure: true` when serving over HTTPS.
+- Scaffolded projects receive a unique JWT secret. Existing deployments should
+  replace the example `cloudoll_jwt` key. Missing environment variables in YAML
+  now fail configuration loading instead of becoming literal secrets.
+- Database failures and email delivery failures now propagate to callers.
+  PostgreSQL ORM inserts use `RETURNING` for the primary key; raw inserts
+  without `RETURNING`, and batch inserts, return `None` for the ID.
+- `Model.use(pool)` binds only the returned query to that pool. Keep using the
+  returned object; it no longer changes other queries or the model class.
+- Each `Application` can be created once. Use a new instance for another app.
+  Module-level decorators remain supported; controllers discovered during
+  creation are registered against that application.
+- HTTP `Session.max_retries` retains its historical meaning of total attempts.
+  POST/PATCH are attempted once unless `retry_non_idempotent=True` is explicitly
+  enabled. Retried requests must have replayable bodies.
+
+### Development checks
+
+```sh
+python -m pip install -e '.[mysql,postgres,aws,dev]'
+python -m pytest -q
+python -m build
+```
+
+Tests use simulated database connections and local HTTP servers. Live database
+connectivity and AWS failover require an integration environment.
 
 ## Quick Start
 

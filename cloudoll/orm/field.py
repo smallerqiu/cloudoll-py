@@ -116,8 +116,8 @@ class FieldBase:
     __rsub__ = _op(OP.SUB, True)  # -=
     __mul__ = _op(OP.MUL)  # *
     __rmul__ = _op(OP.MUL, True)  # *=
-    __div__ = _op(OP.DIV)  # /
-    __rdiv__ = _op(OP.DIV, True)  # /=
+    __truediv__ = _op(OP.DIV)
+    __rtruediv__ = _op(OP.DIV, True)
 
     In = _op(OP.IN)  # in
     not_in = _op(OP.NOT_IN)  # not in
@@ -440,13 +440,6 @@ class Expression(FieldBase):
         self.lhs = lhs
         self.op = op
         self.rhs = rhs
-        # self.__value = ""
-        # if op in "+-*/|&~" and lhs._value:
-        #     cal = f"{lhs._value}{op}"
-        #     if isinstance(rhs, FieldBase):
-        #         self.__value = str(eval(f"{cal}{rhs._value}"))
-        #     else:
-        #         self.__value = str(eval(f"{cal}{rhs}"))
 
     def sql(self):
         l = self.lhs
@@ -497,18 +490,9 @@ class Expression(FieldBase):
         q = [str(num) for num in q]
         return "".join(q), p
 
-    # def __str__(self):
-    #     return self.__value
-    #     cal = f"{self.lhs._value}{self.op}"
-    #     if isinstance(self.rhs, FieldBase):
-    #         return str(eval(f"{cal}{self.rhs._value}"))
-    #     return str(eval(f"{cal}{self.rhs}"))
-
     def __repr__(self):
-        cal = f"{self.lhs.value}{self.op}"
-        if isinstance(self.rhs, FieldBase):
-            return str(eval(f"{cal}{self.rhs.value}"))
-        return str(eval(f"{cal}{self.rhs}"))
+        sql, params = self.sql()
+        return f"Expression({sql!r}, {params!r})"
 
 
 class Field(FieldBase):

@@ -33,7 +33,7 @@ class Postgres(MeteBase):
             if not self.pool:
                 raise ValueError("must be create_engine first.")
             if self.pool._closing or self.pool._closed:
-                return None
+                raise RuntimeError("Database pool is closed")
 
             async with self.pool.acquire() as conn:
                 if conn.echo:
@@ -63,19 +63,18 @@ class Postgres(MeteBase):
                         count = 0
                         if result is None:
                             return count
-                        for value in result:
-                            count = value
-                        return count
+                        return next(iter(result.values()), 0)
                     elif query_type == QueryTypes.GROUP_COUNT:
                         result = await cursor.fetchall()
                         return 0 if not result else len(result)
                     elif query_type == QueryTypes.CREATE:
                         result = cursor.rowcount > 0
-                        id = cursor.lastrowid
+                        row = await cursor.fetchone() if cursor.description else None
+                        id = next(iter(row.values())) if row else None
                         return result, id
                     elif query_type == QueryTypes.CREATEBATCH:
                         count = cursor.rowcount
-                        id = cursor.lastrowid
+                        id = None
                         return count, id
                     elif query_type == QueryTypes.UPDATE:
                         return cursor.rowcount > 0
@@ -84,31 +83,29 @@ class Postgres(MeteBase):
                     elif query_type == QueryTypes.DELETE:
                         return cursor.rowcount > 0
         except Exception as e:
-            error(f"[PG] query error: {e}, SQL: {sql} ,params: {params}")
-            error(e)
+            error("[PG] query failed (%s)", type(e).__name__)
+            raise
 
     async def create_engine(self, **kw):
         try:
-            host = (kw.get("host", "localhost"),)
-            port = (kw.get("port", 5432),)
-            user = (kw.get("username"),)
-            password = (str(kw.get("password", "")),)
-            db = (kw.get("db"),)
-            dsn = f"dbname={db[0]} user={user[0]} password={password[0]} host={host[0]} port={port[0]}"  # aiopg
-            # dsn = f"postgres://{user[0]}:{password[0]}@{host[0]}:{port[0]}/{db[0]}" # asyncpg
             self.pool = await aiopg.create_pool(
-                dsn=dsn,
+                host=kw.get("host") or "localhost",
+                port=int(kw.get("port") or 5432),
+                user=kw.get("username"),
+                password=kw.get("password") or "",
+                dbname=kw.get("db"),
                 timeout=float(kw.get("timeout", 60)),
                 echo=kw.get("echo", False),  # aiopg
                 # max_size=kw.get("maxsize", 10), # asyncpg
                 # min_size=kw.get("minsize", 5), # asyncpg
-                maxsize=kw.get("maxsize", 10),  # aiopg
-                minsize=kw.get("minsize", 5),  # aiopg
+                maxsize=int(kw.get("maxsize", 10)),
+                minsize=int(kw.get("minsize", 5)),
             )
             info(f"Database connection successfully for postgres/{kw.get('db')}")
         except Exception as e:
             error(e)
             # print(traceback.format_exc())
             error(f"Database connection failed,the instance : postgres/{kw.get('db')}")
+            raise
 
         return self

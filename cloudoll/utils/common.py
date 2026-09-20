@@ -1,4 +1,5 @@
 import asyncio
+import errno
 
 from cloudoll.logging import warning
 
@@ -46,7 +47,7 @@ async def check_port_open(port: int, delay: float = 1) -> None:
             )
         except OSError as e:
             print(e.errno)
-            if e.errno != 48:
+            if e.errno != errno.EADDRINUSE:
                 raise
             warning("port %d is already in use, waiting %d...", port, i)
             await asyncio.sleep(delay)

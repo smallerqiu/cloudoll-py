@@ -17,8 +17,9 @@ def get_config(env):
     with open(conf_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
     try:
-        config_ori = EnvYAML(conf_path, strict=False)
+        config_ori = EnvYAML(conf_path, strict=True)
         config = dict(config_ori)
-    except BaseException as e:
+    except Exception as e:
         error(e)
+        raise
     return config or {}

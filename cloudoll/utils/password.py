@@ -18,7 +18,7 @@ class CryFernet:
 
 def hash(value: str, key: str) -> str:
     sha256 = hashlib.sha256()
-    input = value + key if key else ""
+    input = value + (key or "")
     sha256.update(input.encode("utf-8"))
     return sha256.hexdigest()
 

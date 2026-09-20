@@ -5,14 +5,16 @@ __author__ = "Qiu / smallerqiu@gmail.com"
 
 import argparse
 import asyncio
-import base64
 import hashlib
 import importlib.util
 import inspect
 import json
+import os
+import secrets
 import sys
 import time
 import uuid
+from contextvars import ContextVar
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -33,12 +35,14 @@ from aiohttp_session import (
     redis_storage,
     setup,
 )
-from cloudoll.logging import info
-from cloudoll.orm import create_engine, parse_coon
+from cloudoll.logging import info, warning
+from cloudoll.orm import create_engine
 from cloudoll.orm.model import Model
 from cloudoll.utils.common import Object, chainMap
 from cloudoll.web import jwt
 from cloudoll.web.settings import get_config
+
+_active_app = ContextVar("cloudoll_application", default=None)
 
 
 class RequestHandler(object):
@@ -46,7 +50,11 @@ class RequestHandler(object):
         self.fn = fn
 
     async def __call__(self, request: Request):
-        return await _render_result(request, self.fn)
+        token = _active_app.set(request.app.cloudoll_application)
+        try:
+            return await _render_result(request, self.fn)
+        finally:
+            _active_app.reset(token)
 
 
 async def _set_session_route(request: Request):
@@ -133,12 +141,17 @@ def _sa_ignore_hash(method, path):
 
 
 def _parse_int(num):
-    return eval(num) if isinstance(num, str) else num
+    if num is None or isinstance(num, int):
+        return num
+    if isinstance(num, str):
+        return int(num.strip())
+    raise TypeError(f"Expected an integer or numeric string, got {type(num).__name__}")
 
 
 def _sa_ignore_middleware():
     async def set_ignore(ctx, handler):
-        hash_str = _sa_ignore_hash(ctx.method, ctx.path)
+        route_path = getattr(ctx.match_info.route.resource, "canonical", ctx.path)
+        hash_str = _sa_ignore_hash(ctx.method, route_path)
         ctx.is_sa_ignore = hash_str in ctx.app.ignore_paths
         start_time = time.time()
         response = await handler(ctx)
@@ -159,6 +172,9 @@ class Application(object):
         self._middleware = []
         self.config = {}
         self.clean_up = False
+        self._session_secret = None
+        self._ignore_paths = set()
+        self.template_env = None
 
     def _load_life_cycle(self, entry_model=None, func_name=None):
         try:
@@ -167,18 +183,20 @@ class Application(object):
 
             entry = importlib.import_module(entry_model, ".")
 
-            if func_name and hasattr(entry, func_name):
-                func = getattr(entry, func_name)
-                func(self)
+            if func_name:
+                if hasattr(entry, func_name):
+                    getattr(entry, func_name)(self)
                 return
 
             life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "on_task"]
             for cycle in life_cycle:
                 if hasattr(entry, cycle):
                     cy = getattr(self, cycle)
-                    if cy:
+                    if cy is not None:
                         cy.append(getattr(entry, cycle))
-        except ImportError:
+        except ModuleNotFoundError as exc:
+            if exc.name != entry_model:
+                raise
             info(f"Entry model:{entry_model} can not find.")
 
     def _init_parse(self):
@@ -192,14 +210,25 @@ class Application(object):
         except Exception:
             pass
 
-    def create(self, env: str, entry_model: str, config=None):
+    def create(self, env: str = "local", entry_model: str = "app", config=None):
+        if self.app is not None:
+            raise RuntimeError("Application already created; create a new Application instance")
+        token = _active_app.set(self)
+        try:
+            return self._create(env, entry_model, config)
+        finally:
+            _active_app.reset(token)
+
+    def _create(self, env, entry_model, config):
         # self.init_parse()
         self.env = env
-        loop = asyncio.get_event_loop()
-        if loop is None:
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
             loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         self._loop = loop
-        if not config:
+        if config is None:
             config = get_config(env or "local")
         self.config = config
 
@@ -213,23 +242,22 @@ class Application(object):
         # middlewares
         _auto_reg_module("middlewares")
 
-        conf_server = self.config.get("server", {})
+        conf_server = self.config.get("server") or {}
         client_max_size = 1024**2 * 2
         if conf_server is not None:
             client_max_size = conf_server.get("client_max_size", client_max_size)
         self.app = web.Application(
             logger=None,
-            loop=loop,
             middlewares=self._middleware,
             client_max_size=_parse_int(client_max_size),
         )
 
         # load life
         entry = conf_server.get("entry", entry_model)
-        self._load_life_cycle(entry)
 
         # database
-        self.app.ignore_paths = set()
+        self.app.ignore_paths = self._ignore_paths
+        self.app.cloudoll_application = self
         self.app.db = Object()
         self.app.on_startup.append(self._init_database)
         self.app.on_cleanup.append(self._close_database)
@@ -239,6 +267,7 @@ class Application(object):
         self.app.jwt_decode = self.jwt_decode
         # session
         self.app.on_startup.append(self._init_session)
+        self._load_life_cycle(entry)
         # router:
         _auto_reg_module("controllers")
 
@@ -254,34 +283,31 @@ class Application(object):
         if templates_dir.exists():
             from jinja2 import Environment, FileSystemLoader
 
-            self.env = Environment(
+            self.template_env = Environment(
                 loader=FileSystemLoader(templates_dir), autoescape=True
             )
 
         return self
 
     async def release(self):
-        try:
-            await self._close_database(self.app)
-        except:
-            pass
+        await self._close_database(self.app)
 
     async def _close_database(self, apps):
         if apps is None or self.clean_up:
             return
+        errors = []
+        resources = list(apps.db.values())
+        resources += [getattr(apps, name) for name in ("redis", "memcached") if hasattr(apps, name)]
+        for resource in resources:
+            try:
+                result = resource.close()
+                if inspect.isawaitable(result):
+                    await result
+            except Exception as exc:
+                errors.append(exc)
+        if errors:
+            raise errors[0]
         self.clean_up = True
-
-        for db in apps.db:
-            info(f"release database {db}.")
-            await apps.db[db].close()
-
-        # close for session
-        if "redis" in apps:
-            info("release redis session.")
-            await apps.redis.close()
-        if "memcached" in apps:
-            info("release memcached session")
-            apps.memcached.close()
 
     async def _init_database(self, apps):
         conf_db = self.config.get("database")
@@ -290,29 +316,46 @@ class Application(object):
             #     apps.db[db_key] = await create_engine(**conf_db[db_key])
 
             tasks = [create_engine(**conf_db[db_key]) for db_key in conf_db]
-            engines = await asyncio.gather(*tasks)
+            engines = await asyncio.gather(*tasks, return_exceptions=True)
             for db_key, engine in zip(conf_db.keys(), engines):
-                apps.db[db_key] = engine
+                if not isinstance(engine, BaseException):
+                    apps.db[db_key] = engine
+            failures = [engine for engine in engines if isinstance(engine, BaseException)]
+            if failures:
+                await self._close_database(apps)
+                raise failures[0]
 
     async def _init_session(self, apps):
         config = self.config or {}
         sess = config.get("session", {})
 
         max_age = sess.get("max_age")
-        httponly = sess.get("httponly")
+        httponly = sess.get("httponly", True)
         cookie_name = sess.get("key", "CLOUDOLL_SESSION")
-        secure = sess.get("secure")
+        secure = sess.get("secure", False)
 
         # redis
         redis_conf = sess.get("redis")
+        if isinstance(redis_conf, str):
+            redis_conf = {"url": redis_conf}
         mcache_conf = sess.get("memcached")
 
         if redis_conf:
             redis_url = redis_conf.get("url")
             qs = {}
             if not redis_url:
-                cfg, qs = parse_coon(redis_url)
-                redis_url = f"{cfg['type']}://{cfg['username']}:{cfg['password']}@{cfg['host']}:{cfg['port']}/{cfg['db']}"
+                redis_type = redis_conf.get("type", "redis")
+                username = redis_conf.get("username")
+                password = redis_conf.get("password")
+                auth = ""
+                if username is not None:
+                    auth = f"{parse.quote(str(username), safe='')}:{parse.quote(str(password or ''), safe='')}@"
+                elif password is not None:
+                    auth = f":{parse.quote(str(password), safe='')}@"
+                host = redis_conf.get("host", "localhost")
+                port = redis_conf.get("port", 6379)
+                db = redis_conf.get("db", 0)
+                redis_url = f"{redis_type}://{auth}{host}:{port}/{db}"
 
             from redis import asyncio as aioredis
 
@@ -345,18 +388,26 @@ class Application(object):
             setup(apps, storage)
             info("starting a memcached session.")
         else:
-            dig = hashlib.sha256(cookie_name.encode()).digest()
-            fernet_key = base64.urlsafe_b64encode(dig)
-            secret_key = base64.urlsafe_b64decode(fernet_key)
-
-            # fernet_key = fernet.Fernet.generate_key()
-            # secret_key = base64.urlsafe_b64decode(fernet_key)
+            configured_secret = sess.get("secret_key") or os.getenv(
+                "CLOUDOLL_SESSION_SECRET"
+            )
+            if configured_secret:
+                secret_key = hashlib.sha256(str(configured_secret).encode()).digest()
+            else:
+                if self._session_secret is None:
+                    self._session_secret = secrets.token_bytes(32)
+                    warning(
+                        "No session secret configured; using a random process-local key. "
+                        "Set session.secret_key or CLOUDOLL_SESSION_SECRET in production."
+                    )
+                secret_key = self._session_secret
 
             storage = cookie_storage.EncryptedCookieStorage(
                 secret_key,
                 cookie_name=cookie_name,
                 max_age=_parse_int(max_age),
                 httponly=httponly,
+                secure=secure,
             )
             setup(apps, storage)
             info("starting local cookie.")
@@ -392,13 +443,13 @@ class Application(object):
         def inner(handler):
             handler = RequestHandler(handler)
             if self.router is not None:
-                self.router.add_route(method, path, handler, name=name)
+                self.router.add_route(method, path, handler.__call__, name=name)
+            else:
+                self._route_table.route(method, path, name=name)(handler.__call__)
             return handler
 
         if sa_ignore:
-            if self.app is not None:
-                hash_str = _sa_ignore_hash(method, path)
-                self.app.ignore_paths.add(hash_str)
+            self._ignore_paths.add(_sa_ignore_hash(method, path))
         return inner
 
     def add_middleware(self, func):
@@ -469,7 +520,11 @@ class View(web.View):
         func = getattr(self, request.method.lower(), None)
         if func is None:
             self._raise_allowed_methods()
-        return await _render_result(request, func)
+        token = _active_app.set(request.app.cloudoll_application)
+        try:
+            return await _render_result(request, func)
+        finally:
+            _active_app.reset(token)
 
 
 app = Application()
@@ -532,27 +587,28 @@ async def WebStream(
 
 
 def get(path: str, name=None, sa_ignore=False):
-    return app.add_router(path, "GET", name, sa_ignore)
+    return (_active_app.get() or app).add_router(path, "GET", name, sa_ignore)
 
 
 def post(path: str, name=None, sa_ignore=False):
-    return app.add_router(path, "POST", name, sa_ignore)
+    return (_active_app.get() or app).add_router(path, "POST", name, sa_ignore)
 
 
 def put(path: str, name=None, sa_ignore=False):
-    return app.add_router(path, "PUT", name, sa_ignore)
+    return (_active_app.get() or app).add_router(path, "PUT", name, sa_ignore)
 
 
 def delete(path: str, name=None, sa_ignore=False):
-    return app.add_router(path, "DELETE", name, sa_ignore)
+    return (_active_app.get() or app).add_router(path, "DELETE", name, sa_ignore)
 
 
 def routes(path: str, sa_ignore=False):
+    current = _active_app.get() or app
     if sa_ignore:
         for method in hdrs.METH_ALL:
             hash_str = _sa_ignore_hash(method, path)
-            app.app.ignore_paths.add(hash_str)
-    return app.route_table.view(path)
+            current._ignore_paths.add(hash_str)
+    return current.route_table.view(path)
 
 
 def render_error(msg, status=500) -> Response:
@@ -560,13 +616,15 @@ def render_error(msg, status=500) -> Response:
 
 
 def render_json(data, **kw) -> Response:
+    message = kw.pop("message", "OK")
+    code = kw.pop("code", kw.get("status", 200))
     res = {}
     if isinstance(data, dict):
         res.update(data)
     else:
         res["data"] = data
-    res.setdefault("message", kw.get("message", "OK"))
-    res.setdefault("code", kw.get("code", 200))
+    res.setdefault("message", message)
+    res.setdefault("code", code)
 
     res["timestamp"] = int(datetime.now().timestamp() * 1000)
     return web.json_response(
@@ -575,7 +633,7 @@ def render_json(data, **kw) -> Response:
 
 
 def middleware(func):
-    return app.add_middleware(func)
+    return (_active_app.get() or app).add_middleware(func)
 
 
 def render(**kw) -> Response:
@@ -584,8 +642,10 @@ def render(**kw) -> Response:
 
 def render_view(template: str, *args, **kw) -> Response:
     body = None
-    if app.env is not None:
-        body = app.env.get_template(template).render(*args)
+    current = _active_app.get() or app
+    if current.template_env is None:
+        raise RuntimeError("No template directory configured")
+    body = current.template_env.get_template(template).render(*args)
     view = render(body=body, **kw)
     view.content_type = "text/html;charset=utf-8"
     return view

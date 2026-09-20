@@ -12,7 +12,7 @@ __all__ = ["parse_coon"]
 def parse_coon(url: str):
     pattern = re.compile(
         r"""
-            (?P<type>[\w\+]+)://
+            (?P<type>[\w\+\-]+)://
             (?:
                 (?P<username>[^:/]*)
                 (?::(?P<password>[^@]*))?

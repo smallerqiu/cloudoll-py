@@ -60,8 +60,8 @@ class Client(object):
         self._content = None
         self._subject = None
         smtp_server = config.get("smtp_server")
-        debug_level = config.get("debug_level", 1)
-        port = config.get("port", 25)
+        debug_level = config.get("debug_level", 0)
+        port = config.get("port", 465)
         self._account = config.get("account", "")
         self._account_name = config.get("account_name", "")
         self._password = config.get("password", "")
@@ -83,7 +83,7 @@ class Client(object):
                 raise KeyError("请设置账号密码")
             info("登录中...")
             self._server.login(account, password)
-        except BaseException as e:
+        except Exception as e:
             error(e)
             raise
 
@@ -109,8 +109,11 @@ class Client(object):
             to_addr = list(map(lambda x: x["addr"], self._to_addr))
             self._server.sendmail(self._account, to_addr, msg.as_string())
             self._server.quit()
-        except BaseException as er:
+        except Exception as er:
             error(er)
+            raise
+        finally:
+            self._server.close()
 
     def add_to_addr(self, nick, addr):
         """
@@ -137,12 +140,7 @@ class Client(object):
         """
         index = self._file_index
         with open(filepath, "rb") as f:
-            mime_type = ""
-            mime_types = mimetypes.guess_type(filepath)  # image/png
-            if len(mime_types) > 0:
-                mime_type = mime_types[0]
-            else:
-                error("无法匹配附件类型,可以尝试安装httpd服务")
+            mime_type = mimetypes.guess_type(filepath)[0] or "application/octet-stream"
             ## 这里如果拿不到type 需要安装httpd ,dnf install httpd
             [t, n] = mime_type.split("/")
             filename = os.path.basename(filepath)  # 'a.txt'

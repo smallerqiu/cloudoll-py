@@ -65,7 +65,7 @@ def gen(**config: Any) -> None:
 @click.option(
     "-env", "--environment", help="Environment, local / test / prod", default="local"
 )
-@click.option("-p", "--port", help="Server's port", default=None)
+@click.option("-p", "--port", help="Server's port", type=int, default=None)
 @click.option("-h", "--host", help="Server's host", default=None)
 @click.option(
     "-m", "--mode", help="development or production mode", default="development"
@@ -117,6 +117,7 @@ def stop(name):
 @click.option(
     "-f",
     "--force",
+    is_flag=True,
     help="Force restart even if the service is not running",
     required=False,
 )

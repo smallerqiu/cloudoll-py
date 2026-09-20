@@ -87,6 +87,8 @@ celerybeat-schedule
 
 # virtualenv
 venv/
+.venv/
+.pytest_cache/
 ENV/
 
 # Spyder project settings

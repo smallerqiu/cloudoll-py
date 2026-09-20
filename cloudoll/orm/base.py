@@ -17,12 +17,15 @@ class QueryTypes(Enum):
 
 
 class MeteBase:
+    async def __aenter__(self):
+        return self
+
     # def __init__(self):
     # self.pool: Optional[MyPool | PGPool] = None
     # self.cursor: Optional[Cursor] = None
     # self.conn: Optional[Connection] = None
 
-    async def __aexit__(self):
+    async def __aexit__(self, exc_type, exc_value, traceback):
         await self.close()
 
     async def close(self): ...

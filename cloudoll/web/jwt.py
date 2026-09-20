@@ -19,11 +19,13 @@ def encode(payload, key, exp: Union[int, str] = 3600) -> str:
     :params exp 过期时间单位秒，默认1个小时
     """
     headers = dict(typ="jwt", alg="HS256")
-    exp_seconds = eval(exp) if isinstance(exp, str) else exp
-    exp_datetime = datetime.datetime.now() + datetime.timedelta(
+    exp_seconds = int(exp.strip()) if isinstance(exp, str) else exp
+    if not isinstance(exp_seconds, int) or exp_seconds <= 0:
+        raise ValueError("exp must be a positive number of seconds")
+    exp_datetime = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
         seconds=exp_seconds
     )  # 过期时间
-    payload["exp"] = int(exp_datetime.timestamp())
+    payload = dict(payload, exp=int(exp_datetime.timestamp()))
     result = jwt.encode(payload=payload, key=key, algorithm="HS256", headers=headers)
     return result
 

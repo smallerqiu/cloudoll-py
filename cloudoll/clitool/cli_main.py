@@ -1,4 +1,5 @@
 import os
+import secrets
 import shutil
 import sys
 import threading
@@ -40,7 +41,7 @@ def run_app(**config_kwargs: Any):
                 env=config.environment, config=app_config, entry_model=config.entry
             )
             ProcessManager.save_pid(config.name, os.getpid())
-            App.run()
+            App.run(**{k: config[k] for k in ("host", "port", "path") if config.get(k) is not None})
         finally:
             ProcessManager.cleanup(config.name)
     else:
@@ -81,22 +82,20 @@ async def run_gen(**config_kwargs: Any):
             f"Can't find the database config key ->{config.database} in conf.{config.environment}.yaml"
         )
     sa = await create_engine(**db_config)
-    if sa.pool is None:
-        return
-    model_path = Path(config.path)
-    tables = None
-    if config.table and config.table != "ALL":
-        tables = config.table.split(",")
-    if tables is None:
-        return
-    if config.create == "model":
-        await create_models(sa, config.path, tables=tables)
-        info(f"Model save at:{model_path}")
-    elif config.create == "table":
-        if model_path is None:
-            raise ValueError("Need package name or model name.")
-        await create_tables(sa, model_path, tables=tables)
-    return sa
+    try:
+        model_path = Path(config.path)
+        tables = None
+        if config.table and config.table.upper() != "ALL":
+            tables = [table.strip() for table in config.table.split(",") if table.strip()]
+        if config.create == "model":
+            await create_models(sa, config.path, tables=tables)
+            info(f"Model save at:{model_path}")
+        elif config.create == "table":
+            await create_tables(sa, model_path, tables=tables)
+        else:
+            raise ValueError("create must be 'model' or 'table'")
+    finally:
+        await sa.close()
 
 
 def create_project(project_name: str) -> None:
@@ -124,6 +123,10 @@ def create_project(project_name: str) -> None:
                 shutil.copytree(str(item), dst)
             else:
                 shutil.copy2(str(item), dst)
+        config_path = project_dir / "config" / "conf.local.yaml"
+        text = config_path.read_text(encoding="utf-8")
+        text = text.replace("$CLOUDOLL_JWT_SECRET", secrets.token_urlsafe(48))
+        config_path.write_text(text, encoding="utf-8")
     finally:
         stop["stop"] = True
         t.join()

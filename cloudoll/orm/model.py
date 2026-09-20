@@ -27,6 +27,11 @@ class ModelMetaclass(type):
         table_name = attrs.get("__table__", None) or name
         primary_key = None
         fields = []
+        inherited = {}
+        for base in reversed(bases):
+            for key in getattr(base, "__fields__", []):
+                inherited[key] = copy.copy(getattr(base, key))
+        attrs = {**inherited, **attrs}
         for k, v in attrs.items():
             if isinstance(v, Field):
                 v.name = k
@@ -80,11 +85,13 @@ class Model(metaclass=ModelMetaclass):
     __limit__: Optional[str]
     __offset__: Optional[str]
     __is_pg__: bool
+    __is_pg = False
 
     def __init__(self, **kw):
         for k in self.__fields__:
-            f: Field = getattr(self, k)
+            f = copy.copy(getattr(type(self), k))
             f.value = None
+            object.__setattr__(self, k, f)
         for k, v in kw.items():
             self[k] = v
 
@@ -130,10 +137,10 @@ class Model(metaclass=ModelMetaclass):
 
     # for get
     def get(self, k, d=None):
-        f = getattr(self, k)
+        f = getattr(self, k, None)
         if isinstance(f, Field):
-            return f.value or d
-        return f or d
+            return d if f.value is None else f.value
+        return d if f is None else f
 
     def _get_primary(self):
         pk = self.__primary_key__
@@ -155,13 +162,13 @@ class Model(metaclass=ModelMetaclass):
 
     @classmethod
     def use(cls, pool):
-        cls.__pool__: MeteBase = pool
-        cls.__is_pg = (
-            pool.driver in ["postgres", "postgressql", "aws-postgres"]
-            if pool and pool.driver
-            else False
+        instance = cls()
+        instance.__pool__ = pool
+        instance.__is_pg = (
+            getattr(pool, "driver", None)
+            in ["postgres", "postgresql", "postgressql", "aws-postgres"]
         )
-        return cls()
+        return instance
 
     def select(self, *args):
         """
@@ -184,6 +191,7 @@ class Model(metaclass=ModelMetaclass):
             elif isinstance(col, Function):
                 q, p = col.sql()
                 cols.append(q)
+                self._merge_params(p)
             elif isinstance(col, Expression):
                 q, p = col.sql()
                 cols.append(q)
@@ -196,18 +204,21 @@ class Model(metaclass=ModelMetaclass):
         output: "join B on A.id = B.id"
         """
         ex = reduce(operator.and_, exp)
-        q = ""
-        if isinstance(ex, Expression) or isinstance(ex, Function):
-            q, p = ex.sql()
-            self._merge_params(p)
-        else:
-            q = ex
-        join = f"{model.__table__} ON {q if q else ''}"
         if self.__join__ is None:
-            self.__join__ = join
-        else:
-            self.__join__ += join
+            self.__join__ = []
+        self.__join__.append((model.__table__, ex))
         return self
+
+    def _build_join(self):
+        parts = []
+        for table, expression in self.__join__ or []:
+            if isinstance(expression, (Expression, Function)):
+                sql, params = expression.sql()
+                self._merge_params(params)
+            else:
+                sql = expression
+            parts.append(f"LEFT JOIN {table} ON {sql}")
+        return " ".join(parts)
 
     def where(self, *exp):
         if self.__where__ is not None:
@@ -284,6 +295,9 @@ class Model(metaclass=ModelMetaclass):
             elif v is not None:  # fix sql format %s
                 keys.append("`%s`=?" % k)
                 params.append(v)
+            elif args:
+                keys.append("`%s`=?" % k)
+                params.append(None)
         return ",".join(keys), params
 
     def _get_insert_key_args(self, action, args):
@@ -311,18 +325,24 @@ class Model(metaclass=ModelMetaclass):
         values = []
         item = items[0]
         if isinstance(item, Model):
-            keys = item.__dict__.keys()
+            keys = item.__fields__
         elif isinstance(item, dict):
             keys = item.keys()
 
         for item in items:
             value = []
             if isinstance(item, Model):
-                for k in item.__fields__:
+                if set(item.__fields__) != set(keys):
+                    raise ValueError("Batch rows must have identical columns")
+                for k in keys:
                     value.append(item[k].value)
             elif isinstance(item, dict):  # for object
-                for k, v in item.items():
-                    value.append(v)
+                if set(item) != set(keys):
+                    raise ValueError("Batch rows must have identical columns")
+                for k in keys:
+                    value.append(item[k])
+            else:
+                raise TypeError("Batch rows must be models or dictionaries")
             value = tuple(key for key in value)
             values.append(value)
         return keys, values
@@ -347,8 +367,9 @@ class Model(metaclass=ModelMetaclass):
         return ""
 
     def _sql(self):
+        self.__params__ = None
         COLS = self._build_select()
-        JOIN = self._literal("LEFT JOIN", self.__join__)
+        JOIN = self._build_join()
         WHERE = self._literal("WHERE", self.__where__)
         GROUPBY = self._literal("GROUP BY", self.__group_by__)
         HAVING = self._literal("HAVING", self.__having__)
@@ -374,13 +395,15 @@ class Model(metaclass=ModelMetaclass):
         sql = self._sql()
         sql = self._exchange_sql(sql)
         args = self.__params__
-        rs = await self.__pool__.one(sql, args)
-        if rs:
-            # join 时返回dict
-            result = Object(rs) if self.__join__ is not None else self(**rs)
+        has_join = self.__join__ is not None
+        try:
+            rs = await self.__pool__.one(sql, args)
+            if rs:
+                # join 时返回dict
+                return Object(rs) if has_join else self(**rs)
+            return None
+        finally:
             self._reset()
-            return result
-        return None
 
     async def all(self) -> List[Any]:
         sql = self._sql()
@@ -415,6 +438,7 @@ class Model(metaclass=ModelMetaclass):
         """
         table = self.__table__
         # where = self.__where__
+        self.__params__ = None
         where = self._literal("WHERE", self.__where__)
 
         keys, params = self._get_update_key_args("u", args or kw)
@@ -447,6 +471,7 @@ class Model(metaclass=ModelMetaclass):
         Delete data
         """
         table = self.__table__
+        self.__params__ = None
         where = self._literal("WHERE", self.__where__)
         args = self.__params__
         sql = f"delete from `{table}` {where}"
@@ -467,6 +492,9 @@ class Model(metaclass=ModelMetaclass):
         keys, params = self._get_insert_key_args("i", args or kw)
         escape_keys = [f"`{k}`" for k in keys]
         sql = f"insert into `{table}` ({','.join(escape_keys)}) values ({','.join(['?' for k in keys])})"
+        if self.__is_pg and self.__primary_key__:
+            sql += f' RETURNING "{self.__primary_key__}"'
+        sql = self._exchange_sql(sql)
         self._reset()
         params = tuple(key for key in params)
         return await self.__pool__.create(sql, params)
@@ -484,8 +512,9 @@ class Model(metaclass=ModelMetaclass):
     async def count(self) -> int:
         # __where__ = copy.copy(self.__where__)
         # __join__ = copy.copy(self.__join__)
-        cls = copy.deepcopy(self)
-        JOIN = cls._literal("LEFT JOIN", self.__join__)
+        cls = copy.copy(self)
+        cls.__params__ = None
+        JOIN = cls._build_join()
         WHERE = cls._literal("WHERE", self.__where__)
         GROUPBY = self._literal("GROUP BY", self.__group_by__)
         aft = " ".join([JOIN, WHERE, GROUPBY])

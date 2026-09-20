@@ -1,3 +1,5 @@
+import asyncio
+
 from aws_advanced_python_wrapper import AwsWrapperConnection
 from aws_advanced_python_wrapper.connection_provider import ConnectionProviderManager
 from aws_advanced_python_wrapper.sql_alchemy_connection_provider import (
@@ -45,22 +47,30 @@ class AwsMysql(MeteBase):
         ConnectionProviderManager.set_connection_provider(provider)
 
     async def close(self):
-        ConnectionProviderManager.release_resources()
+        await asyncio.to_thread(ConnectionProviderManager.release_resources)
 
     async def create_engine(self, **kw):
-        self._dsn = f"host={kw.get("host")} database={kw.get("db")} user={kw.get("username")} password={kw.get("password","")}"
         self._params = {
-            "plugins": kw.get("plugins", ""),
-            "wrapper_dialect": kw.get("wrapper_dialect", ""),
+            "host": kw.get("host", "localhost"),
+            "port": int(kw.get("port") or 3306),
+            "database": kw.get("db"),
+            "user": kw.get("username"),
+            "password": kw.get("password") or "",
             "autocommit": True,
         }
+        for option in ("plugins", "wrapper_dialect"):
+            if kw.get(option) is not None:
+                self._params[option] = kw[option]
         return self
 
     async def query(self, sql, params=None, query_type=QueryTypes.ONE, size=10):
+        return await asyncio.to_thread(self._query, sql, params, query_type, size)
+
+    def _query(self, sql, params, query_type, size):
         sql = sql.replace("?", "%s")
         try:
             with AwsWrapperConnection.connect(
-                Connect, self._dsn, **self._params
+                Connect, **self._params
             ) as conn:
                 with conn.cursor(dictionary=True) as cursor:
                     if (
@@ -103,5 +113,5 @@ class AwsMysql(MeteBase):
                     elif query_type == QueryTypes.DELETE:
                         return cursor.rowcount > 0
         except Exception as e:
-            error(f"[AWS MYSQL] query error: {e}, SQL: {sql} ,params: {params}")
-            raise e
+            error("[AWS MYSQL] query failed (%s)", type(e).__name__)
+            raise

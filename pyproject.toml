@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,20 +10,18 @@ authors = [
   {name = "Qiu", email = "smallerqiu@gmail.com"},
 ]
 readme = "README.md"
-requires-python = ">=3.6.0"
+requires-python = ">=3.9"
 license = "MIT"
 keywords = ["Microservices", "aiohttp", "cloudoll"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
   "watchfiles",
   "colorlog",
-  "aiomysql",
-  "aiopg",
   "aiohttp",
   "redis[hiredis]",
   "aiomcache",
@@ -35,11 +33,23 @@ dependencies = [
   "envyaml",
   "psutil",
   "tabulate",
-  "concurrent_log_handler",
-  "aws-advanced-python-wrapper",
-  "mysql-connector-python",
-  "psycopg"
+  "concurrent_log_handler"
 ]
+
+[project.optional-dependencies]
+mysql = ["aiomysql>=0.2,<1"]
+postgres = ["aiopg>=1.4,<2"]
+aws = ["aws-advanced-python-wrapper>=2,<4", "mysql-connector-python>=8", "psycopg[binary]>=3,<4", "sqlalchemy>=2,<3"]
+dev = ["pytest>=7", "pytest-asyncio>=0.21", "build", "setuptools>=77", "wheel"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "cloudoll/orm/test_sql.py"]
+asyncio_mode = "auto"
+
+[tool.setuptools.packages.find]
+include = ["cloudoll*"]
+namespaces = true
+exclude = ["cloudoll.*.__pycache__", "cloudoll.*.__pycache__.*"]
 
 [project.urls]
 Homepage = "https://github.com/smallerqiu/cloudoll-py"
@@ -47,3 +57,14 @@ Repository = "https://github.com/smallerqiu/cloudoll-py"
 
 [project.scripts]
 cloudoll = "cloudoll.cli:cli"
+
+[tool.setuptools.package-data]
+"cloudoll.template" = [
+  "README.md",
+  "requirements.txt",
+  "config/*.yaml",
+  "controllers/**/*.py",
+  "middlewares/*.py",
+  "static/**/*",
+  "templates/*.html",
+]

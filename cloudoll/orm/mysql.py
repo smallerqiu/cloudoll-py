@@ -40,7 +40,7 @@ class Mysql(MeteBase):
             if not self.pool:
                 raise ValueError("must be create_engine first.")
             if self.pool._closing or self.pool._closed:
-                return None
+                raise RuntimeError("Database pool is closed")
             async with self.pool.acquire() as conn:
                 if conn.echo:
                     info("sql: %s , %s", sql, params)
@@ -89,24 +89,23 @@ class Mysql(MeteBase):
                     elif query_type == QueryTypes.DELETE:
                         return cursor.rowcount > 0
 
-            self.pool.release(conn)
         except Exception as e:
-            error(f"[MYSQL] query error: {e}, SQL: {sql} ,params: {params}")
-            raise e
+            error("[MYSQL] query failed (%s)", type(e).__name__)
+            raise
 
     async def create_engine(self, loop=None, **kw):
         try:
             self.pool = await aiomysql.create_pool(
-                host=kw.get("host", "localhost"),
-                port=kw.get("port", 3306),
+                host=kw.get("host") or "localhost",
+                port=int(kw.get("port") or 3306),
                 user=kw.get("username"),
                 password=str(kw.get("password", "")),
                 db=kw.get("db"),
                 echo=kw.get("echo", False),
                 charset=kw.get("charset", "utf8"),
                 autocommit=False,  # kw.get("autocommit", False),
-                maxsize=kw.get("maxsize", 10),
-                minsize=kw.get("minsize", 5),
+                maxsize=int(kw.get("maxsize", 10)),
+                minsize=int(kw.get("minsize", 5)),
                 cursorclass=AttrDictCursor,
                 loop=loop,
             )
@@ -114,4 +113,5 @@ class Mysql(MeteBase):
         except Exception:
             # print(traceback.format_exc())
             error(f"Database connection failed,the instance : mysql/{kw.get('db')}")
+            raise
         return self

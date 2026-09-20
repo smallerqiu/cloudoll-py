@@ -12,10 +12,16 @@ class Session:
         timeout: float = 30.0,
         max_retries: int = 1,
         retry_delay: int = 1,
+        retry_non_idempotent: bool = False,
         **kwargs,
     ):
+        if not isinstance(max_retries, int) or max_retries < 1:
+            raise ValueError("max_retries is the total number of attempts and must be >= 1")
+        if retry_delay < 0:
+            raise ValueError("retry_delay must be >= 0")
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.retry_non_idempotent = retry_non_idempotent
         self.session: ClientSession = ClientSession(
             timeout=aiohttp.ClientTimeout(total=timeout), **kwargs
         )
@@ -28,14 +34,18 @@ class Session:
     ):
         last_exception = None
 
-        for attempt in range(self.max_retries):
+        method = method.upper()
+        attempts = self.max_retries
+        if not self.retry_non_idempotent and method not in {"GET", "HEAD", "OPTIONS", "PUT", "DELETE", "TRACE"}:
+            attempts = 1
+        for attempt in range(attempts):
             try:
                 response = await self.session.request(method=method, url=url, **kwargs)
                 return response
 
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 last_exception = e
-                if attempt < self.max_retries - 1:
+                if attempt < attempts - 1:
                     await asyncio.sleep(self.retry_delay * (attempt + 1))
                 continue
             # finally:

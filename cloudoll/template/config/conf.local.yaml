@@ -15,12 +15,13 @@ server:
 #     url: redis://host:port:/0
 
 # session:
-#   max_age: 3600 * 24 * 7
+#   max_age: 604800
+#   secret_key: $CLOUDOLL_SESSION_SECRET
 #   redis: redis://host:port/0
 #   memcached:
 #     host: 192.168.1.100
 #     port: 11211
 
 jwt:
-  key: cloudoll_jwt
-  exp: 3600 * 24 * 7
+  key: $CLOUDOLL_JWT_SECRET
+  exp: 604800

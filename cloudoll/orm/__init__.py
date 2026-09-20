@@ -2,9 +2,6 @@ from redis import asyncio as aioredis
 
 from cloudoll.orm.parse import parse_coon
 
-from .mysql import Mysql
-from .postgres import Postgres
-
 __all__ = ["create_engine"]
 
 
@@ -24,17 +21,21 @@ async def create_engine(**kw):
     # info("DB Config:", configs, query)
 
     if driver == "mysql":
-        return await Mysql().create_engine(**configs, **query)
+        from .mysql import Mysql
+
+        return await Mysql().create_engine(**{**configs, **query})
     elif driver == "aws-mysql":
         from .awsmysql import AwsMysql
 
-        return await AwsMysql().create_engine(**configs, **query)
-    elif driver in ["aws-postgres", "aws-postgressql"]:
+        return await AwsMysql().create_engine(**{**configs, **query})
+    elif driver in ["aws-postgres", "aws-postgresql", "aws-postgressql"]:
         from .awspostgres import AwsPostgres
 
-        return await AwsPostgres().create_engine(**configs, **query)
-    elif driver in ["postgres", "postgressql"]:
-        return await Postgres().create_engine(**configs, **query)
+        return await AwsPostgres().create_engine(**{**configs, **query})
+    elif driver in ["postgres", "postgresql", "postgressql"]:
+        from .postgres import Postgres
+
+        return await Postgres().create_engine(**{**configs, **query})
     elif driver in ["redis", "rediss"]:
         """
         redis://[[username]:[password]]@localhost:6379/0
@@ -45,3 +46,14 @@ async def create_engine(**kw):
         return await aioredis.from_url(url, **query)
     else:
         raise ValueError("Not support this database type.")
+
+
+def __getattr__(name):
+    # Preserve explicit imports without importing every optional driver at startup.
+    if name == "Mysql":
+        from .mysql import Mysql
+        return Mysql
+    if name == "Postgres":
+        from .postgres import Postgres
+        return Postgres
+    raise AttributeError(name)

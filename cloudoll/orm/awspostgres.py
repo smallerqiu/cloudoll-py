@@ -1,3 +1,5 @@
+import asyncio
+
 import psycopg
 from aws_advanced_python_wrapper import AwsWrapperConnection
 from aws_advanced_python_wrapper.connection_provider import ConnectionProviderManager
@@ -17,22 +19,30 @@ class AwsPostgres(MeteBase):
         ConnectionProviderManager.set_connection_provider(provider)
 
     async def close(self):
-        ConnectionProviderManager.release_resources()
+        await asyncio.to_thread(ConnectionProviderManager.release_resources)
 
     async def create_engine(self, **kw):
-        self._dsn = f"host={kw.get("host")} dbname={kw.get("db")} user={kw.get("username")} password={kw.get("username")}"
         self._params = {
-            "plugins": kw.get("plugins", ""),
-            "wrapper_dialect": kw.get("wrapper_dialect"),
+            "host": kw.get("host", "localhost"),
+            "port": int(kw.get("port") or 5432),
+            "dbname": kw.get("db"),
+            "user": kw.get("username"),
+            "password": kw.get("password") or "",
             "autocommit": True,
         }
+        for option in ("plugins", "wrapper_dialect"):
+            if kw.get(option) is not None:
+                self._params[option] = kw[option]
         return self
 
     async def query(self, sql, params=None, query_type=QueryTypes.ONE, size=10):
+        return await asyncio.to_thread(self._query, sql, params, query_type, size)
+
+    def _query(self, sql, params, query_type, size):
         sql = sql.replace("?", "%s").replace("`", '"')
         try:
             with AwsWrapperConnection.connect(
-                psycopg.Connection.connect, self._dsn, **self._params
+                psycopg.Connection.connect, **self._params
             ) as conn:
                 with conn.cursor(row_factory=dict_row) as cursor:
                     if (
@@ -56,19 +66,18 @@ class AwsPostgres(MeteBase):
                         count = 0
                         if result is None:
                             return count
-                        for value in result:
-                            count = value
-                        return count
+                        return next(iter(result.values()), 0)
                     elif query_type == QueryTypes.GROUP_COUNT:
                         result = cursor.fetchall()
                         return 0 if not result else len(result)
                     elif query_type == QueryTypes.CREATE:
                         result = cursor.rowcount > 0
-                        id = cursor.target_cursor.lastrowid
+                        row = cursor.fetchone() if cursor.description else None
+                        id = next(iter(row.values())) if row else None
                         return result, id
                     elif query_type == QueryTypes.CREATEBATCH:
                         count = cursor.rowcount
-                        id = cursor.target_cursor.lastrowid
+                        id = None  # Batch inserts do not expose a portable last ID.
                         return count, id
                     elif query_type == QueryTypes.UPDATE:
                         return cursor.rowcount > 0
@@ -77,5 +86,5 @@ class AwsPostgres(MeteBase):
                     elif query_type == QueryTypes.DELETE:
                         return cursor.rowcount > 0
         except Exception as e:
-            error(f"[AWS PG] query error: {e}, SQL: {sql} params: {params}")
-            raise e
+            error("[AWS PG] query failed (%s)", type(e).__name__)
+            raise

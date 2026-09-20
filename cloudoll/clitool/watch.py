@@ -18,7 +18,7 @@ from cloudoll.web import Application, app
 
 class CloudollFilter(DefaultFilter):
     def __init__(self, ignore_dirs: tuple = ()) -> None:
-        self.ignore_dirs: tuple = self.ignore_dirs + tuple("logs")
+        self.ignore_dirs: tuple = self.ignore_dirs + ("logs",)
         if ignore_dirs:
             self.ignore_dirs = self.ignore_dirs + ignore_dirs
 
