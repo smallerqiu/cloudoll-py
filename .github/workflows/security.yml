@@ -10,8 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - run: python -m pip install --upgrade pip
@@ -19,7 +19,7 @@ jobs:
       # Audit exact installed versions, excluding only Cloudoll itself.
       # Advisory service failures also fail the gate; no blanket ignores or fixes.
       - run: python tests/audit_dependencies.py
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: dependency-audit
