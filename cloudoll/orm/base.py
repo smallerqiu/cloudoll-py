@@ -18,7 +18,7 @@ class QueryTypes(Enum):
 
 class MeteBase:
     def transaction(self):
-        raise NotImplementedError("Transactions currently support native mysql/postgres engines only")
+        raise NotImplementedError("This engine does not implement transactions")
 
     async def __aenter__(self):
         return self

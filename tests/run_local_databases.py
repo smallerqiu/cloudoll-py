@@ -23,6 +23,7 @@ def main():
     parser.add_argument("--mysql-bin", default="/opt/homebrew/opt/mysql@8.4/bin")
     parser.add_argument("--postgres-bin", default="/opt/homebrew/opt/postgresql@16/bin")
     parser.add_argument("--python", action="append", dest="interpreters")
+    parser.add_argument("--test-file", choices=["tests/integration/test_databases.py", "tests/integration/test_streaming.py"], default="tests/integration/test_databases.py")
     options = parser.parse_args()
     mysql_bin, pg_bin = Path(options.mysql_bin), Path(options.postgres_bin)
     # Do not resolve venv interpreter symlinks: that would bypass their packages.
@@ -67,7 +68,7 @@ def main():
                            CLOUDOLL_TEST_POSTGRES_URL=f"postgres://cloudoll@127.0.0.1:{pg_port}/postgres")
                 for python in interpreters:
                     print("Integration runtime:", python, flush=True)
-                    subprocess.run([python, "-m", "pytest", "-q", "tests/integration/test_databases.py"],
+                    subprocess.run([python, "-m", "pytest", "-q", options.test_file],
                                    cwd=root, env=env, check=True, timeout=180)
         except subprocess.CalledProcessError as exc:
             if exc.stderr:

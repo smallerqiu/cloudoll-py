@@ -95,6 +95,8 @@ GitHub Actions 对 Python 3.9 和 3.13 运行单元测试、MySQL 8.4/PostgreSQL
 
 ## AWS 故障切换测试
 
+AWS 驱动的事务和连接生命周期现已按官方文档改造，但这轮未运行测试。使用前请先阅读 [Aurora 接入与待验证项](aurora.md)；以下内容仅是未来实测入口，不代表改造后已验证。
+
 本地 AWS 包装驱动测试不等于真实 Aurora 故障切换测试。后者需要至少两个实例的专用 Aurora 测试集群、正确的 VPC 网络、数据库权限，以及 `rds:DescribeDBClusters`、`rds:FailoverDBCluster` 权限。
 
 测试入口为 `tests/integration/test_aws_failover.py`。它不会创建 AWS 资源，但会触发一次真实切换，使目标集群短暂不可用。普通测试和 CI 都不会自动触发切换。

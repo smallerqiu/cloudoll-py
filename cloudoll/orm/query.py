@@ -1,10 +1,11 @@
 """Query construction and execution, independent of model record values."""
+from __future__ import annotations
 import copy
 import datetime
 import operator
 from dataclasses import dataclass
 from functools import reduce
-from typing import Any, List, Tuple
+from typing import Any, AsyncContextManager, AsyncIterator, Generic, List, Optional, Tuple, TypeVar, Union, cast
 
 from cloudoll.orm.field import Expression, Field, Function
 from cloudoll.orm.model import Model
@@ -12,24 +13,28 @@ from cloudoll.orm.values import UNSET
 from cloudoll.orm.compiler import SQLCompiler
 from cloudoll.orm.dialects import dialect_for
 from cloudoll.utils.common import Object
+from cloudoll.orm.protocols import DatabaseEngine
+
+M = TypeVar("M", bound=Model)
+Row = dict[str, Any]
 
 
 @dataclass
 class QueryState:
-    joins: object = None
-    where: object = None
-    having: object = None
-    columns: object = None
-    order_by: object = None
-    group_by: object = None
-    limit: object = None
-    offset: object = None
+    joins: Optional[list[Any]] = None
+    where: Any = None
+    having: Any = None
+    columns: Optional[list[Any]] = None
+    order_by: Optional[list[Any]] = None
+    group_by: Optional[list[Any]] = None
+    limit: Optional[int] = None
+    offset: Optional[int] = None
 
 
-class Query:
+class Query(Generic[M]):
     """A mutable query builder; create or clone one per independent operation."""
 
-    def __init__(self, model, pool=None, record=None):
+    def __init__(self, model: type[M], pool: Optional[DatabaseEngine] = None, record: Optional[M] = None) -> None:
         self.model = model
         self.pool = pool
         self.record = record if record is not None else model()
@@ -37,7 +42,12 @@ class Query:
         self.compiler = SQLCompiler(self.dialect)
         self._reset()
 
-    def __getattr__(self, name):
+    def _require_pool(self) -> DatabaseEngine:
+        if self.pool is None:
+            raise RuntimeError("Bind a database engine before executing a query")
+        return self.pool
+
+    def __getattr__(self, name: str) -> Any:
         model = self.__dict__.get("model")
         if model is None:
             raise AttributeError(name)
@@ -47,45 +57,45 @@ class Query:
             return getattr(self.record, name)
         raise AttributeError(name)
 
-    def __getitem__(self, name):
+    def __getitem__(self, name: str) -> Any:
         return self.record[name]
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         model = self.__dict__.get("model")
         if model is not None and name in model.__fields__ and "record" in self.__dict__:
             setattr(self.record, name, value)
         else:
             object.__setattr__(self, name, value)
 
-    def __call__(self, **values):
+    def __call__(self, **values: Any) -> Query[M]:
         self.record = self.model(**values)
         return self
 
-    def to_dict(self):
+    def to_dict(self) -> Row:
         return self.record.to_dict()
 
-    def get(self, key, default=None):
+    def get(self, key: str, default: Any = None) -> Any:
         return self.record.get(key, default)
 
-    def _get_primary(self):
+    def _get_primary(self) -> Tuple[Optional[str], Any]:
         return self.record._get_primary()
 
-    def clone(self):
+    def clone(self) -> Query[M]:
         result = type(self)(self.model, self.pool, self.record._copy_record())
         result.state = copy.deepcopy(self.state)
         return result
 
     @staticmethod
-    def _page_number(value):
+    def _page_number(value: int) -> int:
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError("limit and offset must be non-negative integers")
         return value
 
-    def _reset(self):
+    def _reset(self) -> None:
         self.state = QueryState()
-        self.params = None
+        self.params: Optional[list[Any]] = None
 
-    def select(self, *args):
+    def select(self, *args: Any) -> Query[M]:
         """
         eg: select(A.id, A.name) \n
             select(A.id.As('ID') \n
@@ -96,7 +106,7 @@ class Query:
         self.state.columns = cols
         return self
 
-    def join(self, model, *exp):
+    def join(self, model: type[Model], *exp: Any) -> Query[M]:
         """
         input: .join(B, A.id == B.id)
         output: "join B on A.id = B.id"
@@ -107,27 +117,28 @@ class Query:
         self.state.joins.append((model.__table__, ex))
         return self
 
-    def where(self, *exp):
+    def where(self, *exp: Any) -> Query[M]:
         if self.state.where is not None:
             exp = (self.state.where,) + exp
         self.state.where = reduce(operator.and_, exp)
         return self
 
-    def having(self, *exp):
+    def having(self, *exp: Any) -> Query[M]:
         if self.state.having is not None:
             exp = (self.state.having,) + exp
         self.state.having = reduce(operator.and_, exp)
         return self
 
-    def order_by(self, *args):
+    def order_by(self, *args: Any) -> Query[M]:
         self.state.order_by = (self.state.order_by or []) + list(args)
         return self
 
-    def group_by(self, *args):
+    def group_by(self, *args: Any) -> Query[M]:
         self.state.group_by = (self.state.group_by or []) + list(args)
         return self
 
-    def _format_data(self, action, args):
+    def _format_data(self, action: str, args: Any) -> Row:
+        items: Any
         if not args:
             items = (self.record,)
         elif isinstance(args, dict):
@@ -150,7 +161,7 @@ class Query:
                 raise ValueError(f"Unknown model field: {key}")
         return data
 
-    def _write_values(self, action, args):
+    def _write_values(self, action: str, args: Any) -> Tuple[list[str], list[Any]]:
         data = self._format_data(action, args)
         if action == "i":
             # Fill only omitted values. Explicit None always means SQL NULL.
@@ -176,13 +187,13 @@ class Query:
                 params.append(value)
         return keys, params
 
-    def _get_update_key_args(self, action, args):
+    def _get_update_key_args(self, action: str, args: Any) -> Tuple[list[str], list[Any]]:
         return self._write_values("u", args)
 
-    def _get_insert_key_args(self, action, args):
+    def _get_insert_key_args(self, action: str, args: Any) -> Tuple[list[str], list[Any]]:
         return self._write_values("i", args)
 
-    def _get_batch_keys_values(self, items: list):
+    def _get_batch_keys_values(self, items: list[Any]) -> Tuple[list[str], list[Tuple[Any, ...]]]:
         keys, values = None, []
         for item in items:
             row_keys, row_values = self._write_values("i", (item,))
@@ -191,50 +202,68 @@ class Query:
             elif row_keys != keys:
                 raise ValueError("Batch rows must have identical columns after defaults")
             values.append(tuple(row_values))
-        return keys, values
+        return keys or [], values
 
-    def _sql(self):
+    def _sql(self) -> str:
         compiled = self.compiler.select(self.model, self.state)
         self.params = compiled.params or None
-        return compiled.sql
+        return cast(str, compiled.sql)
 
-    def limit(self, limit: int):
+    def limit(self, limit: int) -> Query[M]:
         self.state.limit = self._page_number(limit)
         return self
 
-    def offset(self, offset: int):
+    def offset(self, offset: int) -> Query[M]:
         self.state.offset = self._page_number(offset)
         return self
 
-    def test(self):
+    def test(self) -> Tuple[str, Optional[list[Any]]]:
         return self._sql(), self.params
 
-    async def one(self):
+    async def one(self) -> Optional[Union[M, Row]]:
         self.limit(1)
         sql = self._sql()
         sql = self._exchange_sql(sql)
         args = self.params
         has_join = self.state.joins is not None
         try:
-            rs = await self.pool.one(sql, args)
+            rs = await self._require_pool().one(sql, args)
             if rs:
                 # join 时返回dict
-                return Object(rs) if has_join else self.model(**rs)._mark_clean().bind(self.pool)
+                return Object(rs) if has_join else self.model(**rs)._mark_clean().bind(self._require_pool())
             return None
         finally:
             self._reset()
 
-    async def all(self) -> List[Any]:
+    async def all(self) -> List[Row]:
         sql = self._sql()
         sql = self._exchange_sql(sql)
         args = self.params
         self._reset()
-        return await self.pool.all(sql, args)
+        return await self._require_pool().all(sql, args)
 
-    def _exchange_sql(self, sql: str):
-        return self.dialect.normalize(sql)
+    async def one_model(self) -> Optional[M]:
+        """Typed record lookup; joined queries return mappings via one(), not models."""
+        if self.state.joins:
+            raise ValueError("one_model() cannot be used with joins; use one()")
+        return cast(Optional[M], await self.one())
 
-    def _write_condition(self, args=(), values=None):
+    def stream(self, *, batch_size: int = 1000) -> AsyncContextManager[AsyncIterator[Row]]:
+        """Snapshot the query now; open and release resources via async with."""
+        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
+            raise ValueError("batch_size must be a positive integer")
+        pool = self._require_pool()
+        stream = getattr(pool, "stream", None)
+        if stream is None:
+            raise NotImplementedError("This engine does not support streaming")
+        compiled = self.compiler.select(self.model, copy.deepcopy(self.state))
+        self._reset()
+        return cast(AsyncContextManager[AsyncIterator[Row]], stream(compiled.sql, copy.deepcopy(compiled.params), batch_size=batch_size))
+
+    def _exchange_sql(self, sql: str) -> str:
+        return cast(str, self.dialect.normalize(sql))
+
+    def _write_condition(self, args: Any = (), values: Optional[Row] = None) -> Any:
         if self.state.where is not None:
             return self.state.where
         key, value = self._get_primary()
@@ -250,7 +279,7 @@ class Query:
             raise ValueError("Writes require a where condition or primary key")
         return getattr(self.model, key) == value
 
-    async def update(self, *args, **kw) -> bool:
+    async def update(self, *args: Any, **kw: Any) -> bool:
         try:
             condition = self._write_condition(args, kw)
             keys, values = self._get_update_key_args("u", args or kw)
@@ -259,7 +288,7 @@ class Query:
             compiled = self.compiler.update(self.model, keys, values, condition)
         finally:
             self._reset()
-        result = await self.pool.update(compiled.sql, compiled.params)
+        result = await self._require_pool().update(compiled.sql, compiled.params)
         if result and not args and not kw:
             saved = copy.deepcopy(dict(zip(keys, values)))
             record = self.record
@@ -276,17 +305,17 @@ class Query:
             compiled = self.compiler.delete(self.model, self._write_condition())
         finally:
             self._reset()
-        return await self.pool.delete(compiled.sql, compiled.params)
+        return await self._require_pool().delete(compiled.sql, compiled.params)
 
-    async def insert(self, *args, **kw) -> Tuple[bool, int]:
+    async def insert(self, *args: Any, **kw: Any) -> Tuple[bool, Optional[int]]:
         try:
             keys, values = self._get_insert_key_args("i", args or kw)
             compiled = self.compiler.insert(self.model, keys, values)
         finally:
             self._reset()
-        return await self.pool.create(compiled.sql, tuple(compiled.params))
+        return await self._require_pool().create(compiled.sql, tuple(compiled.params))
 
-    async def insert_batch(self, items: list):
+    async def insert_batch(self, items: list[Any]) -> Union[int, Tuple[int, Optional[int]]]:
         if not items:
             return 0
         try:
@@ -294,8 +323,8 @@ class Query:
             compiled = self.compiler.insert(self.model, keys, [], returning=False)
         finally:
             self._reset()
-        return await self.pool.create_batch(compiled.sql, values)
+        return await self._require_pool().create_batch(compiled.sql, values)
 
     async def count(self) -> int:
         compiled = self.compiler.count(self.model, self.state)
-        return await self.pool.count(compiled.sql, compiled.params or None)
+        return await self._require_pool().count(compiled.sql, compiled.params or None)

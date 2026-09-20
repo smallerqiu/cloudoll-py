@@ -1,6 +1,10 @@
 from cloudoll.orm.parse import parse_coon
 
 from cloudoll.orm.values import UNSET
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cloudoll.orm.query import Query as Query
 
 __all__ = ["create_engine", "Query", "UNSET"]
 

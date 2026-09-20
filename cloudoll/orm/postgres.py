@@ -1,15 +1,37 @@
 """Native PostgreSQL engine with task-owned transactions."""
 import aiopg
+from uuid import uuid4
 from psycopg2.extras import RealDictCursor
 
 from cloudoll.orm.base import QueryTypes
 from cloudoll.orm.engine import AsyncEngine, cursor_result
 
 
+class _ServerCursor:
+    """aiopg cannot create named psycopg cursors in asynchronous mode."""
+    def __init__(self, cursor, name):
+        self.cursor = cursor
+        self.name = name
+
+    async def fetchmany(self, size):
+        await self.cursor.execute(f'FETCH FORWARD {size} FROM "{self.name}"')
+        return await self.cursor.fetchall()  # Only this server-side batch is buffered.
+
+    async def close(self):
+        await self.cursor.execute(f'CLOSE "{self.name}"')
+        self.cursor.close()
+
+
 class Postgres(AsyncEngine):
     def __init__(self):
         super().__init__()
         self.driver = "postgres"
+
+    async def _open_stream(self, connection, sql, params):
+        name = "cloudoll_stream_" + uuid4().hex
+        cursor = await connection.cursor(cursor_factory=RealDictCursor)
+        await cursor.execute(f'DECLARE "{name}" NO SCROLL CURSOR FOR {sql}', params)
+        return _ServerCursor(cursor, name)
 
     async def _execute(self, connection, sql, params, query_type, size):
         async with connection.cursor(cursor_factory=RealDictCursor) as cursor:

@@ -38,7 +38,7 @@ dependencies = [
 cache = ["redis[hiredis]", "aiomcache"]
 mysql = ["aiomysql>=0.2,<1"]
 postgres = ["aiopg>=1.4,<2"]
-aws = ["aws-advanced-python-wrapper>=2,<4", "mysql-connector-python>=8", "psycopg[binary]>=3,<4", "sqlalchemy>=2,<3"]
+aws = ["aws-advanced-python-wrapper>=3.1,<4", "mysql-connector-python>=8.1", "psycopg[binary]>=3.1.12,<4"]
 dev = ["pytest>=7", "pytest-asyncio>=0.21", "pytest-cov>=4", "ruff>=0.9", "mypy>=1.10", "build", "setuptools>=77", "wheel"]
 
 [tool.setuptools.dynamic]
@@ -51,10 +51,15 @@ target-version = "py39"
 select = ["E9", "F63", "F7", "F82"]
 
 [tool.mypy]
-files = ["cloudoll/orm/protocols.py", "cloudoll/orm/values.py"]
+files = ["cloudoll/orm/protocols.py", "cloudoll/orm/values.py", "cloudoll/orm/query.py", "cloudoll/orm/streaming.py", "tests/typing/query_contract.py"]
 strict = true
 explicit_package_bases = true
 follow_imports = "silent"
+
+[[tool.mypy.overrides]]
+module = "cloudoll.orm.query"
+# Dynamic legacy expression/compiler APIs are not fully typed yet.
+disallow_untyped_calls = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "cloudoll/orm/test_sql.py"]
@@ -74,6 +79,7 @@ Repository = "https://github.com/smallerqiu/cloudoll-py"
 cloudoll = "cloudoll.cli:cli"
 
 [tool.setuptools.package-data]
+"cloudoll" = ["py.typed"]
 "cloudoll.template" = [
   "README.md",
   "requirements.txt",

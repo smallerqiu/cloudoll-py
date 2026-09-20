@@ -20,6 +20,11 @@ class Mysql(AsyncEngine):
         super().__init__()
         self.driver = "mysql"
 
+    async def _open_stream(self, connection, sql, params):
+        cursor = await connection.cursor(aiomysql.SSDictCursor)
+        await cursor.execute(sql, params)
+        return cursor
+
     async def _execute(self, connection, sql, params, query_type, size):
         async with connection.cursor() as cursor:
             if query_type in {QueryTypes.CREATEBATCH, QueryTypes.UPDATEBATCH}:

@@ -91,13 +91,13 @@ async def test_postgres_insert_returns_primary_key():
 async def test_aws_parameters_and_thread_execution(module):
     mod = pytest.importorskip("cloudoll.orm." + module)
     cls = mod.AwsMysql if module == "awsmysql" else mod.AwsPostgres
-    with patch.object(mod.ConnectionProviderManager, "set_connection_provider"):
-        db = await cls().create_engine(host="db", username="user", password="a b'c", port=1234)
+    db = await cls().create_engine(host="db", username="user", password="a b'c", port=1234)
     assert db._params["password"] == "a b'c"
     assert db._params["port"] == 1234
-    with patch.object(mod.asyncio, "to_thread", new=AsyncMock(return_value=42)) as run:
+    with patch.object(db, "_run", new=AsyncMock(return_value=42)) as run:
         assert await db.query("select 42") == 42
-        assert run.call_args.args[0] == db._query
+        assert run.call_args.args[1] == db._query
+    await db.close()
 
 
 def test_aws_url_scheme():
@@ -223,17 +223,18 @@ def test_scaffold_contains_assets_and_unique_secrets(tmp_path):
 async def test_postgres_count_returns_value_and_insert_returns_id(module):
     mod = pytest.importorskip("cloudoll.orm." + module)
     if module == "awspostgres":
-        with patch.object(mod.ConnectionProviderManager, "set_connection_provider"):
-            db = await mod.AwsPostgres().create_engine()
+        from cloudoll.orm import aws_engine
+        db = await mod.AwsPostgres().create_engine(maxsize=1)
         cursor = MagicMock()
         cursor.fetchone.return_value = {"count": 17}
         cursor.description = ["count"]
         cursor.rowcount = 1
-        with patch.object(mod.AwsWrapperConnection, "connect") as connect:
-            connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value = cursor
+        with patch.object(aws_engine.AwsWrapperConnection, "connect") as connect:
+            connect.return_value.cursor.return_value = cursor
             assert await db.count("select count(*) from x", None) == 17
             cursor.fetchone.return_value = {"id": 42}
             assert await db.create("insert into x values (?) returning id", [1]) == (True, 42)
+            await db.close()
     else:
         db = mod.Postgres()
         cursor = MagicMock()

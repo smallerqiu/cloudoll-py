@@ -1,5 +1,13 @@
+from __future__ import annotations
+
 import copy
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING, TypeVar
+
+if TYPE_CHECKING:
+    from cloudoll.orm.query import Query
+    from cloudoll.orm.protocols import DatabaseEngine
+
+M = TypeVar("M", bound="Model")
 
 from cloudoll.logging import warning
 from cloudoll.orm.field import Field
@@ -60,7 +68,7 @@ class Model(metaclass=ModelMetaclass):
     __primary_key__: Optional[str]
     __fields__: list
 
-    def __init__(self, **kw):
+    def __init__(self, **kw: Any) -> None:
         object.__setattr__(self, "_original", {})
         for k in self.__fields__:
             f = copy.copy(getattr(type(self), k))
@@ -78,7 +86,7 @@ class Model(metaclass=ModelMetaclass):
     def __repr__(self):
         return "<Model: %s>" % self.__class__.__name__
 
-    def to_dict(self, *, exclude_unset=False):
+    def to_dict(self, *, exclude_unset: bool = False) -> dict[str, Any]:
         _dict = {}
         for key in self.__fields__:
             f = getattr(self, key)
@@ -97,12 +105,12 @@ class Model(metaclass=ModelMetaclass):
             and (key not in self._original or self[key].value != self._original[key])
         )
 
-    def _mark_clean(self, values=None):
+    def _mark_clean(self: M, values: Optional[dict[str, Any]] = None) -> M:
         values = self.to_dict(exclude_unset=True) if values is None else values
         self._original.update(copy.deepcopy(values))
         return self
 
-    def _copy_record(self):
+    def _copy_record(self: M) -> M:
         result = type(self)(**copy.deepcopy(self.to_dict(exclude_unset=True)))
         result._original = copy.deepcopy(self._original)
         return result
@@ -139,7 +147,7 @@ class Model(metaclass=ModelMetaclass):
             return d if f.value is None or f.value is UNSET else f.value
         return d if f is None else f
 
-    def _get_primary(self):
+    def _get_primary(self) -> tuple[Optional[str], Any]:
         pk = self.__primary_key__
         if pk is None:
             return None, None
@@ -149,11 +157,11 @@ class Model(metaclass=ModelMetaclass):
         return pk, None if pkf.value is UNSET else pkf.value
 
     @classmethod
-    def use(cls, pool):
+    def use(cls: type[M], pool: Optional[DatabaseEngine]) -> Query[M]:
         from cloudoll.orm.query import Query
         return Query(cls, pool)
 
-    def bind(self, pool):
+    def bind(self: M, pool: DatabaseEngine) -> M:
         """Bind this record for subsequent update/delete/insert operations."""
         self._bound_pool = pool
         return self
@@ -162,7 +170,7 @@ class Model(metaclass=ModelMetaclass):
         # Compatibility facade: query operations live in Query, not in records.
         if name in {
             "select", "where", "having", "join", "order_by", "group_by",
-            "limit", "offset", "test", "one", "all", "count",
+            "limit", "offset", "test", "one", "one_model", "all", "count", "stream",
             "insert", "insert_batch", "update", "delete",
         }:
             from cloudoll.orm.query import Query

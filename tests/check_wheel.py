@@ -13,6 +13,7 @@ def main():
         root = Path(directory)
         installed = root / "installed"
         with zipfile.ZipFile(wheel) as archive:
+            assert "cloudoll/py.typed" in archive.namelist()
             for required in (
                 "config/conf.local.yaml", "controllers/home/index.py",
                 "controllers/api/index.py", "middlewares/auth.py",
@@ -37,6 +38,13 @@ class NoOptionalDrivers(importlib.abc.MetaPathFinder):
 
 sys.meta_path.insert(0, NoOptionalDrivers())
 import cloudoll
+from cloudoll.orm import Query
+from cloudoll.orm.model import Model
+
+class TypedRow(Model):
+    pass
+
+assert isinstance(TypedRow.use(None), Query)
 from cloudoll.clitool.cli_main import create_project
 from cloudoll.web import Application
 from aiohttp.test_utils import TestClient, TestServer

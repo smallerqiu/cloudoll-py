@@ -1,5 +1,5 @@
 """Structural interface accepted by query builders and application resources."""
-from typing import Any, AsyncContextManager, List, Optional, Protocol, Sequence, Tuple
+from typing import Any, AsyncContextManager, AsyncIterator, List, Optional, Protocol, Sequence, Tuple
 
 from cloudoll.orm.base import QueryTypes
 
@@ -22,3 +22,7 @@ class DatabaseEngine(Protocol):
 
 class TransactionalEngine(DatabaseEngine, Protocol):
     def transaction(self) -> AsyncContextManager["TransactionalEngine"]: ...
+
+
+class StreamingEngine(DatabaseEngine, Protocol):
+    def stream(self, sql: str, params: Optional[Sequence[Any]] = None, *, batch_size: int = 1000) -> AsyncContextManager[AsyncIterator[dict[str, Any]]]: ...

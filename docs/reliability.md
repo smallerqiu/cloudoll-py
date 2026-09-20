@@ -18,7 +18,7 @@ async with db.transaction():
 
 事务内固定使用同一条连接，正常退出提交，异常（包括任务取消）退出回滚。无显式事务的单次查询也有独立的提交/回滚边界。批量写入作为一次事务执行。
 
-- 当前仅原生 `mysql` / `postgres` 支持。AWS 包装驱动调用 `transaction()` 明确报 `NotImplementedError`，不暗中降级。
+- 本节描述原生 `mysql` / `postgres`。AWS 包装驱动的事务已另行实现，但未测试；取消、超时和故障切换行为不同，详见 [Aurora 接入说明](aurora.md)。
 - 不支持嵌套事务/保存点。事务属于创建它的 asyncio task，不能在事务内部用 `create_task()` 或 `gather()` 并发共享连接。独立任务可以各自创建事务。
 - 某条 SQL 失败，即使在块内捕获异常，事务也会被标记失败；后续查询被拒绝，退出时回滚并抛 `TransactionError`。
 - 请勿在事务块中执行 DDL 或原始 `BEGIN` / `COMMIT` / `ROLLBACK`。特别是 MySQL DDL 可能隐式提交，库不解析或阻止所有原始 SQL。
@@ -92,6 +92,6 @@ python -m mypy
 python -m pytest -q -m 'not integration' --cov=cloudoll.orm.engine --cov=cloudoll.web.request_data --cov-fail-under=85
 ```
 
-静态检查覆盖语法和未定义名称等错误；严格类型检查先覆盖公开驱动协议和 UNSET 模块，不代表整个旧代码库已经完成类型化。覆盖率门槛仅针对新事务引擎与请求解析模块，不是全库覆盖率。数据库实测见 [架构与验证](architecture.md)。
+静态检查覆盖语法和未定义名称等错误；类型检查已扩展到 Query、流式迭代器和类型契约示例，但不代表整个旧代码库已经完成类型化。覆盖率门槛针对事务引擎、流式迭代器与请求解析模块，不是全库覆盖率。数据库实测见 [架构与验证](architecture.md)。
 
-后续可继续做保存点、AWS 包装驱动事务、真正的流式查询及全量 `Query[Model]` 类型化。本轮没有用假接口宣称这些已经支持。
+原生驱动的流式查询和 Query 泛型已实现，见 [流式查询与类型支持](streaming-and-types.md)。后续仍可补保存点、字段值类型推导和其他模块注解。AWS 事务实现需补测试验证，不能按代码已落地推断云端切换可靠性。

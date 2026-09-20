@@ -75,9 +75,14 @@ pip install 'cloudoll[cache]'
 
 ### Development checks
 
+Native MySQL/PostgreSQL now support scoped server-side streaming, with generic
+`Query[Model]` annotations and `one_model()` for typed record lookup.
+See [streaming and typing](docs/streaming-and-types.md) for limitations and examples.
+
 See [reliability migration notes (Chinese)](docs/reliability.md) for native
 transactions, UNSET/dirty tracking, timeouts, opt-in logging and request parsing.
-These changes are currently source-only; AWS wrapper transactions are not supported.
+These changes are currently source-only. AWS wrapper transactions and connection
+reuse are implemented but not yet tested; see [Aurora integration notes](docs/aurora.md).
 
 See [architecture and integration testing (Chinese)](docs/architecture.md) for the
 record/query split, application components, migration notes and real database tests.

@@ -46,9 +46,11 @@ python -m pip install -e '.[cache]'
 
 ## 本轮改造与迁移
 
+新增原生数据库流式查询与 `Query[Model]` 类型支持，详见 [流式查询与类型说明](docs/streaming-and-types.md)。
+
 新增原生 MySQL/PostgreSQL 事务、`UNSET` 与脏字段跟踪、超时与取消保护；日志改为显式配置，重复查询参数可通过 `request.query_params.getall()` 读取。安装 Redis/Memcached 功能请增加 `cache` extra。
 
-完整用法、兼容性变化及限制见 [事务、字段与运行行为迁移说明](docs/reliability.md)。AWS 包装驱动暂不支持新事务接口，Aurora 故障切换测试暂缓。
+完整用法、兼容性变化及限制见 [事务、字段与运行行为迁移说明](docs/reliability.md)。AWS 包装驱动已按官方文档实现事务与连接复用，尚未测试；配置、异常处理与资源关闭见 [Aurora 接入说明](docs/aurora.md)。
 
 ## 快速开始
 

@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from cloudoll.logging import debug, warning
 from cloudoll.orm.base import MeteBase, QueryTypes
 from cloudoll.orm.dialects import dialect_for
+from cloudoll.orm.streaming import RowStream
 
 
 class TransactionError(RuntimeError):
@@ -33,6 +34,7 @@ class TransactionState:
     owner: object
     failed: bool = False
     active: bool = True
+    streaming: bool = False
     callbacks: list = field(default_factory=list)
 
 
@@ -56,6 +58,8 @@ class AsyncEngine(MeteBase):
                 raise TransactionError("Transactions cannot be shared with child tasks or reused after exit")
             if state.failed:
                 raise TransactionError("Transaction failed; exit the transaction before issuing more queries")
+            if state.streaming:
+                raise TransactionError("Exit the row stream before issuing another operation on this engine")
         return state
 
     def after_commit(self, callback):
@@ -66,6 +70,9 @@ class AsyncEngine(MeteBase):
             state.callbacks.append(callback)
 
     async def close(self):
+        state = self._transaction.get()
+        if state is not None and state.active:
+            raise TransactionError("Exit the transaction or stream before closing this engine")
         if self.pool is not None:
             self.pool.close()
             await self.pool.wait_closed()
@@ -152,6 +159,57 @@ class AsyncEngine(MeteBase):
 
     async def _execute(self, connection, sql, params, query_type, size):
         raise NotImplementedError
+
+    @asynccontextmanager
+    async def stream(self, sql, params=None, *, batch_size=1000):
+        """Dedicated read-only transaction, explicitly scoped to one task.
+
+        No implicit draining on early MySQL exit: discard the unread connection.
+        Cannot be nested in an existing transaction or another stream.
+        """
+        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
+            raise ValueError("batch_size must be a positive integer")
+        if self._state() is not None:
+            raise TransactionError("Streaming requires a separate read-only transaction")
+        if self.pool is None:
+            raise RuntimeError("Create the database engine first")
+        acquisition = asyncio.ensure_future(self.pool.acquire())
+        try:
+            connection = await asyncio.wait_for(acquisition, self.acquire_timeout)
+        except BaseException:
+            if acquisition.done() and not acquisition.cancelled():
+                await self._release(acquisition.result())
+            raise
+        state = TransactionState(connection, asyncio.current_task(), streaming=True)
+        token = self._transaction.set(state)
+        rows = None
+        try:
+            await asyncio.wait_for(self._control(connection, "START TRANSACTION READ ONLY"), self.query_timeout)
+            cursor = await asyncio.wait_for(
+                self._open_stream(connection, dialect_for(self.driver).prepare(sql), params), self.query_timeout,
+            )
+            rows = RowStream(cursor, connection, batch_size, self.query_timeout)
+            yield rows
+            if rows.failed:
+                raise TransactionError("Streaming query failed")
+            if self.driver == "mysql" and not rows.exhausted:
+                # SSCursor.close() would drain potentially millions of unread rows.
+                connection.close()
+            else:
+                await asyncio.wait_for(cursor.close(), self.cleanup_timeout)
+                await asyncio.wait_for(self._control(connection, "COMMIT"), self.query_timeout)
+        except BaseException:
+            connection.close()
+            raise
+        finally:
+            if rows is not None:
+                rows.invalidate()
+            state.active = False
+            self._transaction.reset(token)
+            await self._release(connection)
+
+    async def _open_stream(self, connection, sql, params):
+        raise NotImplementedError("This driver does not support server-side streaming")
 
 
 async def cursor_result(cursor, query_type, size, postgres=False, batch_count=None):
