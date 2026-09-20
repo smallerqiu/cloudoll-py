@@ -30,6 +30,7 @@ dependencies = [
   "psutil",
   "tabulate",
   "concurrent_log_handler",
+  "portalocker",
 ]
 
 [project.optional-dependencies]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from types import TracebackType
 from typing import Any, Optional
 
@@ -8,6 +9,20 @@ import aiohttp
 from aiohttp import BasicAuth, ClientSession
 
 __all__ = ("Session", "BasicAuth")
+
+
+def _replayable_body(value: Any) -> bool:
+    """Only retry data that aiohttp can encode afresh without consuming a stream."""
+    if value is None or isinstance(value, (str, bytes, int, float, bool)):
+        return True
+    if isinstance(value, Mapping):
+        return all(
+            _replayable_body(key) and _replayable_body(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return all(_replayable_body(item) for item in value)
+    return False
 
 
 class Session:
@@ -42,6 +57,10 @@ class Session:
 
         method = method.upper()
         attempts = self.max_retries
+        if not _replayable_body(kwargs.get("data")):
+            # Files, generators, FormData and Payload objects can be consumed/closed
+            # even when a request fails. Never silently send an empty second body.
+            attempts = 1
         if not self.retry_non_idempotent and method not in {
             "GET",
             "HEAD",

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 from aiohttp import web
 
 if TYPE_CHECKING:
-    from cloudoll.web.core import Application, RequestHandler
+    from cloudoll.web.core import Application
 
 from functools import wraps
 

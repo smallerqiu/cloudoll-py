@@ -23,25 +23,34 @@ class MySQLDialect:
     def _code(self, text: str) -> str:
         return text
 
-    def adapt(self, sql: str, placeholders: bool = False) -> str:
+    def adapt(
+        self, sql: str, placeholders: bool = False, escape_percent: bool = False
+    ) -> str:
+        def prepare_code(code: str) -> str:
+            code = self._code(code)
+            if escape_percent:
+                # Keep native positional DB-API placeholders in raw SQL supported.
+                code = re.sub(r"%(?!s\b)", "%%", code)
+            return code.replace("?", "%s") if placeholders else code
+
         chunks, last = [], 0
         for match in _TOKENS.finditer(sql):
-            code = self._code(sql[last : match.start()])
-            chunks.append(code.replace("?", "%s") if placeholders else code)
+            chunks.append(prepare_code(sql[last : match.start()]))
             token = match.group(0)
             if token.startswith("`") and self.is_postgres:
                 token = self.identifier(token[1:-1].replace("``", "`"))
+            if escape_percent:
+                token = token.replace("%", "%%")
             chunks.append(token)
             last = match.end()
-        code = self._code(sql[last:])
-        chunks.append(code.replace("?", "%s") if placeholders else code)
+        chunks.append(prepare_code(sql[last:]))
         return "".join(chunks)
 
     def normalize(self, sql: str) -> str:
         return self.adapt(sql)
 
-    def prepare(self, sql: str) -> str:
-        return self.adapt(sql, placeholders=True)
+    def prepare(self, sql: str, *, escape_percent: bool = False) -> str:
+        return self.adapt(sql, placeholders=True, escape_percent=escape_percent)
 
     def returning(self, primary_key: str) -> str:
         return ""

@@ -1,6 +1,4 @@
-from typing import Any, Union
 
-from aiohttp import web
 
 from cloudoll.web import get
 

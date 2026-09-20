@@ -95,7 +95,7 @@ class SQLCompiler:
             if self.dialect.is_postgres:
                 return f"DATE_TRUNC('{unit}', {column}) = DATE_TRUNC('{unit}', CURRENT_DATE)"
             patterns = {"week": "%x-%v", "month": "%Y-%m", "year": "%Y"}
-            pattern = patterns[unit].replace("%", "%%")
+            pattern = patterns[unit]
             return f"DATE_FORMAT({column}, '{pattern}') = DATE_FORMAT(CURRENT_DATE, '{pattern}')"
         if op in {"JSON_CONTAINS_ARRAY", "JSON_CONTAINS_OBJECT"}:
             values = node.rpt if isinstance(node.rpt, (tuple, list)) else (node.rpt,)
@@ -160,8 +160,15 @@ class SQLCompiler:
     def count(self, model: type[Model], state: QueryState) -> CompiledQuery:
         inner = copy.copy(state)
         inner.limit = inner.offset = inner.order_by = None
+
         # Retain selected aliases for HAVING; ordinary count needs no projections.
-        if inner.having is None or not inner.columns:
+        def distinct(node: Any) -> bool:
+            if isinstance(node, Function):
+                return node.op == "DISTINCT" or distinct(node.col)
+            return isinstance(node, Expression) and distinct(node.lhs)
+
+        has_distinct = any(distinct(col) for col in inner.columns or [])
+        if not has_distinct and (inner.having is None or not inner.columns):
             inner.columns = inner.group_by or [Expression(1, "AS", "cloudoll_row")]
         query = self.select(model, inner)
         return CompiledQuery(

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 from uuid import uuid4
 
 from aiohttp import BodyPartReader, web

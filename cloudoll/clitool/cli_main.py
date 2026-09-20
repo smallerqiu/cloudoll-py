@@ -30,25 +30,26 @@ def run_app(**config_kwargs: Any) -> None:
         ProcessManager.ensure_runtime_dir()
         # ProcessManager.cleanup(config.name)
 
-        pid = ProcessManager.get_running_pid(config.name)
-        if pid:
-            error(f"⚠️  {config.name} is already running with PID {pid}. Exiting.")
-            return
-        ProcessManager.save_start_args(config.name, sys.argv[1:])
-        try:
-            App = app.current().create(
-                env=config.environment, config=app_config, entry_model=config.entry
-            )
-            ProcessManager.save_pid(config.name, os.getpid())
-            App.run(
-                **{
-                    k: config[k]
-                    for k in ("host", "port", "path")
-                    if config.get(k) is not None
-                }
-            )
-        finally:
-            ProcessManager.cleanup(config.name)
+        with ProcessManager.service_lock(config.name):
+            pid = ProcessManager.get_running_pid(config.name)
+            if pid:
+                error(f"⚠️  {config.name} is already running with PID {pid}. Exiting.")
+                return
+            ProcessManager.save_start_args(config.name, sys.argv[1:])
+            try:
+                App = app.current().create(
+                    env=config.environment, config=app_config, entry_model=config.entry
+                )
+                ProcessManager.save_pid(config.name, os.getpid())
+                App.run(
+                    **{
+                        k: config[k]
+                        for k in ("host", "port", "path")
+                        if config.get(k) is not None
+                    }
+                )
+            finally:
+                ProcessManager.cleanup(config.name)
     else:
         aux_app = web.Application()
         defaults = {"host": "0.0.0.0", "port": 9001, "path": None}

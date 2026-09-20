@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import (
-    AsyncGenerator,
-    AsyncIterator,
-    Awaitable,
     Callable,
     Coroutine,
 )
@@ -14,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from aiohttp import web
 
 if TYPE_CHECKING:
-    from cloudoll.web.core import Application, RequestHandler
+    from cloudoll.web.core import Application
 
 import asyncio
 import inspect

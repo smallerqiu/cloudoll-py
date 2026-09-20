@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any, Optional
 
 from aiohttp import web
 
 if TYPE_CHECKING:
-    from cloudoll.web.core import Application, RequestHandler
+    from cloudoll.web.core import Application
 
 import hashlib
 import os

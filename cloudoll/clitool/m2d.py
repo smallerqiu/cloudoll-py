@@ -230,12 +230,7 @@ async def create_table(
     async def execute() -> None:
         for statement in pending:
             info("Creating schema with driver=%s", pool.driver)
-            # Both native drivers interpolate DB-API parameters client-side.
-            # Escape literal % in quoted identifiers before '?' is adapted to '%s'.
-            sql = (
-                statement.sql.replace("%", "%%") if statement.params else statement.sql
-            )
-            await pool.query(sql, statement.params or None, QueryTypes.UPDATE)
+            await pool.query(statement.sql, statement.params or None, QueryTypes.UPDATE)
 
     # PostgreSQL can roll back DDL, including later COMMENT failures. MySQL cannot.
     if pending and driver_name(pool.driver) == "postgres":

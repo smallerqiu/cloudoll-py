@@ -1,5 +1,4 @@
 import traceback
-from typing import Any, Union
 
 from aiohttp import web
 

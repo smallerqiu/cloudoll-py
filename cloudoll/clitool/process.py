@@ -3,6 +3,8 @@ import os
 import platform
 import re
 import signal
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from types import FrameType
@@ -10,10 +12,31 @@ from typing import Any, NoReturn, Optional
 
 import click
 import psutil
+import portalocker
 from tabulate import tabulate
 
 
 class ProcessManager:
+    @staticmethod
+    @contextmanager
+    def service_lock(name: str) -> Iterator[None]:
+        """Hold a cross-process lock for the entire production service lifetime."""
+        path = ProcessManager.get_pid_path(name).with_suffix(".lock")
+        if path.is_symlink():
+            raise click.ClickException("Refusing symlink service lock")
+        lock = portalocker.Lock(str(path), mode="a", timeout=0)
+        try:
+            lock.acquire()
+        except portalocker.exceptions.LockException as exc:
+            raise click.ClickException(
+                f"Service {name} is already running or starting"
+            ) from exc
+        try:
+            yield
+        finally:
+            # Never unlink: another process may already hold this same lock inode.
+            lock.release()
+
     @staticmethod
     def ensure_runtime_dir() -> None:
         """make sure runtime directory exists"""
@@ -121,10 +144,10 @@ class ProcessManager:
                     proc.kill()
                     proc.wait(timeout=5)
 
-            ProcessManager.cleanup(service_name)
+            ProcessManager.cleanup(service_name, expected_pid=pid)
             click.echo(f"🛑 Already stop service (PID: {pid})")
         except (ProcessLookupError, psutil.NoSuchProcess):
-            ProcessManager.cleanup(service_name)
+            ProcessManager.cleanup(service_name, expected_pid=pid)
         except (PermissionError, psutil.AccessDenied):
             click.echo(f"❌ No permission to operate the process {pid}", err=True)
             raise click.Abort()
@@ -141,8 +164,16 @@ class ProcessManager:
                 raise click.ClickException("Refusing symlink PID file")
             data = json.loads(app_pid_file.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
+                if type(data) is not int or data <= 0:
+                    raise click.ClickException(
+                        "Invalid legacy PID; inspect the record manually"
+                    )
+                if not psutil.pid_exists(data):
+                    app_pid_file.unlink()
+                    return None
                 raise click.ClickException(
-                    "Legacy PID file has no process identity; stop the old service manually before upgrading"
+                    f"Legacy PID {data} still exists but has no saved process identity; "
+                    "verify the process manually before stopping the old service and removing its PID file"
                 )
             pid = data.get("pid")
             if type(pid) is not int or pid <= 0:
@@ -192,13 +223,17 @@ class ProcessManager:
             return False
 
     @staticmethod
-    def cleanup(service_name: str) -> None:
+    def cleanup(service_name: str, *, expected_pid: Optional[int] = None) -> None:
         """Cleaning up residual PID files"""
         app_pid_file = ProcessManager.get_pid_path(service_name)
         if os.path.exists(app_pid_file):
             try:
+                if expected_pid is not None:
+                    data = json.loads(app_pid_file.read_text(encoding="utf-8"))
+                    if not isinstance(data, dict) or data.get("pid") != expected_pid:
+                        return
                 os.unlink(app_pid_file)
-            except (IOError, PermissionError):
+            except (IOError, PermissionError, ValueError):
                 pass
 
     @staticmethod

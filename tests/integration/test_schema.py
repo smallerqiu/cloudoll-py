@@ -14,6 +14,35 @@ from cloudoll.orm.model import Model, models
 pytestmark = pytest.mark.integration
 
 
+async def test_orm_percent_names_distinct_and_stream(database):
+    db, tables = database
+    row = await db.one("SELECT ? AS number, '50%' AS label, '100%%' AS literal", [1])
+    assert row == {"number": 1, "label": "50%", "literal": "100%%"}
+    assert (await db.one("SELECT '50%' AS label", None))["label"] == "50%"
+
+    class PercentItem(Model):
+        __table__ = "orm%" + uuid4().hex
+        id = models.IntegerField(primary_key=True, auto_increment=True)
+        category = models.IntegerField()
+
+    tables.append(PercentItem.__table__)
+    await create_table(db, [PercentItem], None)
+    await PercentItem.use(db).insert_batch(
+        [{"category": 1}, {"category": 1}, {"category": 2}]
+    )
+    assert (
+        await PercentItem.use(db).select(PercentItem.category.distinct()).count() == 2
+    )
+    record = await PercentItem.use(db).where(PercentItem.category == 2).one_model()
+    assert record is not None
+    record.category = 3
+    assert await record.update()
+    async with PercentItem.use(db).where(PercentItem.category == 3).stream() as rows:
+        assert len([row async for row in rows]) == 1
+    assert await record.delete()
+    assert await PercentItem.use(db).count() == 2
+
+
 @pytest.fixture(params=["mysql", "postgres"])
 async def database(request):
     url = os.getenv("CLOUDOLL_TEST_" + request.param.upper() + "_URL")

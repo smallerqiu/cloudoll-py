@@ -90,9 +90,43 @@ def test_start_context_preserves_directory_and_symlink_target(tmp_path, monkeypa
 
 def test_legacy_pid_is_not_automatically_trusted(tmp_path, monkeypatch):
     monkeypatch.setattr(ProcessManager, "get_run_dir", lambda: tmp_path)
+    monkeypatch.setattr("cloudoll.clitool.process.psutil.pid_exists", lambda _: True)
     (tmp_path / "api.pid").write_text("123")
     with pytest.raises(click.ClickException, match="Legacy PID"):
         ProcessManager.get_running_pid("api")
+    assert (tmp_path / "api.pid").read_text() == "123"
+
+
+def test_stale_legacy_pid_is_removed_without_signalling(tmp_path, monkeypatch):
+    monkeypatch.setattr(ProcessManager, "get_run_dir", lambda: tmp_path)
+    exists = Mock(return_value=False)
+    process = Mock()
+    monkeypatch.setattr("cloudoll.clitool.process.psutil.pid_exists", exists)
+    monkeypatch.setattr("cloudoll.clitool.process.psutil.Process", process)
+    path = tmp_path / "api.pid"
+    path.write_text("123")
+    ProcessManager.safe_exit("api")
+    exists.assert_called_once_with(123)
+    process.assert_not_called()
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "true", '"123"', "[]", "null"])
+def test_invalid_legacy_pid_is_not_removed(tmp_path, monkeypatch, value):
+    monkeypatch.setattr(ProcessManager, "get_run_dir", lambda: tmp_path)
+    path = tmp_path / "api.pid"
+    path.write_text(value)
+    with pytest.raises(click.ClickException, match="Invalid legacy PID"):
+        ProcessManager.get_running_pid("api")
+    assert path.read_text() == value
+
+
+def test_exception_exports_are_aiohttp_classes():
+    from aiohttp import web_exceptions
+    from cloudoll.web import exception
+
+    for name in exception.__all__:
+        assert getattr(exception, name) is getattr(web_exceptions, name)
 
 
 def test_saved_identity_checks_command_as_well_as_creation_time(tmp_path, monkeypatch):
@@ -128,10 +162,11 @@ def test_missing_restart_directory_does_not_stop_service(tmp_path, monkeypatch):
     stop.assert_not_called()
 
 
-def test_duplicate_start_preserves_arguments(monkeypatch):
+def test_duplicate_start_preserves_arguments(monkeypatch, tmp_path):
     from cloudoll.clitool import cli_main
 
     monkeypatch.setattr(cli_main, "get_config", lambda _: {})
+    monkeypatch.setattr(ProcessManager, "get_run_dir", lambda: tmp_path)
     monkeypatch.setattr(ProcessManager, "ensure_runtime_dir", lambda: None)
     monkeypatch.setattr(ProcessManager, "get_running_pid", lambda _: 123)
     save = Mock()

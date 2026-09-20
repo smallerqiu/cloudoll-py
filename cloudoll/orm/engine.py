@@ -198,7 +198,9 @@ class AsyncEngine(SavepointMixin, MeteBase):
             return await asyncio.wait_for(
                 self._execute(
                     state.connection,
-                    dialect_for(self.driver).prepare(sql),
+                    dialect_for(self.driver).prepare(
+                        sql, escape_percent=params is not None
+                    ),
                     params,
                     query_type,
                     size,
@@ -275,7 +277,11 @@ class AsyncEngine(SavepointMixin, MeteBase):
             )
             cursor = await asyncio.wait_for(
                 self._open_stream(
-                    connection, dialect_for(self.driver).prepare(sql), params
+                    connection,
+                    dialect_for(self.driver).prepare(
+                        sql, escape_percent=params is not None
+                    ),
+                    params,
                 ),
                 self.query_timeout,
             )
