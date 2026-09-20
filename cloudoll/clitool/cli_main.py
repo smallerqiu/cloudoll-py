@@ -65,11 +65,13 @@ def run_app(**config_kwargs: Any) -> None:
         web.run_app(
             aux_app,
             access_log=None,
-            host=config.host,
+            host=server.host,
             port=aux_port,
             print=None,
             shutdown_timeout=0.1,
         )
+        if task.failure is not None:
+            raise RuntimeError("Development server supervision failed") from task.failure
 
 
 async def run_gen(**config_kwargs: Any) -> None:
