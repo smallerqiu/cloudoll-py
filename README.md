@@ -77,7 +77,13 @@ pip install 'cloudoll[cache]'
 
 Native MySQL/PostgreSQL now support scoped server-side streaming, with generic
 `Query[Model]` annotations and `one_model()` for typed record lookup.
-See [streaming and typing](docs/streaming-and-types.md) for limitations and examples.
+Nested transactions/savepoints and `Field[T]` value inference are supported, and
+strict mypy checks cover the complete library. See [streaming and typing](docs/streaming-and-types.md)
+and [transaction boundaries](docs/reliability.md) for limitations. Aurora remains untested.
+
+The CLI schema generator now emits dialect-specific native MySQL/PostgreSQL DDL
+with bound defaults/comments. See [schema generation](docs/schema-generation.md)
+for supported metadata and explicit limitations; it is not a migration tool.
 
 See [reliability migration notes (Chinese)](docs/reliability.md) for native
 transactions, UNSET/dirty tracking, timeouts, opt-in logging and request parsing.

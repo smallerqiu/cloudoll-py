@@ -1,6 +1,14 @@
+"""Typed common SQL engine facade. Driver query results are a dynamic DB-API boundary."""
+
 from abc import abstractmethod
+from collections.abc import Sequence
+from contextlib import AbstractAsyncContextManager
 from enum import Enum
-from typing import Any, List, Tuple, Union
+from types import TracebackType
+from typing import Any, Optional, TypeVar, cast
+
+E = TypeVar("E", bound="MeteBase")
+Params = Optional[Sequence[Any]]
 
 
 class QueryTypes(Enum):
@@ -17,74 +25,70 @@ class QueryTypes(Enum):
 
 
 class MeteBase:
-    def transaction(self):
+    driver: str
+
+    def transaction(self) -> AbstractAsyncContextManager[Any]:
         raise NotImplementedError("This engine does not implement transactions")
 
-    async def __aenter__(self):
+    async def __aenter__(self: E) -> E:
         return self
 
-    # def __init__(self):
-    # self.pool: Optional[MyPool | PGPool] = None
-    # self.cursor: Optional[Cursor] = None
-    # self.conn: Optional[Connection] = None
-
-    async def __aexit__(self, exc_type, exc_value, traceback):
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[TracebackType],
+    ) -> None:
         await self.close()
 
-    async def close(self): ...
+    async def close(self) -> None: ...
 
-    # async def begin_transaction(self):
-    #     conn = await self._set_conn()
-    #     await conn.begin()
-    #     return conn
-
-    # async def begin_transaction_scope(self, fun):
-    #     conn = await self._set_conn()
-    #     await conn.begin()
-    #     cursor = None
-    #     if isfunction(fun):
-    #         try:
-    #             cursor = await conn.cursor()
-    #             await fun(cursor)
-    #             await conn.commit()
-    #         except Exception as e:
-    #             error(e)
-    #             await conn.rollback()
-    #         finally:
-    #             if cursor:
-    #                 await cursor.close()
-    #         self.pool.release(conn)
     @abstractmethod
     async def query(
-        self, sql, params=None, query_type: QueryTypes = QueryTypes.ONE, size: int = 10
-    ): ...
+        self,
+        sql: str,
+        params: Params = None,
+        query_type: QueryTypes = QueryTypes.ONE,
+        size: int = 10,
+    ) -> Any: ...
 
-    async def all(self, sql, params) -> List[Any]:
-        return await self.query(sql, params, QueryTypes.ALL)
+    async def all(self, sql: str, params: Params) -> list[dict[str, Any]]:
+        return cast(list[dict[str, Any]], await self.query(sql, params, QueryTypes.ALL))
 
-    async def one(self, sql, params) -> Union[dict, None]:
-        return await self.query(sql, params, QueryTypes.ONE)
+    async def one(self, sql: str, params: Params) -> Optional[dict[str, Any]]:
+        return cast(
+            Optional[dict[str, Any]], await self.query(sql, params, QueryTypes.ONE)
+        )
 
-    async def many(self, sql, params, size: int):
-        return await self.query(sql, params, QueryTypes.MANY, size)
+    async def many(self, sql: str, params: Params, size: int) -> list[dict[str, Any]]:
+        return cast(
+            list[dict[str, Any]], await self.query(sql, params, QueryTypes.MANY, size)
+        )
 
-    async def count(self, sql, params) -> int:
-        return await self.query(sql, params, QueryTypes.COUNT)
+    async def count(self, sql: str, params: Params) -> int:
+        return cast(int, await self.query(sql, params, QueryTypes.COUNT))
 
-    async def group_count(self, sql, params) -> int:
-        return await self.query(sql, params, QueryTypes.GROUP_COUNT)
+    async def group_count(self, sql: str, params: Params) -> int:
+        return cast(int, await self.query(sql, params, QueryTypes.GROUP_COUNT))
 
-    async def update(self, sql, params) -> bool:
-        return await self.query(sql, params, QueryTypes.UPDATE)
+    async def update(self, sql: str, params: Params) -> bool:
+        return cast(bool, await self.query(sql, params, QueryTypes.UPDATE))
 
-    async def update_batch(self, sql, params):
-        return await self.query(sql, params, QueryTypes.UPDATEBATCH)
+    async def update_batch(self, sql: str, params: Params) -> int:
+        return cast(int, await self.query(sql, params, QueryTypes.UPDATEBATCH))
 
-    async def delete(self, sql, params) -> bool:
-        return await self.query(sql, params, QueryTypes.DELETE)
+    async def delete(self, sql: str, params: Params) -> bool:
+        return cast(bool, await self.query(sql, params, QueryTypes.DELETE))
 
-    async def create(self, sql, params) -> Tuple[bool, int]:
-        return await self.query(sql, params, QueryTypes.CREATE)
+    async def create(self, sql: str, params: Params) -> tuple[bool, Optional[int]]:
+        return cast(
+            tuple[bool, Optional[int]], await self.query(sql, params, QueryTypes.CREATE)
+        )
 
-    async def create_batch(self, sql, params) -> Tuple[bool, int]:
-        return await self.query(sql, params, QueryTypes.CREATEBATCH)
+    async def create_batch(
+        self, sql: str, params: Sequence[Sequence[Any]]
+    ) -> tuple[int, Optional[int]]:
+        return cast(
+            tuple[int, Optional[int]],
+            await self.query(sql, params, QueryTypes.CREATEBATCH),
+        )

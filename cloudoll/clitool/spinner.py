@@ -1,9 +1,10 @@
 import itertools
 import sys
 import time
+from collections.abc import Mapping
 
 
-def spinner_running(stop_flag):
+def spinner_running(stop_flag: Mapping[str, bool]) -> None:
     for c in itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
         if stop_flag["stop"]:
             break

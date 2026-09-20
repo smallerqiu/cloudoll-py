@@ -1,19 +1,33 @@
 """Session storage configuration; one manager per application."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Optional
+
+from aiohttp import web
+
+if TYPE_CHECKING:
+    from cloudoll.web.core import Application, RequestHandler
+
 import hashlib
 import os
 import secrets
 from urllib import parse
-from aiohttp_session import cookie_storage, setup
+
+from aiohttp_session import AbstractStorage, cookie_storage, setup
+
 from cloudoll.logging import info, warning
 from cloudoll.web.configuration import parse_int
 
 
 class SessionManager:
-    def __init__(self, owner):
+    def __init__(self, owner: Application) -> None:
         self.owner = owner
-        self.secret = None
+        self.secret: Optional[bytes] = None
 
-    async def start(self, apps):
+    async def start(self, apps: web.Application) -> None:
+        storage: AbstractStorage
         config = self.owner.config or {}
         sess = config.get("session", {})
 
@@ -30,8 +44,9 @@ class SessionManager:
 
         if redis_conf:
             from aiohttp_session import redis_storage
+
             redis_url = redis_conf.get("url")
-            qs = {}
+            qs: dict[str, Any] = {}
             if not redis_url:
                 redis_type = redis_conf.get("type", "redis")
                 username = redis_conf.get("username")
@@ -48,8 +63,9 @@ class SessionManager:
 
             from redis import asyncio as aioredis
 
-            redis = await aioredis.from_url(redis_url, **qs)
-            apps.redis = redis
+            redis_factory: Callable[..., Awaitable[Any]] = aioredis.from_url
+            redis = await redis_factory(redis_url, **qs)
+            setattr(apps, "redis", redis)
             storage = redis_storage.RedisStorage(
                 redis,
                 cookie_name=cookie_name,
@@ -61,13 +77,14 @@ class SessionManager:
             info("starting a redis session.")
         elif mcache_conf:
             from aiohttp_session import memcached_storage
+
             host = mcache_conf.get("host")
             port = mcache_conf.get("port", 11211)
 
             import aiomcache
 
             mc = aiomcache.Client(host, port)
-            apps.memcached = mc
+            setattr(apps, "memcached", mc)
             storage = memcached_storage.MemcachedStorage(
                 mc,
                 cookie_name=cookie_name,

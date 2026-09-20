@@ -1,10 +1,11 @@
 """Smoke-test the actual wheel outside the source checkout (no DB needed)."""
+
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import zipfile
+from pathlib import Path
 
 
 def main():
@@ -15,16 +16,23 @@ def main():
         with zipfile.ZipFile(wheel) as archive:
             assert "cloudoll/py.typed" in archive.namelist()
             for required in (
-                "config/conf.local.yaml", "controllers/home/index.py",
-                "controllers/api/index.py", "middlewares/auth.py",
-                "templates/index.html", "static/img/cat.avif",
+                "config/conf.local.yaml",
+                "controllers/home/index.py",
+                "controllers/api/index.py",
+                "middlewares/auth.py",
+                "templates/index.html",
+                "static/img/cat.avif",
             ):
                 assert "cloudoll/template/" + required in archive.namelist(), required
             archive.extractall(installed)
         logs = root / "logs"
         logs.mkdir()
         env = dict(os.environ, PYTHONPATH=str(installed), CLOUDOLL_LOG_DIR=str(logs))
-        subprocess.run([sys.executable, "-c", '''
+        subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                """
 import asyncio
 import os
 import sys
@@ -67,7 +75,12 @@ async def verify():
 
 asyncio.run(verify())
 print("Wheel scaffold, configuration, HTTP routes, templates and static assets: OK")
-'''], cwd=root, env=env, check=True)
+""",
+            ],
+            cwd=root,
+            env=env,
+            check=True,
+        )
 
 
 if __name__ == "__main__":

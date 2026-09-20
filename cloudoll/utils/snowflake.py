@@ -8,7 +8,7 @@ import time
 
 
 class IdWorker:
-    def __init__(self, worker_id, datacenter_id, sequence=0):
+    def __init__(self, worker_id: int, datacenter_id: int, sequence: int = 0) -> None:
         # 位移值
         self.worker_id_bits = 5
         self.datacenter_id_bits = 5
@@ -42,16 +42,16 @@ class IdWorker:
 
         self.last_timestamp = -1
 
-    def _time_gen(self):
+    def _time_gen(self) -> int:
         return int(time.time() * 1000)
 
-    def _til_next_millis(self, last_timestamp):
+    def _til_next_millis(self, last_timestamp: int) -> int:
         timestamp = self._time_gen()
         while timestamp <= last_timestamp:
             timestamp = self._time_gen()
         return timestamp
 
-    def next_id(self):
+    def next_id(self) -> int:
         with self.lock:
             timestamp = self._time_gen()
 

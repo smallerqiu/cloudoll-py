@@ -1,19 +1,30 @@
+from __future__ import annotations
+
+import logging
 import os
 import platform
-import logging
-from datetime import datetime
-from pathlib import Path
-from logging import Handler
 from contextvars import ContextVar
+from datetime import date, datetime
+from logging import Handler
+from pathlib import Path
+from typing import Any, Optional, Union
 
-
-__all__ = ["debug", "info", "warning", "error", "exception", "critical", "setLevel", "configure_logging"]
+__all__ = [
+    "debug",
+    "info",
+    "warning",
+    "error",
+    "exception",
+    "critical",
+    "setLevel",
+    "configure_logging",
+]
 
 request_id = ContextVar("cloudoll_request_id", default="-")
 
 
 class RequestContextFilter(logging.Filter):
-    def filter(self, record):
+    def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = request_id.get()
         return True
 
@@ -21,7 +32,8 @@ class RequestContextFilter(logging.Filter):
 LOG_MAX_BYTES = 20 * 1024 * 1024
 LOG_BACKUP_COUNT = 3
 
-def _get_log_dir():
+
+def _get_log_dir() -> Path:
     if "CLOUDOLL_LOG_DIR" in os.environ:
         log_dir = Path(os.environ["CLOUDOLL_LOG_DIR"])
         log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -42,22 +54,25 @@ def _get_log_dir():
 class DailyFileHandler(Handler):
     """Automatically rotate log files on a daily basis"""
 
-    def __init__(self, base_name, level=logging.INFO, filter_exact=False):
+    def __init__(
+        self, base_name: str, level: int = logging.INFO, filter_exact: bool = False
+    ) -> None:
         super().__init__(level)
         self.base_name = base_name
         self.filter_exact = filter_exact
-        self.current_date = None
-        self.handler = None
+        self.current_date: Optional[date] = None
+        self.handler: Optional[Handler] = None
         self._log_dir = _get_log_dir()
         self._update_handler(force=True)
 
-    def _get_filename(self):
+    def _get_filename(self) -> str:
         today = datetime.now().strftime("%Y-%m-%d")
         suffix = "-error.log" if self.filter_exact else "-all.log"
         return str(self._log_dir / f"{today}{suffix}")
 
-    def _update_handler(self, force=False):
+    def _update_handler(self, force: bool = False) -> None:
         from concurrent_log_handler import ConcurrentRotatingFileHandler
+
         today = datetime.now().date()
         if force or self.current_date != today:
             if self.handler:
@@ -80,18 +95,24 @@ class DailyFileHandler(Handler):
                 self.handler.addFilter(lambda record: record.levelno == self.level)
             self.current_date = today
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         self._update_handler()
         if self.handler is not None:
             self.handler.emit(record)
 
-    def close(self):
+    def close(self) -> None:
         if self.handler:
             self.handler.close()
         super().close()
 
 
-def configure_logging(level=logging.INFO, *, console=True, files=False, propagate=False):
+def configure_logging(
+    level: int = logging.INFO,
+    *,
+    console: bool = True,
+    files: bool = False,
+    propagate: bool = False,
+) -> logging.Logger:
     """Opt in to Cloudoll handlers; importing the library never opens log files."""
     import colorlog
 
@@ -103,7 +124,7 @@ def configure_logging(level=logging.INFO, *, console=True, files=False, propagat
             logger.removeHandler(handler)
             handler.close()
 
-    handlers = []
+    handlers: list[Handler] = []
     stream = logging.StreamHandler()
     formatter = colorlog.ColoredFormatter(
         fmt="%(log_color)s%(asctime)s [%(levelname)-8s] [%(request_id)s] %(message)s",
@@ -120,9 +141,14 @@ def configure_logging(level=logging.INFO, *, console=True, files=False, propagat
     if console:
         handlers.append(stream)
     if files:
-        handlers.extend([DailyFileHandler("all", level), DailyFileHandler("error", logging.ERROR, filter_exact=True)])
+        handlers.extend(
+            [
+                DailyFileHandler("all", level),
+                DailyFileHandler("error", logging.ERROR, filter_exact=True),
+            ]
+        )
     for handler in handlers:
-        handler._cloudoll_owned = True
+        setattr(handler, "_cloudoll_owned", True)
         handler.addFilter(RequestContextFilter())
         logger.addHandler(handler)
 
@@ -133,29 +159,29 @@ _logger = logging.getLogger("cloudoll")
 _logger.addHandler(logging.NullHandler())
 
 
-def debug(msg, *args, **kwargs):
+def debug(msg: object, *args: Any, **kwargs: Any) -> None:
     _logger.debug(msg, *args, **kwargs)
 
 
-def info(msg, *args, **kwargs):
+def info(msg: object, *args: Any, **kwargs: Any) -> None:
     _logger.info(msg, *args, **kwargs)
 
 
-def warning(msg, *args, **kwargs):
+def warning(msg: object, *args: Any, **kwargs: Any) -> None:
     _logger.warning(msg, *args, **kwargs)
 
 
-def error(msg, *args, **kwargs):
+def error(msg: object, *args: Any, **kwargs: Any) -> None:
     _logger.error(msg, *args, **kwargs)
 
 
-def exception(msg, *args, **kwargs):
+def exception(msg: object, *args: Any, **kwargs: Any) -> None:
     _logger.exception(msg, *args, **kwargs)
 
 
-def critical(msg, *args, **kwargs):
+def critical(msg: object, *args: Any, **kwargs: Any) -> None:
     _logger.critical(msg, *args, **kwargs)
 
 
-def setLevel(level):
+def setLevel(level: Union[int, str]) -> None:
     _logger.setLevel(level)

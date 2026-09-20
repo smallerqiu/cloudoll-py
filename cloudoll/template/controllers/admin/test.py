@@ -1,6 +1,10 @@
+from typing import Any, Union
+
+from aiohttp import web
+
 from cloudoll.web import get
 
 
 @get("/admin/test")
-async def home():
+async def home() -> dict[str, str]:
     return {"msg": "cloudoll"}

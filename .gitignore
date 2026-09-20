@@ -89,6 +89,7 @@ celerybeat-schedule
 venv/
 .venv/
 .venv39/
+.venv314/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

@@ -46,7 +46,9 @@ python -m pip install -e '.[cache]'
 
 ## 本轮改造与迁移
 
-新增原生数据库流式查询与 `Query[Model]` 类型支持，详见 [流式查询与类型说明](docs/streaming-and-types.md)。
+支持原生数据库保存点/嵌套事务、流式查询、`Query[Model]` 和 `Field[T]` 字段值推导；全库纳入严格类型检查。详见 [事务与保存点](docs/reliability.md)及[类型说明](docs/streaming-and-types.md)。Aurora 实现仍未测试。
+
+CLI 模型/建表生成器现已区分 MySQL 与 PostgreSQL，并修复默认值和转义问题；适用范围与限制见 [生成器说明](docs/schema-generation.md)。
 
 新增原生 MySQL/PostgreSQL 事务、`UNSET` 与脏字段跟踪、超时与取消保护；日志改为显式配置，重复查询参数可通过 `request.query_params.getall()` 读取。安装 Redis/Memcached 功能请增加 `cache` extra。
 

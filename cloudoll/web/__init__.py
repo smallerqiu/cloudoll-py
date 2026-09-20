@@ -1,10 +1,8 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 __author__ = "Qiu / smallerqiu@gmail.com"
-from typing import Tuple
+
 
 from aiohttp.web_ws import WSMsgType
+
 from cloudoll.web import jwt
 from cloudoll.web.core import (
     Application,
@@ -28,7 +26,7 @@ from cloudoll.web.core import (
 )
 from cloudoll.web.settings import get_config
 
-__all__: Tuple[str, ...] = (
+__all__: tuple[str, ...] = (
     "Application",
     "app",
     "WebSocket",

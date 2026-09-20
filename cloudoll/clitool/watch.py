@@ -3,10 +3,11 @@ import contextlib
 import os
 import sys
 import traceback
+from collections.abc import AsyncIterator, Iterator
 from contextlib import suppress
 from multiprocessing import Process
 from pathlib import Path
-from typing import AsyncIterator, Iterator, Optional, Union
+from typing import Any, Optional, Union
 
 from aiohttp import web
 from watchfiles import DefaultFilter, awatch
@@ -17,8 +18,8 @@ from cloudoll.web import Application, app
 
 
 class CloudollFilter(DefaultFilter):
-    def __init__(self, ignore_dirs: tuple = ()) -> None:
-        self.ignore_dirs: tuple = self.ignore_dirs + ("logs",)
+    def __init__(self, ignore_dirs: tuple[str, ...] = ()) -> None:
+        self.ignore_dirs: tuple[str, ...] = self.ignore_dirs + ("logs",)
         if ignore_dirs:
             self.ignore_dirs = self.ignore_dirs + ignore_dirs
 
@@ -26,13 +27,14 @@ class CloudollFilter(DefaultFilter):
 
 
 class WatchTask:
-    _app: Application
+    _app: web.Application
+    _config: dict[str, Any]
     _task: "asyncio.Task[None]"
 
-    def __init__(self, path: Union[Path, str]):
+    def __init__(self, path: Union[Path, str]) -> None:
         self._path = path
 
-    async def start(self, app: Application) -> None:
+    async def start(self, app: web.Application) -> None:
         self._app = app
         self.stopper = asyncio.Event()
         ignore_dirs = self._config["server"].get("ignore_dirs", [])
@@ -46,14 +48,14 @@ class WatchTask:
     async def _run(self) -> None:
         raise NotImplementedError()
 
-    async def close(self, *args) -> None:
+    async def close(self, *args: Any) -> None:
         if self._task:
             self.stopper.set()
             self._task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._task
 
-    async def cleanup_ctx(self, app: Application) -> AsyncIterator[None]:
+    async def cleanup_ctx(self, app: web.Application) -> AsyncIterator[None]:
         await self.start(app)
         yield
         await self.close()
@@ -73,7 +75,9 @@ def set_tty(tty_path: Optional[str]) -> Iterator[None]:
         yield
 
 
-def mian_app(tty_path, config, entry, env):
+def mian_app(
+    tty_path: Optional[str], config: dict[str, Any], entry: Optional[str], env: str
+) -> None:
     with set_tty(tty_path):
         if sys.version_info >= (3, 11):
             with asyncio.Runner() as runner:
@@ -94,11 +98,13 @@ def mian_app(tty_path, config, entry, env):
                         runner.run(app_runner.cleanup())
         else:
             loop = asyncio.new_event_loop()
-            runner = loop.run_until_complete(create_main_app(config, entry, env))
+            legacy_runner = loop.run_until_complete(create_main_app(config, entry, env))
             try:
                 loop.run_until_complete(
                     start_main_app(
-                        runner, config["server"]["host"], config["server"]["port"]
+                        legacy_runner,
+                        config["server"]["host"],
+                        config["server"]["port"],
                     )
                 )
                 loop.run_forever()
@@ -106,16 +112,19 @@ def mian_app(tty_path, config, entry, env):
                 pass
             finally:
                 with suppress(asyncio.TimeoutError, KeyboardInterrupt):
-                    loop.run_until_complete(runner.cleanup())
+                    loop.run_until_complete(legacy_runner.cleanup())
 
 
-async def create_main_app(config, entry, env):
+async def create_main_app(
+    config: dict[str, Any], entry: Optional[str], env: str
+) -> web.AppRunner:
     await check_port_open(config["server"]["port"])
-    App: Application = app.create(env=env, config=config, entry_model=entry)
+    App: Application = app.current().create(env=env, config=config, entry_model=entry)
+    assert App.app is not None
     return web.AppRunner(App.app, shutdown_timeout=0.1)
 
 
-async def start_main_app(runner, host, port):
+async def start_main_app(runner: web.AppRunner, host: str, port: int) -> None:
     await runner.setup()
     site = web.TCPSite(runner, host=host, port=port)
     info(f"Server running on http://{host}:{port}")
@@ -124,7 +133,13 @@ async def start_main_app(runner, host, port):
 
 
 class AppTask(WatchTask):
-    def __init__(self, watch_path: str, config, entry: None, env: str):
+    def __init__(
+        self,
+        watch_path: Union[str, Path],
+        config: dict[str, Any],
+        entry: Optional[str],
+        env: str,
+    ) -> None:
         self._config = config
         self._entry = entry
         self._env = env
@@ -199,7 +214,7 @@ class AppTask(WatchTask):
                 "server process already dead, exit code: %s", self._process.exitcode
             )
 
-    async def close(self, *args) -> None:
+    async def close(self, *args: Any) -> None:
         self.stopper.set()
         await self._stop_dev_server()
         await asyncio.gather(super().close(*args))

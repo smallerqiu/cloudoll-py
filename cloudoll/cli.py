@@ -8,7 +8,7 @@ import click
 from cloudoll import __version__
 from cloudoll.clitool.cli_main import create_project, run_app, run_gen
 from cloudoll.clitool.process import ProcessManager
-from cloudoll.logging import error, configure_logging
+from cloudoll.logging import configure_logging, error
 
 
 @click.group()
@@ -49,7 +49,7 @@ def gen(**config: Any) -> None:
     """Help to create models or tables."""
 
     # click.echo(create)
-    async def start():
+    async def start() -> None:
         try:
             await run_gen(**config)
         except Exception as e:
@@ -102,7 +102,7 @@ def start(**config: Any) -> None:
     help="Your service name.",
     required=True,
 )
-def stop(name):
+def stop(name: str) -> None:
     """Stop a service."""
     ProcessManager.safe_exit(name)
 
@@ -121,7 +121,7 @@ def stop(name):
     help="Force restart even if the service is not running",
     required=False,
 )
-def restart(name, force):
+def restart(name: str, force: bool) -> None:
     """Restart a service."""
     pid = ProcessManager.get_running_pid(name)
     if not pid:
@@ -143,14 +143,14 @@ def restart(name, force):
 
 
 @cli.command()
-def list():
+def list() -> None:
     """List all services."""
     ProcessManager.list()
 
 
 @cli.command()
 @click.argument("project-name", type=click.Path(dir_okay=True), required=True)
-def create(project_name) -> None:
+def create(project_name: str) -> None:
     create_project(project_name)
 
 

@@ -1,5 +1,7 @@
 """Static type contract; checked by mypy, never executed as a database test."""
-from typing import Any, AsyncIterator, Optional, Union
+
+from collections.abc import AsyncIterator
+from typing import Any, Optional, Union
 
 from cloudoll.orm import Query
 from cloudoll.orm.model import Model

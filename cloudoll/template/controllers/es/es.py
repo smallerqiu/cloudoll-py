@@ -1,10 +1,13 @@
 import asyncio
+from typing import Any, Union
+
+from aiohttp import web
 
 from cloudoll.web import WebStream, get
 
 
 @get("/es", sa_ignore=True)
-async def es(ctx):
+async def es(ctx: web.Request) -> web.StreamResponse:
     ev = await WebStream(
         ctx,
         headers={

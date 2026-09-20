@@ -1,3 +1,7 @@
+from typing import Any, Union
+
+from aiohttp import web
+
 from cloudoll.web import View, post, render_error, routes
 
 
@@ -7,41 +11,41 @@ class ApiView(View):
     api view
     """
 
-    async def get(self, ctx):
+    async def get(self, ctx: web.Request) -> dict[str, Any]:
         return {
             "message": "you send a get request",
-            "data": ctx.qs,
+            "data": getattr(ctx, "qs"),
         }
 
-    async def post(self, ctx):
+    async def post(self, ctx: web.Request) -> dict[str, Any]:
         return {
             "message": "you send a post request",
-            "data": ctx.body,
+            "data": getattr(ctx, "body"),
         }
 
-    async def delete(self, ctx):
+    async def delete(self, ctx: web.Request) -> dict[str, Any]:
         return {
             "message": "you send a delete request",
-            "data": ctx.qs,
+            "data": getattr(ctx, "qs"),
         }
 
-    async def put(self, ctx):
+    async def put(self, ctx: web.Request) -> dict[str, Any]:
         return {
             "message": "you send a put request",
-            "data": ctx.body,
+            "data": getattr(ctx, "body"),
         }
 
 
 @post("/api/account/login", sa_ignore=True)
-async def login(ctx):
+async def login(ctx: web.Request) -> Union[dict[str, Any], web.Response]:
     """
     login api
     """
-    uname = ctx.body.get("account")
-    pwd = ctx.body.get("password")
+    uname = getattr(ctx, "body").get("account")
+    pwd = getattr(ctx, "body").get("password")
     if uname == "admin" and pwd == "lovecloudoll":
         return {
             "message": "login success",
-            "token": ctx.app.jwt_encode({"username": uname}),
+            "token": getattr(ctx.app, "jwt_encode")({"username": uname}),
         }
     return render_error("login failed", status=401)

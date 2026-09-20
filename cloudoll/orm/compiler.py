@@ -1,25 +1,40 @@
 """Compile query state without mutating records or the query builder."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from cloudoll.orm.dialects import MySQLDialect
+
+if TYPE_CHECKING:
+    from cloudoll.orm.model import Model
+    from cloudoll.orm.query import QueryState
 import copy
 
-from cloudoll.orm.field import Expression, ExpList, Field, Function
+from cloudoll.orm.field import ExpList, Expression, Field, Function
 from cloudoll.orm.values import UNSET
 
 
 @dataclass(frozen=True)
 class CompiledQuery:
     sql: str
-    params: list
+    params: list[Any]
 
 
 class SQLCompiler:
-    def __init__(self, dialect):
+    def __init__(self, dialect: MySQLDialect) -> None:
         self.dialect = dialect
 
-    def expression(self, node, params):
+    def expression(self, node: Any, params: list[Any]) -> str:
         if isinstance(node, Field):
             table = node.full_name.rsplit(".", 1)[0].strip("`")
-            return self.dialect.identifier(table) + "." + self.dialect.identifier(node.name)
+            return (
+                self.dialect.identifier(table)
+                + "."
+                + self.dialect.identifier(node.name)
+            )
         if isinstance(node, ExpList):
             return f"{self.expression(node.lpt, params)} {node.op} {self.expression(node.rpt, params)}"
         if isinstance(node, Expression):
@@ -37,7 +52,9 @@ class SQLCompiler:
             if node.op in {"IN", "NOT IN"} and isinstance(node.rhs, (tuple, list)):
                 if not node.rhs:
                     return "1 = 0" if node.op == "IN" else "1 = 1"
-                right = "(" + ",".join(self.expression(v, params) for v in node.rhs) + ")"
+                right = (
+                    "(" + ",".join(self.expression(v, params) for v in node.rhs) + ")"
+                )
             else:
                 right = self.expression(rhs, params)
             return f"({left} {node.op} {right})"
@@ -48,7 +65,7 @@ class SQLCompiler:
         params.append(node)
         return "?"
 
-    def function(self, node, params):
+    def function(self, node: Function, params: list[Any]) -> str:
         column = self.expression(node.col, params)
         op = node.op
         if op in {"COUNT", "SUM", "AVG", "MAX", "MIN"}:
@@ -95,25 +112,42 @@ class SQLCompiler:
             return f"GROUP_CONCAT({column})"
         if op == "DATE_FORMAT":
             if self.dialect.is_postgres:
-                raise NotImplementedError("DATE_FORMAT uses MySQL format strings; use PostgreSQL SQL explicitly")
+                raise NotImplementedError(
+                    "DATE_FORMAT uses MySQL format strings; use PostgreSQL SQL explicitly"
+                )
             return f"DATE_FORMAT({column}, {self.expression(node.rpt, params)})"
         raise NotImplementedError(f"Unsupported SQL function: {op}")
 
-    def select(self, model, state):
-        params = []
-        columns = ",".join(self.expression(col, params) for col in state.columns or []) or "*"
+    def select(self, model: type[Model], state: QueryState) -> CompiledQuery:
+        params: list[Any] = []
+        columns = (
+            ",".join(self.expression(col, params) for col in state.columns or []) or "*"
+        )
         sql = f"SELECT {columns} FROM {self.dialect.identifier(model.__table__)}"
         for table, condition in state.joins or []:
-            condition_sql = condition if isinstance(condition, str) else self.expression(condition, params)
+            condition_sql = (
+                condition
+                if isinstance(condition, str)
+                else self.expression(condition, params)
+            )
             sql += f" LEFT JOIN {self.dialect.identifier(table)} ON {condition_sql}"
-        for prefix, value in (("WHERE", state.where), ("GROUP BY", state.group_by),
-                              ("HAVING", state.having), ("ORDER BY", state.order_by)):
+        for prefix, value in (
+            ("WHERE", state.where),
+            ("GROUP BY", state.group_by),
+            ("HAVING", state.having),
+            ("ORDER BY", state.order_by),
+        ):
             if value is None:
                 continue
             if isinstance(value, list):
-                text = ",".join(item if isinstance(item, str) else self.expression(item, params) for item in value)
+                text = ",".join(
+                    item if isinstance(item, str) else self.expression(item, params)
+                    for item in value
+                )
             else:
-                text = value if isinstance(value, str) else self.expression(value, params)
+                text = (
+                    value if isinstance(value, str) else self.expression(value, params)
+                )
             sql += f" {prefix} {text}"
         if state.limit is not None:
             sql += f" LIMIT {state.limit}"
@@ -123,16 +157,24 @@ class SQLCompiler:
             sql += f" OFFSET {state.offset}"
         return CompiledQuery(self.dialect.normalize(sql), params)
 
-    def count(self, model, state):
+    def count(self, model: type[Model], state: QueryState) -> CompiledQuery:
         inner = copy.copy(state)
         inner.limit = inner.offset = inner.order_by = None
         # Retain selected aliases for HAVING; ordinary count needs no projections.
         if inner.having is None or not inner.columns:
             inner.columns = inner.group_by or [Expression(1, "AS", "cloudoll_row")]
         query = self.select(model, inner)
-        return CompiledQuery(f"SELECT COUNT(*) FROM ({query.sql}) AS cloudoll_count", query.params)
+        return CompiledQuery(
+            f"SELECT COUNT(*) FROM ({query.sql}) AS cloudoll_count", query.params
+        )
 
-    def insert(self, model, keys, values, returning=True):
+    def insert(
+        self,
+        model: type[Model],
+        keys: Iterable[str],
+        values: Iterable[Any],
+        returning: bool = True,
+    ) -> CompiledQuery:
         table = self.dialect.identifier(model.__table__)
         keys = list(keys)
         if keys:
@@ -146,21 +188,33 @@ class SQLCompiler:
             sql += self.dialect.returning(model.__primary_key__)
         return CompiledQuery(sql, list(values))
 
-    def _where(self, condition, params):
+    def _where(self, condition: Any, params: list[Any]) -> str:
         if condition is None or (isinstance(condition, str) and not condition.strip()):
             raise ValueError("Writes require a where condition or primary key")
-        text = condition if isinstance(condition, str) else self.expression(condition, params)
+        text = (
+            condition
+            if isinstance(condition, str)
+            else self.expression(condition, params)
+        )
         return " WHERE " + text
 
-    def update(self, model, keys, values, condition):
+    def update(
+        self,
+        model: type[Model],
+        keys: Iterable[str],
+        values: Iterable[Any],
+        condition: Any,
+    ) -> CompiledQuery:
         if not keys:
             raise ValueError("Update requires at least one value")
         params = list(values)
         assignments = ",".join(self.dialect.identifier(key) + "=?" for key in keys)
-        sql = "UPDATE " + self.dialect.identifier(model.__table__) + " SET " + assignments
+        sql = (
+            "UPDATE " + self.dialect.identifier(model.__table__) + " SET " + assignments
+        )
         return CompiledQuery(sql + self._where(condition, params), params)
 
-    def delete(self, model, condition):
-        params = []
+    def delete(self, model: type[Model], condition: Any) -> CompiledQuery:
+        params: list[Any] = []
         sql = "DELETE FROM " + self.dialect.identifier(model.__table__)
         return CompiledQuery(sql + self._where(condition, params), params)

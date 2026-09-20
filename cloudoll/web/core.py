@@ -1,65 +1,74 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+from __future__ import annotations
 
 __author__ = "Qiu / smallerqiu@gmail.com"
 
 import asyncio
-import importlib.util
 import json
 import time
 import uuid
+from collections.abc import Awaitable, Callable, Coroutine, Iterable, MutableSequence
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Awaitable, Callable, Iterable, Optional
+from typing import Any, Optional, Union
 
 from aiohttp import hdrs, web
 from aiohttp.typedefs import LooseHeaders
-from aiohttp.web import Response
+from aiohttp.web import Response as Response
+from aiohttp.web_app import CleanupContext
 from aiohttp.web_request import Request
 from aiohttp.web_response import StreamResponse
-from aiohttp.web_ws import WebSocketResponse
+from aiohttp.web_ws import WebSocketResponse as WebSocketResponse
 from aiohttp_session import get_session
-from cloudoll.logging import info, exception, request_id as _request_id
+from aiosignal import Signal
+from jinja2 import Environment
+
+from cloudoll.logging import exception, info
+from cloudoll.logging import request_id as _request_id
 from cloudoll.orm.model import Model
 from cloudoll.utils.common import Object, chainMap
 from cloudoll.web import jwt
-from cloudoll.web.settings import get_config
-
-from cloudoll.web.configuration import Configuration, parse_int as _parse_int
-from cloudoll.web.context import ApplicationProxy, active_application as _active_app
-from cloudoll.web.routing import RouteRegistry, ignore_key as _sa_ignore_hash
-from cloudoll.web.sessions import SessionManager
-from cloudoll.web.resources import ResourceManager
+from cloudoll.web.configuration import Configuration
+from cloudoll.web.configuration import parse_int as _parse_int
+from cloudoll.web.context import ApplicationProxy
+from cloudoll.web.context import active_application as _active_app
 from cloudoll.web.lifecycle import LifecycleManager
 from cloudoll.web.request_data import HandlerAdapter
+from cloudoll.web.resources import ResourceManager
+from cloudoll.web.routing import RouteRegistry
+from cloudoll.web.routing import ignore_key as _sa_ignore_hash
+from cloudoll.web.sessions import SessionManager
+from cloudoll.web.types import Handler, HTTPHandler, Middleware
 
 
 class RequestHandler(object):
-    def __init__(self, fn):
+    def __init__(self, fn: Handler) -> None:
         self.fn = HandlerAdapter(fn)
 
-    async def __call__(self, request: Request):
-        token = _active_app.set(request.app.cloudoll_application)
+    async def __call__(self, request: Request) -> StreamResponse:
+        token = _active_app.set(getattr(request.app, "cloudoll_application"))
         try:
             return await _render_result(request, self.fn)
         finally:
             _active_app.reset(token)
 
 
-async def _set_session_route(request: Request):
+async def _set_session_route(request: Request) -> None:
     params = dict()
     # match
     rt = request.match_info
     for k, v in rt.items():
         params[k] = v
-    request.params = Object(params)
+    setattr(request, "params", Object(params))
     session = await get_session(request)
     # session = await new_session(request)
-    request.session = session
+    setattr(request, "session", session)
 
 
-async def _render_result(request: Request, func):
+async def _render_result(
+    request: Request, func: Union[Handler, HandlerAdapter]
+) -> StreamResponse:
     await _set_session_route(request)
     adapter = func if isinstance(func, HandlerAdapter) else HandlerAdapter(func)
     result = await adapter(request)
@@ -68,38 +77,61 @@ async def _render_result(request: Request, func):
     return render_json(result)
 
 
-def _sa_ignore_middleware():
-    async def set_ignore(ctx, handler):
-        route_path = getattr(ctx.match_info.route.resource, "canonical", ctx.path)
-        hash_str = _sa_ignore_hash(ctx.method, route_path)
-        ctx.is_sa_ignore = hash_str in ctx.app.ignore_paths
+def _sa_ignore_middleware() -> Middleware:
+    async def set_ignore(request: Request, handler: HTTPHandler) -> StreamResponse:
+        route_path = getattr(
+            request.match_info.route.resource, "canonical", request.path
+        )
+        hash_str = _sa_ignore_hash(request.method, route_path)
+        setattr(
+            request, "is_sa_ignore", hash_str in getattr(request.app, "ignore_paths")
+        )
         start_time = time.monotonic()
-        token = _active_app.set(ctx.app.cloudoll_application)
+        token = _active_app.set(getattr(request.app, "cloudoll_application"))
         trace_id = uuid.uuid4().hex
         trace_token = _request_id.set(trace_id)
-        ctx.request_id = trace_id
+        setattr(request, "request_id", trace_id)
         response = None
-        json_errors = (ctx.app.cloudoll_application.config.get("server") or {}).get("json_errors", False)
+        json_errors = (
+            getattr(request.app, "cloudoll_application").config.get("server") or {}
+        ).get("json_errors", False)
         try:
             try:
-                response = await handler(ctx)
+                response = await handler(request)
             except web.HTTPException as exc:
                 if exc.status < 400 or not json_errors:
                     response = exc
                     exc.headers["X-Request-ID"] = trace_id
                     raise
                 else:
-                    headers = {key: value for key, value in exc.headers.items() if key.lower() not in {"content-type", "content-length"}}
+                    headers = {
+                        key: value
+                        for key, value in exc.headers.items()
+                        if key.lower() not in {"content-type", "content-length"}
+                    }
                     response = web.json_response(
-                        {"error": {"status": exc.status, "message": exc.reason, "request_id": trace_id}},
-                        status=exc.status, headers=headers,
+                        {
+                            "error": {
+                                "status": exc.status,
+                                "message": exc.reason,
+                                "request_id": trace_id,
+                            }
+                        },
+                        status=exc.status,
+                        headers=headers,
                     )
             except Exception:
                 exception("Unhandled request error")
                 if not json_errors:
                     raise
                 response = web.json_response(
-                    {"error": {"status": 500, "message": "Internal Server Error", "request_id": trace_id}},
+                    {
+                        "error": {
+                            "status": 500,
+                            "message": "Internal Server Error",
+                            "request_id": trace_id,
+                        }
+                    },
                     status=500,
                 )
             if not response.prepared:
@@ -107,7 +139,13 @@ def _sa_ignore_middleware():
             return response
         finally:
             elapsed_ms = (time.monotonic() - start_time) * 1000
-            info("%s %s %s %.2fms", ctx.method, response.status if response is not None else 500, ctx.path, elapsed_ms)
+            info(
+                "%s %s %s %.2fms",
+                request.method,
+                response.status if response is not None else 500,
+                request.path,
+                elapsed_ms,
+            )
             _request_id.reset(trace_token)
             _active_app.reset(token)
 
@@ -115,28 +153,41 @@ def _sa_ignore_middleware():
 
 
 class Application(object):
-    def __init__(self, root=None, database_factory=None):
+    def __init__(
+        self,
+        root: Optional[Union[str, Path]] = None,
+        database_factory: Optional[Callable[..., Coroutine[Any, Any, Any]]] = None,
+    ) -> None:
         self.configuration = Configuration(root)
         self.registry = RouteRegistry(self.configuration.root)
         self.sessions = SessionManager(self)
         self.resources = ResourceManager(self, database_factory)
         self.lifecycle = LifecycleManager(self)
-        self._loop = None
-        self.env = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self.env: Optional[str] = None
         self.app: Optional[web.Application] = None
         self._route_table = self.registry.table
         self._middleware = self.registry.middlewares
-        self.config = {}
+        self.config: dict[str, Any] = {}
         self.clean_up = False
         self._ignore_paths = self.registry.ignore_paths
-        self.template_env = None
+        self.template_env: Optional[Environment] = None
 
-    def _load_life_cycle(self, entry_model=None, func_name=None):
+    def _load_life_cycle(
+        self, entry_model: Optional[str] = None, func_name: Optional[str] = None
+    ) -> None:
         return self.lifecycle.load(entry_model, func_name)
 
-    def create(self, env: str = "local", entry_model: str = "app", config=None):
+    def create(
+        self,
+        env: Optional[str] = "local",
+        entry_model: Optional[str] = "app",
+        config: Optional[dict[str, Any]] = None,
+    ) -> Application:
         if self.app is not None:
-            raise RuntimeError("Application already created; create a new Application instance")
+            raise RuntimeError(
+                "Application already created; create a new Application instance"
+            )
         token = _active_app.set(self)
         try:
             return self._create(env, entry_model, config)
@@ -146,7 +197,12 @@ class Application(object):
         finally:
             _active_app.reset(token)
 
-    def _create(self, env, entry_model, config):
+    def _create(
+        self,
+        env: Optional[str],
+        entry_model: Optional[str],
+        config: Optional[dict[str, Any]],
+    ) -> Application:
         # self.init_parse()
         self.env = env
         try:
@@ -161,7 +217,7 @@ class Application(object):
         self._load_life_cycle(entry_model, func_name="on_create")
 
         sa_ignore_mid = _sa_ignore_middleware()
-        sa_ignore_mid.__middleware_version__ = 1
+        setattr(sa_ignore_mid, "__middleware_version__", 1)
         self._middleware.insert(0, sa_ignore_mid)
 
         # middlewares
@@ -172,9 +228,8 @@ class Application(object):
         if conf_server is not None:
             client_max_size = conf_server.get("client_max_size", client_max_size)
         self.app = web.Application(
-            logger=None,
             middlewares=self._middleware,
-            client_max_size=_parse_int(client_max_size),
+            client_max_size=_parse_int(client_max_size) or 0,
         )
 
         # load life
@@ -182,14 +237,14 @@ class Application(object):
 
         # database
         self.registry.application = self.app
-        self.app.ignore_paths = self._ignore_paths
-        self.app.cloudoll_application = self
-        self.app.db = Object()
+        setattr(self.app, "ignore_paths", self._ignore_paths)
+        setattr(self.app, "cloudoll_application", self)
+        setattr(self.app, "db", Object())
         self.app.cleanup_ctx.append(self.lifecycle.resources)
-        self.app.config = self.config
-        self.app.env = env
-        self.app.jwt_encode = self.jwt_encode
-        self.app.jwt_decode = self.jwt_decode
+        setattr(self.app, "config", self.config)
+        setattr(self.app, "env", env)
+        setattr(self.app, "jwt_encode", self.jwt_encode)
+        setattr(self.app, "jwt_decode", self.jwt_decode)
         # session
         self._load_life_cycle(entry)
         # router:
@@ -203,7 +258,9 @@ class Application(object):
         if conf_server is not None:
             conf_st = conf_server.get("static", {})
             if conf_st:
-                self.app.router.add_static(**conf_st, path=self.configuration.path("static"))
+                self.app.router.add_static(
+                    **conf_st, path=self.configuration.path("static")
+                )
                 info("Suggest using nginx or others instead.")
         templates_dir = self.configuration.path("templates")
         if templates_dir.exists():
@@ -215,20 +272,20 @@ class Application(object):
 
         return self
 
-    async def release(self):
+    async def release(self) -> None:
         await self._close_database(self.app)
 
-    async def _close_database(self, apps):
+    async def _close_database(self, apps: Optional[web.Application]) -> None:
         await self.resources.close(apps)
         self.clean_up = True
 
-    async def _init_database(self, apps):
+    async def _init_database(self, apps: web.Application) -> None:
         await self.resources.databases(apps)
 
-    async def _init_session(self, apps):
+    async def _init_session(self, apps: web.Application) -> None:
         await self.sessions.start(apps)
 
-    def run(self, **kw):
+    def run(self, **kw: Any) -> None:
         """
         run app
         :params prot default  9001
@@ -240,7 +297,7 @@ class Application(object):
         if self.app is None:
             raise ValueError("Please create app first.like app.create()")
 
-        async def log(_):
+        async def log(_: web.Application) -> None:
             # make sure this tip is printed after the server starts
             info(f"Server running on http://{conf.host}:{conf.port}")
 
@@ -255,30 +312,46 @@ class Application(object):
             print=None,
         )
 
-    def add_router(self, path, method="GET", name=None, sa_ignore=False):
+    def add_router(
+        self,
+        path: str,
+        method: str = "GET",
+        name: Optional[str] = None,
+        sa_ignore: bool = False,
+    ) -> Callable[[Handler], RequestHandler]:
         return self.registry.route(path, method, name, sa_ignore, RequestHandler)
 
-    def add_middleware(self, func):
+    def add_middleware(self, func: Middleware) -> Middleware:
         return self.registry.middleware(func)
 
-    def get(self, path, name=None, sa_ignore=False):
+    def get(
+        self, path: str, name: Optional[str] = None, sa_ignore: bool = False
+    ) -> Callable[[Handler], RequestHandler]:
         return self.add_router(path, "GET", name, sa_ignore)
 
-    def post(self, path, name=None, sa_ignore=False):
+    def post(
+        self, path: str, name: Optional[str] = None, sa_ignore: bool = False
+    ) -> Callable[[Handler], RequestHandler]:
         return self.add_router(path, "POST", name, sa_ignore)
 
-    def put(self, path, name=None, sa_ignore=False):
+    def put(
+        self, path: str, name: Optional[str] = None, sa_ignore: bool = False
+    ) -> Callable[[Handler], RequestHandler]:
         return self.add_router(path, "PUT", name, sa_ignore)
 
-    def delete(self, path, name=None, sa_ignore=False):
+    def delete(
+        self, path: str, name: Optional[str] = None, sa_ignore: bool = False
+    ) -> Callable[[Handler], RequestHandler]:
         return self.add_router(path, "DELETE", name, sa_ignore)
 
-    def routes(self, path, sa_ignore=False):
+    def routes(
+        self, path: str, sa_ignore: bool = False
+    ) -> Callable[[type[web.View]], type[web.View]]:
         return self.registry.view(path, sa_ignore)
 
     middleware = add_middleware
 
-    def jwt_encode(self, payload):
+    def jwt_encode(self, payload: dict[str, Any]) -> str:
         jwt_conf = self.config.get("jwt", {})
         key = jwt_conf.get("key")
         exp = jwt_conf.get("exp")
@@ -286,47 +359,49 @@ class Application(object):
             raise KeyError("Please set jwt key or exp...")
         return jwt.encode(payload, key, exp)
 
-    def jwt_decode(self, token):
+    def jwt_decode(self, token: Union[str, bytes]) -> Optional[dict[str, Any]]:
         jwt_conf = self.config.get("jwt", {})
         key = jwt_conf.get("key")
+        if not key:
+            return None
         return jwt.decode(token, key)
 
     @property
-    def route_table(self):
+    def route_table(self) -> web.RouteTableDef:
         return self._route_table
 
     @property
-    def router(self):
+    def router(self) -> Optional[web.UrlDispatcher]:
         if self.app is not None:
             return self.app.router
         return None
 
     @property
-    def middlewares(self):
+    def middlewares(self) -> Optional[MutableSequence[Middleware]]:
         if self.app is not None:
             return self.app.middlewares
         return None
 
     @property
-    def on_startup(self):
+    def on_startup(self) -> Optional[Signal[web.Application]]:
         if self.app is not None:
             return self.app.on_startup
         return None
 
     @property
-    def on_shutdown(self):
+    def on_shutdown(self) -> Optional[Signal[web.Application]]:
         if self.app is not None:
             return self.app.on_shutdown
         return None
 
     @property
-    def on_cleanup(self):
+    def on_cleanup(self) -> Optional[Signal[web.Application]]:
         if self.app is not None:
             return self.app.on_cleanup
         return None
 
     @property
-    def on_task(self):
+    def on_task(self) -> Optional[CleanupContext]:
         if self.app is not None:
             return self.app.cleanup_ctx
         return None
@@ -341,7 +416,7 @@ class View(web.View):
         func = getattr(self, request.method.lower(), None)
         if func is None:
             self._raise_allowed_methods()
-        token = _active_app.set(request.app.cloudoll_application)
+        token = _active_app.set(getattr(request.app, "cloudoll_application"))
         try:
             return await _render_result(request, func)
         finally:
@@ -352,7 +427,7 @@ app = ApplicationProxy(Application)
 
 
 class JsonEncoder(json.JSONEncoder):
-    def default(self, o):
+    def default(self, o: Any) -> Any:
         if isinstance(o, datetime) or isinstance(o, date):
             return o.__str__()
         elif isinstance(o, Decimal):
@@ -401,37 +476,51 @@ async def WebStream(
     status: int = 200,
     reason: Optional[str] = None,
     headers: Optional[LooseHeaders] = None,
-):
+) -> StreamResponse:
     stream = StreamResponse(status=status, reason=reason, headers=headers)
     await stream.prepare(request)
     return stream
 
 
-def get(path: str, name=None, sa_ignore=False):
-    return (_active_app.get() or app).add_router(path, "GET", name, sa_ignore)
+def get(
+    path: str, name: Optional[str] = None, sa_ignore: bool = False
+) -> Callable[[Handler], RequestHandler]:
+    return (_active_app.get() or app.current()).add_router(path, "GET", name, sa_ignore)
 
 
-def post(path: str, name=None, sa_ignore=False):
-    return (_active_app.get() or app).add_router(path, "POST", name, sa_ignore)
+def post(
+    path: str, name: Optional[str] = None, sa_ignore: bool = False
+) -> Callable[[Handler], RequestHandler]:
+    return (_active_app.get() or app.current()).add_router(
+        path, "POST", name, sa_ignore
+    )
 
 
-def put(path: str, name=None, sa_ignore=False):
-    return (_active_app.get() or app).add_router(path, "PUT", name, sa_ignore)
+def put(
+    path: str, name: Optional[str] = None, sa_ignore: bool = False
+) -> Callable[[Handler], RequestHandler]:
+    return (_active_app.get() or app.current()).add_router(path, "PUT", name, sa_ignore)
 
 
-def delete(path: str, name=None, sa_ignore=False):
-    return (_active_app.get() or app).add_router(path, "DELETE", name, sa_ignore)
+def delete(
+    path: str, name: Optional[str] = None, sa_ignore: bool = False
+) -> Callable[[Handler], RequestHandler]:
+    return (_active_app.get() or app.current()).add_router(
+        path, "DELETE", name, sa_ignore
+    )
 
 
-def routes(path: str, sa_ignore=False):
-    return (_active_app.get() or app).routes(path, sa_ignore)
+def routes(
+    path: str, sa_ignore: bool = False
+) -> Callable[[type[web.View]], type[web.View]]:
+    return (_active_app.get() or app.current()).routes(path, sa_ignore)
 
 
-def render_error(msg, status=500) -> Response:
+def render_error(msg: str, status: int = 500) -> Response:
     return render_json({"message": msg, "code": status}, status=status)
 
 
-def render_json(data, **kw) -> Response:
+def render_json(data: Any, **kw: Any) -> Response:
     message = kw.pop("message", "OK")
     code = kw.pop("code", kw.get("status", 200))
     res = {}
@@ -448,17 +537,17 @@ def render_json(data, **kw) -> Response:
     )
 
 
-def middleware(func):
-    return (_active_app.get() or app).add_middleware(func)
+def middleware(func: Middleware) -> Middleware:
+    return (_active_app.get() or app.current()).add_middleware(func)
 
 
-def render(**kw) -> Response:
+def render(**kw: Any) -> Response:
     return Response(**kw)
 
 
-def render_view(template: str, *args, **kw) -> Response:
+def render_view(template: str, *args: Any, **kw: Any) -> Response:
     body = None
-    current = _active_app.get() or app
+    current = _active_app.get() or app.current()
     if current.template_env is None:
         raise RuntimeError("No template directory configured")
     body = current.template_env.get_template(template).render(*args)
@@ -467,5 +556,5 @@ def render_view(template: str, *args, **kw) -> Response:
     return view
 
 
-def redirect(urlpath):
+def redirect(urlpath: str) -> web.HTTPFound:
     return web.HTTPFound(location=urlpath)

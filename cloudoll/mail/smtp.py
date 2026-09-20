@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 __author__ = "Qiu"
 
 """
@@ -46,19 +43,21 @@ from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr, parseaddr
+from pathlib import Path
+from typing import Any, Optional, Union
 
 from ..logging import error, info
 
 
-def _format_addr(s):
+def _format_addr(s: str) -> str:
     name, addr = parseaddr(s)
     return formataddr((Header(name, "utf-8").encode(), addr))
 
 
 class Client(object):
-    def __init__(self, **config):
-        self._content = None
-        self._subject = None
+    def __init__(self, **config: Any) -> None:
+        self._content: Optional[str] = None
+        self._subject: Optional[str] = None
         smtp_server = config.get("smtp_server")
         debug_level = config.get("debug_level", 0)
         port = config.get("port", 465)
@@ -71,11 +70,11 @@ class Client(object):
         # self._server.starttls()  # 调用starttls()方法加密
         self._server.set_debuglevel(debug_level)  # 打印出和SMTP服务器交互的所有信息
         self._msg = MIMEMultipart()
-        self._to_addr = []
+        self._to_addr: list[dict[str, str]] = []
         self._mime_type = "plain"  # 'html'
         self._file_index = 0
 
-    def _login(self):
+    def _login(self) -> None:
         try:
             account = self._account
             password = self._password
@@ -87,13 +86,13 @@ class Client(object):
             error(e)
             raise
 
-    def send(self):
+    def send(self) -> None:
         """
         发送邮件
         """
         try:
             self._login()
-            # msg = MIMEText(self._content, "plain", "uft-8")
+            # msg = MIMEText(self._content or "", "plain", "uft-8")
             msg = self._msg
             msg["From"] = _format_addr("%s <%s>" % (self._account_name, self._account))
             to = []
@@ -105,7 +104,7 @@ class Client(object):
             msg["Subject"] = Header(self._subject, "utf-8").encode()
 
             # 邮件正文
-            msg.attach(MIMEText(self._content, self._mime_type, "utf-8"))
+            msg.attach(MIMEText(self._content or "", self._mime_type, "utf-8"))
             to_addr = list(map(lambda x: x["addr"], self._to_addr))
             self._server.sendmail(self._account, to_addr, msg.as_string())
             self._server.quit()
@@ -115,7 +114,7 @@ class Client(object):
         finally:
             self._server.close()
 
-    def add_to_addr(self, nick, addr):
+    def add_to_addr(self, nick: str, addr: str) -> None:
         """
         添加收件人
         :params nick 收件人昵称
@@ -126,14 +125,14 @@ class Client(object):
         obj = {"name": nick, "addr": addr}
         self._to_addr.append(obj)
 
-    def addhtml(self, htmltext):
+    def addhtml(self, htmltext: str) -> None:
         """
         添加html正文
         :params htmltext html正文内容
         """
         self._msg.attach(MIMEText(htmltext, "html", "utf-8"))
 
-    def addfile(self, filepath):
+    def addfile(self, filepath: Union[str, Path]) -> None:
         """
         添加附件
         :params filepath 附件绝对路径
@@ -160,22 +159,22 @@ class Client(object):
             self._file_index += 1
 
     @property
-    def mime_type(self):
+    def mime_type(self) -> str:
         return self._mime_type
 
     @mime_type.setter
-    def mime_type(self, value):
+    def mime_type(self, value: str) -> None:
         self._mime_type = value
 
     @property
-    def subject(self):
+    def subject(self) -> Optional[str]:
         """
         邮件标题内容
         """
         return self._subject
 
     @subject.setter
-    def subject(self, value):
+    def subject(self, value: str) -> None:
         """
         邮件标题内容
         :params value 标题内容
@@ -183,14 +182,14 @@ class Client(object):
         self._subject = value
 
     @property
-    def content(self):
+    def content(self) -> Optional[str]:
         """
         邮件正文内容
         """
         return self._content
 
     @content.setter
-    def content(self, value):
+    def content(self, value: str) -> None:
         """
         邮件正文内容
         :params value 正文内容

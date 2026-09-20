@@ -1,12 +1,15 @@
 from pathlib import Path
+from typing import Any, Optional, Union
 
-import yaml
-from envyaml import EnvYAML
+import yaml  # type: ignore[import-untyped]
+from envyaml import EnvYAML  # type: ignore[import-untyped]
 
 from cloudoll.logging import error, info
 
 
-def get_config(env, root=None):
+def get_config(
+    env: Optional[str], root: Optional[Union[str, Path]] = None
+) -> dict[str, Any]:
     if env is None:
         return {}
     conf_path = Path(root or Path.cwd()) / "config" / f"conf.{env}.yaml"

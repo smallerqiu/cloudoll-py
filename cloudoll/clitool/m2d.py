@@ -1,319 +1,382 @@
-import enum
+"""Native database schema/model generation (not a migration engine)."""
+
+from __future__ import annotations
+
+import ast
 import importlib.util
-import os
+import keyword
 import re
+from decimal import Decimal
 from pathlib import Path
+from typing import Any, Optional, Union, cast
 
+from cloudoll.clitool.schema import (
+    INTEGER,
+    TEMPORAL,
+    TYPES,
+    compile_column,
+    compile_table,
+    current_timestamp,
+    driver_name,
+)
 from cloudoll.logging import info, warning
+from cloudoll.orm.base import QueryTypes
+from cloudoll.orm.dialects import dialect_for
+from cloudoll.orm.field import Field
+from cloudoll.orm.model import Model
+from cloudoll.orm.protocols import DatabaseEngine, TransactionalEngine
+
+_HEADER = """from typing import Any
+from datetime import date, datetime
+from decimal import Decimal
+from cloudoll.orm.model import Model
+from cloudoll.orm.field import Field
+
+"""
 
 
-def snake_to_camel(snake_str):
-    components = snake_str.split("_")
-    # camel_str = components[0] + ''.join(x.title() for x in components[1:])
-    # x.capitalize() //first
-    # x.title() //all
-    # return camel_str[0].upper() + camel_str[1:]
-    return "".join(x.title() for x in components[0:])
+def snake_to_camel(snake_str: str) -> str:
+    result = "".join(part.title() for part in snake_str.split("_"))
+    if not result.isidentifier() or keyword.iskeyword(result):
+        raise ValueError(
+            f"Table name cannot be represented as a Python class: {snake_str!r}"
+        )
+    if result in {"Model", "Field", "Any", "Decimal"}:
+        result += "Record"
+    return result
 
 
-async def create_model(pool, table_name) -> str:
-    """
-    Create table
-    :params table name
-    """
-    info(f"create model from {table_name}")
-    # rows = await pool.all(f"show full COLUMNS from `{table_name}`", None)
+def _python_type(kind: str) -> str:
+    if kind in INTEGER:
+        return "int"
+    if kind in TEMPORAL:
+        return "datetime"
+    if kind in {"numeric", "decimal"}:
+        return "Decimal"
+    if kind in {"float", "real", "double", "double precision"}:
+        return "float"
+    return {"boolean": "bool", "date": "date", "json": "Any", "jsonb": "Any"}.get(
+        kind, "str"
+    )
+
+
+async def create_model(pool: DatabaseEngine, table_name: str) -> str:
     rows = await get_table_cols(pool, table_name)
-    # print(rows)
-    tb = f"\nclass {snake_to_camel(table_name)}(Model):\n\n"
-    tb += f"\t__table__ = '{table_name}'\n\n"
-    for f in rows:
-        fields: dict = get_col(f, pool.driver)
-        # print("fields",fields)
-        name = fields["name"]
-        column_type = fields["column_type"]
-        if not column_type or not hasattr(ColTypes, column_type):
-            raise ValueError(
-                f"{table_name}.{name} column_type `{column_type}` not support."
-            )
-        values = []
-        if fields["primary_key"]:
-            values.append("primary_key=True")
-        if fields["charset"]:
-            values.append(f"charset='{fields['charset']}'")
-        if fields["max_length"] and column_type != "tinyint":
-            values.append(
-                f"max_length=({fields['max_length']})"
-                if isinstance(fields["max_length"], str) and "," in fields["max_length"]
-                else f"max_length={fields['max_length']}"
-            )
-        if fields["scale_length"]:
-            values.append(f"scale_length={fields['scale_length']}")
-        if fields["default"]:
-            values.append(f"default='{fields['default']}'")
-        if fields["auto_increment"]:
-            values.append("auto_increment=True")
-        if fields["NOT_NULL"]:
-            values.append("not_null=True")
-        if fields["created_generated"]:
-            values.append("created_generated=True")
-        if fields["update_generated"]:
-            values.append("update_generated=True")
-        if fields["comment"]:
-            values.append(f"comment='{fields['comment']}'")
-        if "unsigned" in column_type:
-            column_type = column_type.replace(" unsigned", "")
-            values.append("unsigned=True")
-        name = re.sub(r"\s", "", name)
-        tb += f"\t{name} = models.{ColTypes[column_type].value}Field({', '.join(values)})\n"
-    tb += "\n"
-    return tb
-
-
-async def get_table_cols(pool, table_name):
-    if pool.driver == "mysql":
-        return await pool.all(f"show full COLUMNS from `{table_name}`", None)
-    elif pool.driver == "postgres":
-        pri_row = await pool.one(
-            f"SELECT column_name from information_schema.key_column_usage WHERE table_name = '{table_name}'",
-            None,
-        )
-        sql = f"""SELECT column_name Field, 
-            column_default Default,
-            data_type column_type, 
-            is_nullable Null,
-            numeric_precision num_length,
-            numeric_scale scale_length,
-            character_maximum_length str_length,
-            datetime_precision date_length,
-            col_description('{table_name}'::regclass, ordinal_position) Comment
-            FROM information_schema.columns WHERE table_name ='{table_name}'"""
-
-        rows = await pool.all(sql, None)
-        for row in rows:
-            row["Key"] = (
-                "PRI" if pri_row and pri_row["column_name"] == row["field"] else None
-            )
-
-        # print("rows", rows)
-
-        return rows
-    else:
-        raise ValueError("Database not support.")
-
-
-async def get_all_tables(pool):
-    if pool.driver == "mysql":
-        return await pool.all("show tables", None)
-    elif pool.driver == "postgres":
-        return await pool.all(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'",
-            None,
-        )
-    else:
-        raise ValueError("Database not support.")
-
-
-async def create_models(pool, save_path: str, tables: list):
-    """
-    Create models
-    :params tables
-    :params save_path
-    """
-    if tables and len(tables) > 0:
-        tbs = tables
-    else:
-        # result = await pool.all("show tables", None)
-        all_tables = await get_all_tables(pool)
-        tbs = [list(c.values())[0] for c in all_tables]
-    content = ""
-    import_line = "from cloudoll.orm.model import models, Model\n\n"
-    for t in tbs:
-        content += await create_model(pool, t)
-    if save_path:
-        first_append = True
-        if Path(save_path).exists():
-            with open(save_path, "r", encoding="utf-8") as f:
-                t = f.readlines(5)
-                first_append = import_line not in t
-        with open(save_path, "a", encoding="utf-8") as f:
-            if first_append:
-                content = import_line + content
-            f.write(content)
-    else:
-        return content
-
-
-async def create_table(pool, models: list, tables: list):
-    for model in models:
-        # print(table.__name__)
-        if model.__name__ == "Model":
-            continue
-        tb = model.__table__
-
-        if tables and tb not in tables:
-            continue
-
-        if tb.startswith("v_"):
-            warning(f"{tb} look like a view so skip.")
-            continue
-
-        # sql = f"DROP TABLE IF EXISTS `{tb}`;\n"
-        sql = ""
-        sql += f"CREATE TABLE `{tb}` (\n"
-
-        # labels = get_filed(model)
-        labels = model.__fields__
-        sqls = []
-        for f in labels:
-            lb = getattr(model, f)
-            row = get_col_sql(lb)
-            sqls.append(row)
-        sql += ",\n".join(sqls)
-        sql += ") ENGINE=InnoDB;"
-
-        info(f"create table {tb} ...\n\n")
-        # print(sql)
-        await pool.query(sql, None)
-
-
-async def create_tables(pool, model_name: str, tables: list):
-    # parts = model_name.split('.')
-    # package_name = '.'.join(parts[:-1]) or '.'
-    # module_name = parts[-1]
-    # print(module_name,package_name)
-    # models = importlib.import_module(module_name,package_name)
-    # module_classes = [cls for cls in vars(module_name).values() if isinstance(cls, type)]
-
-    name = os.path.basename(model_name)[:-3]
-    module_spec = importlib.util.spec_from_file_location(name, model_name)
-    if module_spec and module_spec.loader:
-        module = importlib.util.module_from_spec(module_spec)
-        module_spec.loader.exec_module(module)
-        module_classes = [cls for cls in vars(module).values() if isinstance(cls, type)]
-
-        # print(module_classes)
-        await create_table(pool, models=module_classes, tables=tables)
-    else:
-        raise ImportError(f"Module {model_name} not found or invalid.")
-
-
-def get_col(field, driver="mysql") -> dict:
-    if driver == "mysql":
-        fields = {
-            "name": field["Field"],
-            "column_type": None,
-            "primary_key": field["Key"] == "PRI",
-            "default": field["Default"],
-            "charset": field["Collation"],
-            "max_length": None,
-            "scale_length": None,
-            "auto_increment": field["Extra"] == "auto_increment",
-            "NOT_NULL": field["Null"] == "NO",
-            "created_generated": "DEFAULT_GENERATED" == field["Extra"],
-            "update_generated": "on update" in field["Extra"],
-            "comment": field["Comment"],
-        }
-        field_type = field["Type"]
-        t = re.match(r"(\w+)[(](.*?)[)]", field_type)
-        if not t:
-            fields["column_type"] = field_type
-        else:
-            fields["column_type"] = t.groups()[0]
-            fields["max_length"] = t.groups()[1]
-        return fields
-    elif driver == "postgres" or driver == "postgresql":
-        fields = {
-            "name": field["field"],
-            "column_type": field["column_type"].replace(" ", "_"),
-            "primary_key": field["Key"] == "PRI",
-            "default": field["default"],
-            "charset": None,
-            "max_length": field["num_length"]
-            or field["str_length"]
-            or field["date_length"],
-            "scale_length": field["scale_length"],
-            "auto_increment": None,
-            "NOT_NULL": field["null"] == "NO",
-            "created_generated": None,
-            "update_generated": None,
-            "comment": field["comment"],
-        }
-        return fields
-    else:
-        raise ValueError(f"Database {driver} not support.")
-
-
-def get_col_sql(field):
-    sql = f"`{field.name}` {field.column_type}"
-
-    if field.max_length:
-        if isinstance(field.max_length, tuple):
-            sql += f"{field.max_length}"
-        elif field.scale_length:
-            sql += f"({field.max_length},{field.scale_length})"
-        else:
-            sql += f"({field.max_length})"
-
-    if field.charset:
-        # _ci 不区分大小写 _cs Yes
-        cs = field.charset.split("_")[0]
-        sql += f" CHARACTER SET {cs} COLLATE {field.charset}"
-    if field.primary_key:
-        sql += " PRIMARY KEY"
-    if field.auto_increment:
-        # todo: postgres SERIAL
-        sql += " AUTO_INCREMENT"
-    if field.NOT_NULL:
-        sql += " NOT NULL"
-    if field.default:
-        sql += " DEFAULT " + (
-            field.default if "(" in field.default else f"'{field.default}'"
-        )
-    # else:
-    # sql += " DEFAULT NULL"
-    # print(field.name, field.update_generated)
-    if field.update_generated:
-        sql += " ON UPDATE " + (
-            field.default if "(" in field.default else f"'{field.default}'"
-        )
-    if field.comment:
-        sql += f" COMMENT '{field.comment}'"
-
-    return sql
-
-
-def get_filed(model):
-    return [
-        attr
-        for attr in dir(model)
-        if not callable(getattr(model, attr)) and not attr.startswith("__")
+    if not rows:
+        raise ValueError(f"No visible columns in table {table_name!r}")
+    fields = [get_col(row, pool.driver) for row in rows]
+    if sum(bool(f["primary_key"]) for f in fields) > 1:
+        raise ValueError("Composite primary keys are not supported by Model")
+    declarations = [
+        f"class {snake_to_camel(table_name)}(Model):",
+        f"    __table__ = {table_name!r}",
     ]
+    reserved = {
+        "select",
+        "where",
+        "having",
+        "join",
+        "order_by",
+        "group_by",
+        "limit",
+        "offset",
+        "one",
+        "all",
+        "count",
+        "stream",
+        "insert",
+        "update",
+        "delete",
+        "insert_batch",
+        "one_model",
+        "test",
+    }
+    for values in fields:
+        name = values["name"]
+        if (
+            not name.isidentifier()
+            or keyword.iskeyword(name)
+            or name.startswith("_")
+            or hasattr(Model, name)
+            or name in reserved
+        ):
+            raise ValueError(
+                f"Column name cannot be represented safely by Model: {name!r}"
+            )
+        kind = values["column_type"]
+        if kind not in TYPES:
+            raise ValueError(f"Unsupported column type: {kind}")
+        # A common constructor avoids silently dropping options unsupported by a Models helper.
+        arguments = [f"name=None", f"column_type={kind!r}"]
+        for key in (
+            "primary_key",
+            "default",
+            "charset",
+            "max_length",
+            "scale_length",
+            "auto_increment",
+            "NOT_NULL",
+            "update_generated",
+            "unsigned",
+            "comment",
+        ):
+            value = values.get(key)
+            if value is not None:
+                arguments.append(f"{key}={value!r}")
+        declarations.append(
+            f"    {name} = Field[{_python_type(kind)}]({', '.join(arguments)})"
+        )
+    result = "\n".join(declarations) + "\n"
+    ast.parse(result)
+    return result
 
 
-class ColTypes(enum.Enum):
-    char = "Char"
-    varchar = "VarChar"
-    text = "Text"
-    longtext = "LongText"
-    mediumtext = "MediumText"
-    tinyint = "Boolean"
-    smallint = "Integer"
-    mediuint = "Integer"
-    int = "Integer"
-    bigint = "BigInteger"
-    float = "Float"
-    double = "Double"
-    decimal = "Decimal"
-    numeric = "Numeric"
-    date = "Date"
-    datetime = "Datetime"
-    timestamp = "Timestamp"
-    json = "Json"
-    # pg
-    timestamp_with_time_zone = "Timestamp"
-    timestamp_without_time_zone = "Timestamp"
-    character_varying = "VarChar"
-    character = "Char"
-    integer = "Integer"
-    boolean = "Boolean"
+async def get_table_cols(pool: DatabaseEngine, table_name: str) -> list[Any]:
+    driver = driver_name(pool.driver)
+    if driver == "mysql":
+        return await pool.all(
+            "SHOW FULL COLUMNS FROM " + dialect_for(driver).identifier(table_name), None
+        )
+    # Filter primary keys, not UNIQUE/FK constraints, and scope both table and comments.
+    return await pool.all(
+        """
+        SELECT c.column_name AS field, c.column_default AS default,
+               c.data_type AS column_type, c.is_nullable AS null,
+               c.numeric_precision AS num_length, c.numeric_scale AS scale_length,
+               c.character_maximum_length AS str_length, c.datetime_precision AS date_length,
+               c.is_identity, c.identity_generation, c.is_generated,
+               col_description(cl.oid, a.attnum) AS comment,
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM pg_catalog.pg_index i
+                   WHERE i.indrelid = cl.oid AND i.indisprimary AND a.attnum = ANY(i.indkey)
+               ) THEN 'PRI' ELSE '' END AS "Key"
+        FROM information_schema.columns c
+        JOIN pg_catalog.pg_namespace ns ON ns.nspname = c.table_schema
+        JOIN pg_catalog.pg_class cl ON cl.relnamespace = ns.oid AND cl.relname = c.table_name
+        JOIN pg_catalog.pg_attribute a ON a.attrelid = cl.oid AND a.attname = c.column_name
+        WHERE c.table_schema = current_schema() AND c.table_name = ?
+        ORDER BY c.ordinal_position
+    """,
+        [table_name],
+    )
+
+
+async def get_all_tables(pool: DatabaseEngine) -> list[Any]:
+    driver = driver_name(pool.driver)
+    if driver == "mysql":
+        return await pool.all(
+            "SELECT TABLE_NAME AS table_name FROM information_schema.tables WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME",
+            None,
+        )
+    return await pool.all(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_type = 'BASE TABLE' ORDER BY table_name",
+        None,
+    )
+
+
+async def create_models(
+    pool: DatabaseEngine, save_path: str, tables: Optional[list[str]]
+) -> Optional[str]:
+    names = (
+        tables
+        if tables
+        else [str(next(iter(row.values()))) for row in await get_all_tables(pool)]
+    )
+    class_names = [snake_to_camel(name) for name in names]
+    if len(class_names) != len(set(class_names)):
+        raise ValueError("Table names generate duplicate Python class names")
+    # Complete introspection and validation before touching an output file.
+    body = "\n".join([await create_model(pool, name) for name in names])
+    if not save_path:
+        return _HEADER + body
+    path = Path(save_path)
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    tree = ast.parse(existing)
+    occupied = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    if occupied.intersection(class_names):
+        raise ValueError(
+            "Output already contains a generated class; refusing duplicate append"
+        )
+    addition = "\n" + ("" if _HEADER in existing else _HEADER) + body
+    ast.parse(existing + addition)
+    with path.open("a", encoding="utf-8") as output:
+        output.write(addition)
+    return None
+
+
+async def create_table(
+    pool: DatabaseEngine, models: list[type[Model]], tables: Optional[list[str]]
+) -> None:
+    pending = []
+    seen: set[str] = set()
+    for model in models:
+        if model is Model or not issubclass(model, Model):
+            continue
+        table = model.__table__
+        if tables and table not in tables:
+            continue
+        if table.startswith("v_"):
+            warning("%s looks like a view; skipping", table)
+            continue
+        if table in seen:
+            raise ValueError(f"Duplicate model table: {table}")
+        seen.add(table)
+        pending.extend(compile_table(model, pool.driver))
+
+    async def execute() -> None:
+        for statement in pending:
+            info("Creating schema with driver=%s", pool.driver)
+            # Both native drivers interpolate DB-API parameters client-side.
+            # Escape literal % in quoted identifiers before '?' is adapted to '%s'.
+            sql = (
+                statement.sql.replace("%", "%%") if statement.params else statement.sql
+            )
+            await pool.query(sql, statement.params or None, QueryTypes.UPDATE)
+
+    # PostgreSQL can roll back DDL, including later COMMENT failures. MySQL cannot.
+    if pending and driver_name(pool.driver) == "postgres":
+        async with cast(TransactionalEngine, pool).transaction():
+            await execute()
+    else:
+        await execute()
+
+
+async def create_tables(
+    pool: DatabaseEngine, model_name: Union[str, Path], tables: Optional[list[str]]
+) -> None:
+    path = Path(model_name)
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Module {model_name} not found or invalid")
+    # Model modules are executable Python: only load trusted local files.
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    models = list(
+        dict.fromkeys(
+            value
+            for value in vars(module).values()
+            if isinstance(value, type)
+            and issubclass(value, Model)
+            and value is not Model
+            and value.__module__ == module.__name__
+        )
+    )
+    await create_table(pool, models, tables)
+
+
+def _default(value: Any, kind: str, postgres: bool) -> Any:
+    if value is None:
+        return None
+    if kind in TEMPORAL and current_timestamp(value):
+        return current_timestamp(value)
+    text = str(value)
+    if postgres:
+        if text.upper() == "NULL":
+            return None
+        # PostgreSQL constants may carry a cast. Never execute arbitrary expressions.
+        constant = re.fullmatch(
+            r"'((?:''|[^'])*)'(?:::[a-zA-Z ]+(?:\(\d+(?:,\d+)?\))?)?", text
+        )
+        if constant:
+            return constant[1].replace("''", "'")
+    if kind == "boolean" and text.lower() in {"true", "false", "0", "1"}:
+        return text.lower() in {"true", "1"}
+    if kind in INTEGER | {
+        "float",
+        "real",
+        "double",
+        "double precision",
+        "numeric",
+        "decimal",
+    }:
+        if not re.fullmatch(r"[+-]?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?", text):
+            raise ValueError(f"Unsupported numeric default: {value!r}")
+        if kind in INTEGER:
+            return int(text)
+        return Decimal(text) if kind in {"numeric", "decimal"} else float(text)
+    if postgres:
+        raise ValueError(f"Unsupported PostgreSQL default expression: {value!r}")
+    return value
+
+
+def get_col(field: dict[str, Any], driver: str = "mysql") -> dict[str, Any]:
+    postgres = driver_name(driver) == "postgres"
+    if not postgres:
+        match = re.fullmatch(
+            r"([a-z]+)(?:\((\d+)(?:,(\d+))?\))?( unsigned)?", field["Type"].lower()
+        )
+        if not match:
+            raise ValueError(f"Unsupported MySQL type: {field['Type']}")
+        kind = match[1]
+        extra = field.get("Extra", "").lower()
+        if "virtual generated" in extra or "stored generated" in extra:
+            raise ValueError("Generated columns require an explicit schema")
+        default = field.get("Default")
+        if "default_generated" in extra and not (
+            kind in TEMPORAL and current_timestamp(default)
+        ):
+            raise ValueError("Expression defaults require an explicit schema")
+        size = int(match[2]) if match[2] is not None and kind not in INTEGER else None
+        return dict(
+            name=field["Field"],
+            column_type=kind,
+            primary_key=field.get("Key") == "PRI",
+            default=_default(default, kind, False),
+            charset=field.get("Collation"),
+            max_length=size,
+            scale_length=int(match[3]) if match[3] is not None else None,
+            auto_increment="auto_increment" in extra,
+            NOT_NULL=field["Null"] == "NO",
+            update_generated="on update" in extra,
+            unsigned=bool(match[4]),
+            comment=field.get("Comment"),
+        )
+    kind = field["column_type"]
+    if field.get("is_generated", "NEVER") != "NEVER":
+        raise ValueError("Generated columns require an explicit schema")
+    if field.get("identity_generation") == "ALWAYS":
+        raise ValueError(
+            "GENERATED ALWAYS identity cannot be represented by auto_increment"
+        )
+    default = field.get("default")
+    serial = isinstance(default, str) and default.startswith("nextval(")
+    identity = field.get("is_identity") == "YES" or serial
+    size = (
+        field.get("str_length")
+        if kind in {"character", "character varying"}
+        else field.get("num_length")
+        if kind in {"numeric", "decimal"}
+        else field.get("date_length")
+        if kind in TEMPORAL
+        else None
+    )
+    return dict(
+        name=field["field"],
+        column_type={"character": "char", "character varying": "varchar"}.get(
+            kind, kind
+        ),
+        primary_key=field.get("Key") == "PRI",
+        default=None if identity else _default(default, kind, True),
+        charset=None,
+        max_length=size,
+        scale_length=field.get("scale_length")
+        if kind in {"numeric", "decimal"}
+        else None,
+        auto_increment=identity,
+        NOT_NULL=field["null"] == "NO",
+        update_generated=False,
+        unsigned=False,
+        comment=field.get("comment"),
+    )
+
+
+def get_col_sql(field: Field[Any], driver: str = "mysql") -> str:
+    return compile_column(field, driver, bind=False).sql
+
+
+def get_filed(model: type[Model]) -> list[str]:
+    return list(model.__fields__)

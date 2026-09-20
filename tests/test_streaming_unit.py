@@ -1,4 +1,5 @@
 """Streaming lifecycle checks with fake native-driver connections."""
+
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -18,9 +19,16 @@ def engine(driver="mysql", batches=None):
     db.driver = driver
     connection = MagicMock(closed=False)
     connection.close.side_effect = lambda: setattr(connection, "closed", True)
-    db.pool = SimpleNamespace(acquire=AsyncMock(return_value=connection), release=MagicMock())
+    db.pool = SimpleNamespace(
+        acquire=AsyncMock(return_value=connection), release=MagicMock()
+    )
     db._control = AsyncMock()
-    cursor = SimpleNamespace(fetchmany=AsyncMock(side_effect=batches or [[{"id": 1}, {"id": 2}], [{"id": 3}]]), close=AsyncMock())
+    cursor = SimpleNamespace(
+        fetchmany=AsyncMock(
+            side_effect=batches or [[{"id": 1}, {"id": 2}], [{"id": 3}]]
+        ),
+        close=AsyncMock(),
+    )
     db._open_stream = AsyncMock(return_value=cursor)
     return db, connection, cursor
 
@@ -37,7 +45,10 @@ async def test_stream_fetches_only_bounded_batches_and_releases():
     cursor.close.assert_awaited_once()
     connection.close.assert_not_called()
     db.pool.release.assert_called_once_with(connection)
-    assert [call.args[1] for call in db._control.await_args_list] == ["START TRANSACTION READ ONLY", "COMMIT"]
+    assert [call.args[1] for call in db._control.await_args_list] == [
+        "START TRANSACTION READ ONLY",
+        "COMMIT",
+    ]
     with pytest.raises(RuntimeError, match="closed"):
         await rows.__anext__()
 

@@ -20,7 +20,7 @@ from cloudoll.web import app
 from cloudoll.web.settings import get_config
 
 
-def run_app(**config_kwargs: Any):
+def run_app(**config_kwargs: Any) -> None:
     config = Object(config_kwargs)
     info("current mode: %s", config.mode)
     app_config = get_config(config.environment)
@@ -37,17 +37,21 @@ def run_app(**config_kwargs: Any):
             return
         ProcessManager.register_signal_handlers(config.name)
         try:
-            App = app.create(
+            App = app.current().create(
                 env=config.environment, config=app_config, entry_model=config.entry
             )
             ProcessManager.save_pid(config.name, os.getpid())
-            App.run(**{k: config[k] for k in ("host", "port", "path") if config.get(k) is not None})
+            App.run(
+                **{
+                    k: config[k]
+                    for k in ("host", "port", "path")
+                    if config.get(k) is not None
+                }
+            )
         finally:
             ProcessManager.cleanup(config.name)
     else:
-        aux_app = web.Application(
-            logger=None,
-        )
+        aux_app = web.Application()
         defaults = {"host": "0.0.0.0", "port": 9001, "path": None}
         conf_server = app_config.get("server", {})
         env_server = {"host": config.host, "port": config.port, "path": config.path}
@@ -68,7 +72,7 @@ def run_app(**config_kwargs: Any):
         )
 
 
-async def run_gen(**config_kwargs: Any):
+async def run_gen(**config_kwargs: Any) -> None:
     config = Object(config_kwargs)
     configs = get_config(config.environment)
     db_configs = configs.get("database")
@@ -86,7 +90,9 @@ async def run_gen(**config_kwargs: Any):
         model_path = Path(config.path)
         tables = None
         if config.table and config.table.upper() != "ALL":
-            tables = [table.strip() for table in config.table.split(",") if table.strip()]
+            tables = [
+                table.strip() for table in config.table.split(",") if table.strip()
+            ]
         if config.create == "model":
             await create_models(sa, config.path, tables=tables)
             info(f"Model save at:{model_path}")

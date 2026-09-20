@@ -1,8 +1,12 @@
+from typing import Any, Union
+
+from aiohttp import web
+
 from cloudoll.web import WebSocket, WSMsgType, get
 
 
 @get("/ws", sa_ignore=True)
-async def ws(ctx):
+async def ws(ctx: web.Request) -> web.WebSocketResponse:
     ws = await WebSocket(ctx, timeout=3)
 
     async for msg in ws:

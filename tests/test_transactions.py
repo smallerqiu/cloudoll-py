@@ -46,16 +46,18 @@ async def test_failure_even_if_caught_rolls_back_and_releases():
                 await db.query("bad")
             with pytest.raises(TransactionError):
                 await db.query("do not execute")
-    assert [call.args[1] for call in db._control.await_args_list] == ["BEGIN", "ROLLBACK"]
+    assert [call.args[1] for call in db._control.await_args_list] == [
+        "BEGIN",
+        "ROLLBACK",
+    ]
     db.pool.release.assert_called_once_with(conn)
 
 
-async def test_no_nested_or_inherited_transaction_connections():
+async def test_nested_scopes_but_no_inherited_transaction_connections():
     db, _ = engine()
     async with db.transaction():
-        with pytest.raises(TransactionError, match="Nested"):
-            async with db.transaction():
-                pass
+        async with db.transaction():
+            pass
         with pytest.raises(TransactionError, match="child tasks"):
             await asyncio.create_task(db.query("unsafe"))
     db._execute.assert_not_awaited()
@@ -100,7 +102,10 @@ def test_invalid_timeouts(value):
 async def test_unset_null_defaults_and_dirty_updates():
     db, _ = engine()
     query = Item.use(db)
-    assert query._get_insert_key_args("i", {"value": None}) == (["value", "enabled"], [None, False])
+    assert query._get_insert_key_args("i", {"value": None}) == (
+        ["value", "enabled"],
+        [None, False],
+    )
     assert query._get_insert_key_args("i", {"value": UNSET}) == (["enabled"], [False])
     row = Item(id=1, value="before", enabled=False)._mark_clean().bind(db)
     assert not row.dirty_fields
@@ -169,7 +174,9 @@ async def test_two_independent_tasks_have_separate_transactions():
             await db.query("work")
 
     await asyncio.gather(worker(), worker())
-    assert {id(call.args[0]) for call in db._execute.await_args_list} == {id(c) for c in connections}
+    assert {id(call.args[0]) for call in db._execute.await_args_list} == {
+        id(c) for c in connections
+    }
 
 
 async def test_rollback_failure_does_not_mask_original_exception():
@@ -194,17 +201,28 @@ async def test_begin_timeout_discards_connection():
 
 async def test_url_keywords_override_options_and_tls_is_forwarded():
     import ssl
-    from cloudoll.orm import create_engine
-    from cloudoll.orm import mysql, postgres
+
+    from cloudoll.orm import create_engine, mysql, postgres
+
     context = ssl.create_default_context()
     with patch.object(mysql.aiomysql, "create_pool", new=AsyncMock()) as create:
-        db = await create_engine(url="mysql://user:pass@localhost/db?query_timeout=12", query_timeout=2, connect_timeout=3, ssl=context)
+        db = await create_engine(
+            url="mysql://user:pass@localhost/db?query_timeout=12",
+            query_timeout=2,
+            connect_timeout=3,
+            ssl=context,
+        )
         assert db.query_timeout == 2
         assert create.call_args.kwargs["connect_timeout"] == 3
         assert create.call_args.kwargs["ssl"] is context
         assert create.call_args.kwargs["echo"] is False
     with patch.object(postgres.aiopg, "create_pool", new=AsyncMock()) as create:
-        await create_engine(type="postgres", connect_timeout=4, sslmode="verify-full", sslrootcert="/test/ca.pem")
+        await create_engine(
+            type="postgres",
+            connect_timeout=4,
+            sslmode="verify-full",
+            sslrootcert="/test/ca.pem",
+        )
         assert create.call_args.kwargs["timeout"] == 4
         assert create.call_args.kwargs["sslmode"] == "verify-full"
         assert create.call_args.kwargs["sslrootcert"] == "/test/ca.pem"

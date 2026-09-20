@@ -1,6 +1,6 @@
 import collections.abc as collections_abc
 import re
-from typing import Any, List, Optional, cast
+from typing import Any, Optional, Union, cast
 from urllib.parse import unquote
 
 _implicit_encoding = "ascii"
@@ -9,7 +9,7 @@ _implicit_errors = "strict"
 __all__ = ["parse_coon"]
 
 
-def parse_coon(url: str):
+def parse_coon(url: str) -> tuple[dict[str, Any], dict[str, Any]]:
     pattern = re.compile(
         r"""
             (?P<type>[\w\+\-]+)://
@@ -31,7 +31,7 @@ def parse_coon(url: str):
     )
     match = pattern.match(url)
     if match is not None:
-        configs = match.groupdict()
+        configs: dict[str, Any] = match.groupdict()
         if configs["username"] is not None:
             configs["username"] = unquote(configs["username"])
 
@@ -46,12 +46,12 @@ def parse_coon(url: str):
         if configs["port"]:
             configs["port"] = int(configs["port"])
 
-        query = {}
+        query: dict[str, Any] = {}
         if configs["query"] is not None:
             for key, value in parse_sql(configs["query"]):
                 if key in query:
                     query[key] = to_list(query[key])
-                    cast("List[str]", query[key]).append(value)
+                    cast("list[str]", query[key]).append(value)
                 else:
                     query[key] = value
 
@@ -60,9 +60,9 @@ def parse_coon(url: str):
         raise ValueError("%s is not a valid database URL" % url)
 
 
-def to_list(x: Any, default: Optional[List[Any]] = None) -> List[Any]:
+def to_list(x: Any, default: Optional[list[Any]] = None) -> list[Any]:
     if x is None:
-        return default  # type: ignore
+        return [] if default is None else default
     if not isinstance(x, collections_abc.Iterable) or isinstance(x, (str, bytes)):
         return [x]
     elif isinstance(x, list):
@@ -72,27 +72,29 @@ def to_list(x: Any, default: Optional[List[Any]] = None) -> List[Any]:
 
 
 def parse_sql(
-    qs,
-    keep_blank_values=False,
-    strict_parsing=False,
-    encoding="utf-8",
-    errors="replace",
-    max_num_fields=None,
-    separator="&",
-):
-    qs, _coerce_result = _coerce_args(qs)
+    qs: Union[str, bytes],
+    keep_blank_values: bool = False,
+    strict_parsing: bool = False,
+    encoding: str = "utf-8",
+    errors: str = "replace",
+    max_num_fields: Optional[int] = None,
+    separator: Union[str, bytes] = "&",
+) -> list[tuple[Any, Any]]:
+    text, _coerce_result = _coerce_args(qs)
+    text = cast(str, text)
     separator, _ = _coerce_args(separator)
 
     if not separator or (not isinstance(separator, (str, bytes))):
         raise ValueError("Separator must be of type string or bytes.")
+    sep = cast(str, separator)
 
     if max_num_fields is not None:
-        num_fields = 1 + qs.count(separator) if qs else 0
+        num_fields = 1 + text.count(sep) if text else 0
         if max_num_fields < num_fields:
             raise ValueError("Max number of fields exceeded")
 
     r = []
-    query_args = qs.split(separator) if qs else []
+    query_args = text.split(sep) if text else []
     for name_value in query_args:
         if not name_value and not strict_parsing:
             continue
@@ -116,19 +118,25 @@ def parse_sql(
     return r
 
 
-def _encode_result(obj, encoding=_implicit_encoding, errors=_implicit_errors):
+def _encode_result(
+    obj: str, encoding: str = _implicit_encoding, errors: str = _implicit_errors
+) -> bytes:
     return obj.encode(encoding, errors)
 
 
-def _noop(obj):
+def _noop(obj: Any) -> Any:
     return obj
 
 
-def _decode_args(args, encoding=_implicit_encoding, errors=_implicit_errors):
+def _decode_args(
+    args: tuple[bytes, ...],
+    encoding: str = _implicit_encoding,
+    errors: str = _implicit_errors,
+) -> tuple[str, ...]:
     return tuple(x.decode(encoding, errors) if x else "" for x in args)
 
 
-def _coerce_args(*args):
+def _coerce_args(*args: Any) -> tuple[Any, ...]:
     str_input = isinstance(args[0], str)
     for arg in args[1:]:
         if arg and isinstance(arg, str) != str_input:

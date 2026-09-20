@@ -11,8 +11,7 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from cloudoll.orm.model import Model, models
 from cloudoll.orm.parse import parse_coon
-from cloudoll.web import core, jwt
-from cloudoll.web import sessions
+from cloudoll.web import core, jwt, sessions
 
 
 class Row(Model):
@@ -21,9 +20,14 @@ class Row(Model):
 
 
 def pool(driver="mysql"):
-    return SimpleNamespace(driver=driver, one=AsyncMock(return_value=None),
-                           all=AsyncMock(return_value=[]), create=AsyncMock(),
-                           create_batch=AsyncMock(), close=AsyncMock())
+    return SimpleNamespace(
+        driver=driver,
+        one=AsyncMock(return_value=None),
+        all=AsyncMock(return_value=[]),
+        create=AsyncMock(),
+        create_batch=AsyncMock(),
+        close=AsyncMock(),
+    )
 
 
 @pytest.mark.parametrize("value", [0, False, ""])
@@ -61,9 +65,13 @@ async def test_one_resets_after_no_result_or_exception(fails):
 
 
 def test_sql_compilation_is_repeatable_and_join_parameters_follow_select():
-    query = Row.use(pool()).select((Row.id + 10).As("computed")).join(
-        Row, Row.id == 20
-    ).join(Row, Row.id == 30).where(Row.value == "v")
+    query = (
+        Row.use(pool())
+        .select((Row.id + 10).As("computed"))
+        .join(Row, Row.id == 20)
+        .join(Row, Row.id == 30)
+        .where(Row.value == "v")
+    )
     sql, args = query.test()
     assert sql.count("LEFT JOIN") == 2
     assert args == [10, 20, 30, "v"]
@@ -91,7 +99,9 @@ async def test_postgres_insert_returns_primary_key():
 async def test_aws_parameters_and_thread_execution(module):
     mod = pytest.importorskip("cloudoll.orm." + module)
     cls = mod.AwsMysql if module == "awsmysql" else mod.AwsPostgres
-    db = await cls().create_engine(host="db", username="user", password="a b'c", port=1234)
+    db = await cls().create_engine(
+        host="db", username="user", password="a b'c", port=1234
+    )
     assert db._params["password"] == "a b'c"
     assert db._params["port"] == 1234
     with patch.object(db, "_run", new=AsyncMock(return_value=42)) as run:
@@ -141,19 +151,27 @@ async def test_session_keys_are_private_and_configurable(monkeypatch):
 
 async def test_redis_session_structured_config():
     from aiohttp_session import redis_storage
+
     application = core.Application()
-    application.config = {"session": {"redis": {"host": "localhost", "password": "a@b", "db": 2}}}
-    with patch("redis.asyncio.from_url", new=AsyncMock()) as connect, patch.object(
-        redis_storage, "RedisStorage"
-    ), patch.object(sessions, "setup"):
+    application.config = {
+        "session": {"redis": {"host": "localhost", "password": "a@b", "db": 2}}
+    }
+    with (
+        patch("redis.asyncio.from_url", new=AsyncMock()) as connect,
+        patch.object(redis_storage, "RedisStorage"),
+        patch.object(sessions, "setup"),
+    ):
         await application._init_session(web.Application())
     assert connect.call_args.args[0] == "redis://:a%40b@localhost:6379/2"
 
 
 async def test_cleanup_closes_attribute_based_session_clients():
     application = core.Application()
-    resources = SimpleNamespace(db={"db": pool()}, redis=SimpleNamespace(close=AsyncMock()),
-                                memcached=SimpleNamespace(close=MagicMock()))
+    resources = SimpleNamespace(
+        db={"db": pool()},
+        redis=SimpleNamespace(close=AsyncMock()),
+        memcached=SimpleNamespace(close=MagicMock()),
+    )
     await application._close_database(resources)
     resources.redis.close.assert_awaited_once()
     resources.memcached.close.assert_called_once()
@@ -163,19 +181,32 @@ async def test_lifecycle_registers_initially_empty_signals():
     application = core.Application()
     application.app = web.Application()
     shutdown = AsyncMock()
-    with patch.object(core.importlib, "import_module", return_value=SimpleNamespace(on_shutdown=shutdown)):
+    with patch.object(
+        core.importlib,
+        "import_module",
+        return_value=SimpleNamespace(on_shutdown=shutdown),
+    ):
         application._load_life_cycle("entry")
-    assert any(getattr(callback, "__wrapped__", None) is shutdown for callback in application.app.on_shutdown)
+    assert any(
+        getattr(callback, "__wrapped__", None) is shutdown
+        for callback in application.app.on_shutdown
+    )
 
 
-async def test_independent_apps_routes_sessions_and_dynamic_ignore(tmp_path, monkeypatch):
+async def test_independent_apps_routes_sessions_and_dynamic_ignore(
+    tmp_path, monkeypatch
+):
     monkeypatch.chdir(tmp_path)
     first = core.Application()
 
     @first.add_router("/items/{id}", "GET", None, True)
     async def item(request):
         request.session["visits"] = request.session.get("visits", 0) + 1
-        return {"id": request.params.id, "ignore": request.is_sa_ignore, "visits": request.session["visits"]}
+        return {
+            "id": request.params.id,
+            "ignore": request.is_sa_ignore,
+            "visits": request.session["visits"],
+        }
 
     first.create(config={}, entry_model=None)
     second = core.Application().create(config={}, entry_model=None)
@@ -198,17 +229,29 @@ def test_render_json_metadata_is_not_forwarded_to_aiohttp():
 
 async def test_cli_all_generates_and_closes_database():
     from cloudoll.clitool import cli_main
+
     db = pool()
-    with patch.object(cli_main, "get_config", return_value={"database": {"db": {"type": "mysql"}}}), \
-         patch.object(cli_main, "create_engine", new=AsyncMock(return_value=db)), \
-         patch.object(cli_main, "create_models", new=AsyncMock()) as generate:
-        await cli_main.run_gen(environment="local", database="db", path="models.py", table="ALL", create="model")
+    with (
+        patch.object(
+            cli_main, "get_config", return_value={"database": {"db": {"type": "mysql"}}}
+        ),
+        patch.object(cli_main, "create_engine", new=AsyncMock(return_value=db)),
+        patch.object(cli_main, "create_models", new=AsyncMock()) as generate,
+    ):
+        await cli_main.run_gen(
+            environment="local",
+            database="db",
+            path="models.py",
+            table="ALL",
+            create="model",
+        )
     assert generate.call_args.kwargs["tables"] is None
     db.close.assert_awaited_once()
 
 
 def test_scaffold_contains_assets_and_unique_secrets(tmp_path):
     from cloudoll.clitool.cli_main import create_project
+
     create_project(str(tmp_path / "first"))
     create_project(str(tmp_path / "second"))
     assert (tmp_path / "first/controllers/home/index.py").is_file()
@@ -224,6 +267,7 @@ async def test_postgres_count_returns_value_and_insert_returns_id(module):
     mod = pytest.importorskip("cloudoll.orm." + module)
     if module == "awspostgres":
         from cloudoll.orm import aws_engine
+
         db = await mod.AwsPostgres().create_engine(maxsize=1)
         cursor = MagicMock()
         cursor.fetchone.return_value = {"count": 17}
@@ -233,7 +277,10 @@ async def test_postgres_count_returns_value_and_insert_returns_id(module):
             connect.return_value.cursor.return_value = cursor
             assert await db.count("select count(*) from x", None) == 17
             cursor.fetchone.return_value = {"id": 42}
-            assert await db.create("insert into x values (?) returning id", [1]) == (True, 42)
+            assert await db.create("insert into x values (?) returning id", [1]) == (
+                True,
+                42,
+            )
             await db.close()
     else:
         db = mod.Postgres()
@@ -252,7 +299,10 @@ async def test_postgres_count_returns_value_and_insert_returns_id(module):
         conn.cursor.return_value.__aenter__.return_value = cursor
         assert await db.count("select count(*) from x", None) == 17
         cursor.fetchone.return_value = {"id": 42}
-        assert await db.create("insert into x values (?) returning id", [1]) == (True, 42)
+        assert await db.create("insert into x values (?) returning id", [1]) == (
+            True,
+            42,
+        )
         cursor.execute.side_effect = RuntimeError("query failed")
         with pytest.raises(RuntimeError, match="query failed"):
             await db.one("select 1", None)
@@ -260,9 +310,13 @@ async def test_postgres_count_returns_value_and_insert_returns_id(module):
 
 async def test_http_post_is_not_automatically_replayed():
     import aiohttp
+
     from cloudoll.web.requests import Session
+
     async with Session(max_retries=3, retry_delay=0) as session:
-        session.session.request = AsyncMock(side_effect=aiohttp.ClientConnectionError("lost response"))
+        session.session.request = AsyncMock(
+            side_effect=aiohttp.ClientConnectionError("lost response")
+        )
         with pytest.raises(aiohttp.ClientConnectionError):
             await session.post("http://unused")
         assert session.session.request.await_count == 1
@@ -273,6 +327,7 @@ async def test_http_post_is_not_automatically_replayed():
 
 def test_unknown_email_attachment_type(tmp_path):
     from cloudoll.mail.smtp import Client
+
     attachment = tmp_path / "file.unknown_extension"
     attachment.write_bytes(b"test")
     with patch("cloudoll.mail.smtp.smtplib.SMTP_SSL"):
@@ -289,6 +344,7 @@ def test_expression_repr_never_evaluates_operand():
 def test_model_inheritance_keeps_fields_independent():
     class Child(Row):
         extra = models.IntegerField()
+
     assert Child.__fields__ == ["id", "value", "extra"]
     assert Child.id.full_name == "`Child`.id"
     assert Row.id.full_name == "`Row`.id"
@@ -296,12 +352,16 @@ def test_model_inheritance_keeps_fields_independent():
 
 @pytest.mark.parametrize("driver, default_port", [("mysql", 3306), ("postgres", 5432)])
 async def test_driver_url_defaults_and_connect_errors(driver, default_port):
-    from cloudoll.orm import create_engine
     import importlib
+
+    from cloudoll.orm import create_engine
+
     mod = importlib.import_module("cloudoll.orm." + driver)
     dependency = mod.aiomysql if driver == "mysql" else mod.aiopg
     with patch.object(dependency, "create_pool", new=AsyncMock()) as create:
-        await create_engine(url=f"{driver}://user:a%20b%27c@localhost/db?minsize=1&maxsize=2")
+        await create_engine(
+            url=f"{driver}://user:a%20b%27c@localhost/db?minsize=1&maxsize=2"
+        )
         assert create.call_args.kwargs["port"] == default_port
         assert create.call_args.kwargs["password"] == "a b'c"
         assert create.call_args.kwargs["minsize"] == 1

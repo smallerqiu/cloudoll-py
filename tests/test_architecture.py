@@ -1,5 +1,4 @@
 import asyncio
-import copy
 import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -22,9 +21,14 @@ class Account(Model):
 
 
 def db(driver="postgres"):
-    return SimpleNamespace(driver=driver, one=AsyncMock(return_value={"id": 1, "name": "first"}),
-                           all=AsyncMock(return_value=[]), update=AsyncMock(return_value=True),
-                           count=AsyncMock(return_value=1), close=AsyncMock())
+    return SimpleNamespace(
+        driver=driver,
+        one=AsyncMock(return_value={"id": 1, "name": "first"}),
+        all=AsyncMock(return_value=[]),
+        update=AsyncMock(return_value=True),
+        count=AsyncMock(return_value=1),
+        close=AsyncMock(),
+    )
 
 
 async def test_query_and_record_are_distinct_and_records_remain_stable():
@@ -107,7 +111,10 @@ async def test_two_roots_share_no_modules_routes_configs_or_app_proxy(tmp_path):
     assert config == {"label": "unchanged"}
     assert sys.path == old_path
     first, second = applications
-    async with TestClient(TestServer(first.app)) as client1, TestClient(TestServer(second.app)) as client2:
+    async with (
+        TestClient(TestServer(first.app)) as client1,
+        TestClient(TestServer(second.app)) as client2,
+    ):
         responses = await asyncio.gather(client1.get("/"), client2.get("/"))
         assert (await responses[0].json())["config"] == "0"
         assert (await responses[1].json())["label"] == "app-1"
@@ -167,7 +174,9 @@ async def test_lifecycle_hooks_have_the_explicit_application_context(tmp_path):
         "    yield\n"
         "    a.events.append(('task-end', app.config['label']))\n"
     )
-    application = Application(root=tmp_path).create(config={"label": "explicit"}, entry_model="entry")
+    application = Application(root=tmp_path).create(
+        config={"label": "explicit"}, entry_model="entry"
+    )
     application.app.events = []
     runner = web.AppRunner(application.app)
     await runner.setup()

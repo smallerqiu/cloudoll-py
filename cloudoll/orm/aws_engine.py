@@ -3,33 +3,42 @@
 AWS's synchronous wrapper runs on dedicated per-connection worker threads.
 Cancellation waits for the current driver call before disposing of a connection.
 """
+
+from __future__ import annotations
+
 import asyncio
 import copy
+from collections.abc import AsyncIterator, Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import partial
+from typing import Any, Optional
 
 from aws_advanced_python_wrapper import AwsWrapperConnection
 from aws_advanced_python_wrapper.errors import (
-    FailoverSuccessError, TransactionResolutionUnknownError,
+    FailoverSuccessError,
+    TransactionResolutionUnknownError,
 )
 
 from cloudoll.logging import warning
-from cloudoll.orm.base import MeteBase, QueryTypes
+from cloudoll.orm.base import MeteBase, Params, QueryTypes
 from cloudoll.orm.dialects import dialect_for
 from cloudoll.orm.engine import TransactionError, positive_timeout
+from cloudoll.orm.savepoints import SavepointMixin
 
 
 class _Worker:
-    def __init__(self):
-        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cloudoll-aurora")
-        self.connection = None
+    def __init__(self) -> None:
+        self.executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="cloudoll-aurora"
+        )
+        self.connection: Any = None
         self.discard = False
         self.reconfigure = False
 
-    def close(self):
+    def close(self) -> None:
         connection, self.connection = self.connection, None
         self.reconfigure = False
         self.discard = False
@@ -43,55 +52,94 @@ class _Transaction:
     owner: object
     active: bool = True
     failed: bool = False
-    callbacks: list = field(default_factory=list)
+    callbacks: list[Callable[[], None]] = field(default_factory=list)
 
 
-class AwsEngine(MeteBase):
+class AwsEngine(SavepointMixin, MeteBase):
     """Bounded, engine-local pool of logical wrapper connections.
 
     No process-global connection provider is replaced or released by an engine.
     Call AWS's global release_resources() once at process shutdown, after *all*
     wrapper users have closed. See docs/aurora.md.
     """
-    driver = None
-    default_port = None
-    database_key = None
-    cursor_options = None
 
-    def __init__(self):
-        self._transaction = ContextVar(f"cloudoll_aws_transaction_{id(self)}", default=None)
-        self._workers = []
-        self._available = None
+    driver: str = ""
+    default_port: int = 0
+    database_key: str = ""
+    cursor_options: dict[str, Any] = {}
+
+    def __init__(self) -> None:
+        self._transaction: ContextVar[Optional[_Transaction]] = ContextVar(
+            f"cloudoll_aws_transaction_{id(self)}", default=None
+        )
+        self._workers: list[_Worker] = []
+        self._available: Optional[asyncio.Queue[_Worker]] = None
         self._closed = False
-        self._close_task = None
+        self._close_task: Optional[asyncio.Task[None]] = None
         self._active = 0
         self._idle = asyncio.Event()
         self._idle.set()
 
-    async def create_engine(self, **kw):
+    async def create_engine(self, **kw: Any) -> AwsEngine:
         if self._available is not None or self._closed:
             raise RuntimeError("AWS engine already configured")
         options = dict(kw.get("connect_options") or {})
         # Cloudoll controls autocommit and transaction boundaries, not callers.
-        reserved = {"autocommit", "host", "port", "database", "dbname", "user", "password"}
+        reserved = {
+            "autocommit",
+            "host",
+            "port",
+            "database",
+            "dbname",
+            "user",
+            "password",
+        }
         if reserved.intersection(options):
-            raise ValueError("Use top-level connection fields; autocommit is managed by Cloudoll")
-        for name in ("autocommit", "minsize", "pool_recycle", "cleanup_timeout", "query_timeout", "timeout"):
+            raise ValueError(
+                "Use top-level connection fields; autocommit is managed by Cloudoll"
+            )
+        for name in (
+            "autocommit",
+            "minsize",
+            "pool_recycle",
+            "cleanup_timeout",
+            "query_timeout",
+            "timeout",
+        ):
             if name in kw or name in options:
-                raise ValueError(f"AWS engines do not support {name}; see docs/aurora.md")
-        self.acquire_timeout = positive_timeout(kw.get("acquire_timeout", 30), "acquire_timeout")
+                raise ValueError(
+                    f"AWS engines do not support {name}; see docs/aurora.md"
+                )
+        self.acquire_timeout = positive_timeout(
+            kw.get("acquire_timeout", 30), "acquire_timeout"
+        )
         size = kw.get("maxsize", 10)
         if isinstance(size, bool) or str(size) != str(int(size)) or int(size) < 1:
             raise ValueError("maxsize must be a positive integer")
-        self._on_connect = kw.get("on_connect")
+        self._on_connect: Optional[Callable[[Any], Any]] = kw.get("on_connect")
         if self._on_connect is not None and not callable(self._on_connect):
             raise TypeError("on_connect must be a synchronous callable")
         # Wrapper-level parameters and driver TLS/authentication options remain
         # extensible without silently dropping newly introduced AWS parameters.
-        local = {"type", "url", "db", "username", "maxsize", "acquire_timeout", "on_connect", "connect_options", "echo"}
+        local = {
+            "type",
+            "url",
+            "db",
+            "username",
+            "maxsize",
+            "acquire_timeout",
+            "on_connect",
+            "connect_options",
+            "echo",
+        }
         options.update({key: value for key, value in kw.items() if key not in local})
-        options.update(host=kw.get("host") or "localhost", port=int(kw.get("port") or self.default_port),
-                       user=kw.get("username"), password=kw.get("password") or "", autocommit=True)
+        options.update(
+            host=kw.get("host") or "localhost",
+            port=int(kw.get("port") or self.default_port),
+            user=kw.get("username"),
+            password=kw.get("password") or "",
+            autocommit=True,
+        )
         options[self.database_key] = kw.get("db")
         for name, default in (("connect_timeout", 10), ("socket_timeout", 30)):
             timeout = positive_timeout(options.get(name, default), name)
@@ -106,8 +154,14 @@ class AwsEngine(MeteBase):
             if {"failover", "failover_v2"}.issubset(names):
                 raise ValueError("Do not combine failover and failover_v2")
         mode = options.get("failover_mode")
-        if mode is not None and mode not in {"strict_writer", "strict_reader", "reader_or_writer"}:
-            raise ValueError("Invalid failover_mode; use strict_writer, strict_reader or reader_or_writer")
+        if mode is not None and mode not in {
+            "strict_writer",
+            "strict_reader",
+            "reader_or_writer",
+        }:
+            raise ValueError(
+                "Invalid failover_mode; use strict_writer, strict_reader or reader_or_writer"
+            )
         self._params = copy.deepcopy(options)
         self._available = asyncio.Queue()
         self._workers = [_Worker() for _ in range(int(size))]
@@ -115,8 +169,12 @@ class AwsEngine(MeteBase):
             self._available.put_nowait(worker)
         return self
 
-    async def _run(self, worker, function, *args):
-        future = asyncio.get_running_loop().run_in_executor(worker.executor, partial(function, worker, *args))
+    async def _run(
+        self, worker: _Worker, function: Callable[..., Any], *args: Any
+    ) -> Any:
+        future = asyncio.get_running_loop().run_in_executor(
+            worker.executor, partial(function, worker, *args)
+        )
         cancelled = None
         while True:
             try:
@@ -139,7 +197,7 @@ class AwsEngine(MeteBase):
         return result
 
     @asynccontextmanager
-    async def _lease(self):
+    async def _lease(self) -> AsyncIterator[_Worker]:
         if self._available is None or self._closed:
             raise RuntimeError("AWS engine is not configured or has been closed")
         acquisition = asyncio.create_task(self._available.get())
@@ -168,16 +226,18 @@ class AwsEngine(MeteBase):
                     self._idle.set()
 
     @staticmethod
-    def _close_worker(worker):
+    def _close_worker(worker: _Worker) -> None:
         try:
             worker.close()
         except Exception:
             # Preserve the query exception; this logical connection is never reused.
             warning("AWS connection cleanup failed")
 
-    def _connection(self, worker):
+    def _connection(self, worker: _Worker) -> Any:
         if worker.connection is None:
-            worker.connection = AwsWrapperConnection.connect(self._target_connect(), **self._params)
+            worker.connection = AwsWrapperConnection.connect(
+                self._target_connect(), **self._params
+            )
             worker.reconfigure = True
         if worker.reconfigure:
             worker.connection.autocommit = True
@@ -191,16 +251,20 @@ class AwsEngine(MeteBase):
             worker.reconfigure = False
         return worker.connection
 
-    def _state(self):
+    def _state(self) -> Optional[_Transaction]:
         state = self._transaction.get()
         if state is not None:
             if not state.active or state.owner is not asyncio.current_task():
-                raise TransactionError("AWS transactions cannot be shared with child tasks or reused after exit")
+                raise TransactionError(
+                    "AWS transactions cannot be shared with child tasks or reused after exit"
+                )
             if state.failed:
-                raise TransactionError("AWS transaction failed; exit before issuing more queries")
+                raise TransactionError(
+                    "AWS transaction failed; exit before issuing more queries"
+                )
         return state
 
-    def after_commit(self, callback):
+    def after_commit(self, callback: Callable[[], None]) -> None:
         state = self._state()
         if state is None:
             callback()
@@ -208,21 +272,23 @@ class AwsEngine(MeteBase):
             state.callbacks.append(callback)
 
     @staticmethod
-    def _failed(worker, exception):
-        if isinstance(exception, (FailoverSuccessError, TransactionResolutionUnknownError)):
+    def _failed(worker: _Worker, exception: BaseException) -> None:
+        if isinstance(
+            exception, (FailoverSuccessError, TransactionResolutionUnknownError)
+        ):
             # The wrapper's logical connection contains a recovered connection.
             worker.reconfigure = True
         else:
             worker.discard = True
 
-    def _begin(self, worker):
+    def _begin(self, worker: _Worker) -> None:
         try:
             self._connection(worker).autocommit = False
         except BaseException as exc:
             self._failed(worker, exc)
             raise
 
-    def _finish(self, worker, commit):
+    def _finish(self, worker: _Worker, commit: bool) -> None:
         if worker.connection is None or worker.discard:
             return
         if worker.reconfigure:
@@ -243,9 +309,11 @@ class AwsEngine(MeteBase):
             raise
 
     @asynccontextmanager
-    async def transaction(self):
+    async def transaction(self) -> AsyncIterator[AwsEngine]:
         if self._state() is not None:
-            raise TransactionError("Nested AWS transactions are not supported")
+            async with self.savepoint():
+                yield self
+            return
         async with self._lease() as worker:
             state = _Transaction(worker, asyncio.current_task())
             token = self._transaction.set(state)
@@ -253,7 +321,9 @@ class AwsEngine(MeteBase):
                 await self._run(worker, self._begin)
                 yield self
                 if state.failed:
-                    raise TransactionError("AWS transaction rolled back because a query failed")
+                    raise TransactionError(
+                        "AWS transaction rolled back because a query failed"
+                    )
                 await self._run(worker, self._finish, True)
                 for callback in state.callbacks:
                     callback()
@@ -267,11 +337,44 @@ class AwsEngine(MeteBase):
                 state.active = False
                 self._transaction.reset(token)
 
-    async def query(self, sql, params=None, query_type=QueryTypes.ONE, size=10):
+    async def _savepoint_control(self, state: _Transaction, command: str) -> None:
+        worker = state.worker
+        if worker.discard or worker.reconfigure:
+            raise TransactionError("AWS savepoint connection is no longer usable")
+        await self._run(worker, self._control_savepoint, command)
+
+    def _control_savepoint(self, worker: _Worker, command: str) -> None:
+        cursor = None
+        failed = False
+        try:
+            cursor = worker.connection.cursor(**self.cursor_options)
+            cursor.execute(command)
+        except BaseException as exc:
+            failed = True
+            self._failed(worker, exc)
+            raise
+        finally:
+            if cursor is not None:
+                try:
+                    cursor.close()
+                except BaseException:
+                    worker.discard = True
+                    if not failed:
+                        raise
+
+    async def query(
+        self,
+        sql: str,
+        params: Params = None,
+        query_type: QueryTypes = QueryTypes.ONE,
+        size: int = 10,
+    ) -> Any:
         state = self._state()
         if state is not None:
             try:
-                return await self._run(state.worker, self._query, sql, params, query_type, size)
+                return await self._run(
+                    state.worker, self._query, sql, params, query_type, size
+                )
             except BaseException:
                 state.failed = True
                 raise
@@ -281,7 +384,14 @@ class AwsEngine(MeteBase):
         async with self._lease() as worker:
             return await self._run(worker, self._query, sql, params, query_type, size)
 
-    def _query(self, worker, sql, params, query_type, size):
+    def _query(
+        self,
+        worker: _Worker,
+        sql: str,
+        params: Params,
+        query_type: QueryTypes,
+        size: int,
+    ) -> Any:
         cursor = None
         failed = False
         try:
@@ -306,7 +416,7 @@ class AwsEngine(MeteBase):
                         worker.discard = True
                         raise
 
-    def _result(self, cursor, query_type, size):
+    def _result(self, cursor: Any, query_type: QueryTypes, size: int) -> Any:
         if query_type == QueryTypes.ALL:
             return list(cursor.fetchall())
         if query_type == QueryTypes.ONE:
@@ -326,20 +436,27 @@ class AwsEngine(MeteBase):
                 identity = cursor.target_cursor.lastrowid
             return cursor.rowcount > 0, identity
         if query_type == QueryTypes.CREATEBATCH:
-            return cursor.rowcount, None if self.driver == "aws-postgres" else cursor.target_cursor.lastrowid
+            return (
+                cursor.rowcount,
+                None
+                if self.driver == "aws-postgres"
+                else cursor.target_cursor.lastrowid,
+            )
         if query_type == QueryTypes.UPDATEBATCH:
             return cursor.rowcount
         return cursor.rowcount > 0
 
-    async def close(self):
+    async def close(self) -> None:
         if self._transaction.get() is not None:
-            raise TransactionError("Close the AWS engine only after exiting transactions")
+            raise TransactionError(
+                "Close the AWS engine only after exiting transactions"
+            )
         if self._close_task is None:
             self._closed = True
             self._close_task = asyncio.create_task(self._close())
         await asyncio.shield(self._close_task)
 
-    async def _close(self):
+    async def _close(self) -> None:
         await self._idle.wait()
         try:
             for worker in self._workers:
@@ -348,5 +465,5 @@ class AwsEngine(MeteBase):
             for worker in self._workers:
                 worker.executor.shutdown(wait=False)
 
-    def _target_connect(self):
+    def _target_connect(self) -> Callable[..., Any]:
         raise NotImplementedError

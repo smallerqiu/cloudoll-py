@@ -1,31 +1,44 @@
 """Native MySQL engine with task-owned transactions."""
-import ssl
-import aiomysql
 
-from cloudoll.orm.base import QueryTypes
+from __future__ import annotations
+
+import ssl
+from asyncio import AbstractEventLoop
+from typing import Any, Optional
+
+import aiomysql  # type: ignore[import-untyped]  # Driver has no bundled typing metadata.
+
+from cloudoll.orm.base import Params, QueryTypes
 from cloudoll.orm.engine import AsyncEngine, cursor_result
 
 
-class AttrDict(dict):
-    def __getattr__(self, name):
+class AttrDict(dict[str, Any]):
+    def __getattr__(self, name: str) -> Any:
         return self.get(name)
 
 
-class AttrDictCursor(aiomysql.DictCursor):
+class AttrDictCursor(aiomysql.DictCursor):  # type: ignore[misc]  # Untyped driver extension point.
     dict_type = AttrDict
 
 
 class Mysql(AsyncEngine):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.driver = "mysql"
 
-    async def _open_stream(self, connection, sql, params):
+    async def _open_stream(self, connection: Any, sql: str, params: Params) -> Any:
         cursor = await connection.cursor(aiomysql.SSDictCursor)
         await cursor.execute(sql, params)
         return cursor
 
-    async def _execute(self, connection, sql, params, query_type, size):
+    async def _execute(
+        self,
+        connection: Any,
+        sql: str,
+        params: Params,
+        query_type: QueryTypes,
+        size: int,
+    ) -> Any:
         async with connection.cursor() as cursor:
             if query_type in {QueryTypes.CREATEBATCH, QueryTypes.UPDATEBATCH}:
                 await cursor.executemany(sql, params)
@@ -33,7 +46,9 @@ class Mysql(AsyncEngine):
                 await cursor.execute(sql, params)
             return await cursor_result(cursor, query_type, size)
 
-    async def create_engine(self, loop=None, **kw):
+    async def create_engine(
+        self, loop: Optional[AbstractEventLoop] = None, **kw: Any
+    ) -> Mysql:
         self.configure(kw)
         tls = kw.get("ssl")
         if tls is not None and not isinstance(tls, ssl.SSLContext):

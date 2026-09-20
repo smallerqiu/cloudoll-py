@@ -1,7 +1,8 @@
-from cloudoll.orm.parse import parse_coon
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any
 
+from cloudoll.orm.parse import parse_coon
 from cloudoll.orm.values import UNSET
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from cloudoll.orm.query import Query as Query
@@ -9,11 +10,11 @@ if TYPE_CHECKING:
 __all__ = ["create_engine", "Query", "UNSET"]
 
 
-async def create_engine(**kw):
+async def create_engine(**kw: Any) -> Any:
     url = kw.get("url")
     driver = None
-    configs = {}
-    query = {}
+    configs: dict[str, Any] = {}
+    query: dict[str, Any] = {}
 
     if url is not None:
         configs, query = parse_coon(url)
@@ -43,26 +44,31 @@ async def create_engine(**kw):
         return await Postgres().create_engine(**{**configs, **query})
     elif driver in ["redis", "rediss"]:
         from redis import asyncio as aioredis
+
         """
         redis://[[username]:[password]]@localhost:6379/0
         rediss://[[username]:[password]]@localhost:6379/0
         """
         if url is None:
             url = f"{driver}://{configs['username']}:{configs['password']}@{configs['host']}:{configs['port']}/{configs['db']}"
-        return await aioredis.from_url(url, **query)
+        redis_factory: Callable[..., Awaitable[Any]] = aioredis.from_url
+        return await redis_factory(url, **query)
     else:
         raise ValueError("Not support this database type.")
 
 
-def __getattr__(name):
+def __getattr__(name: str) -> Any:
     # Preserve explicit imports without importing every optional driver at startup.
     if name == "Mysql":
         from .mysql import Mysql
+
         return Mysql
     if name == "Postgres":
         from .postgres import Postgres
+
         return Postgres
     if name == "Query":
         from .query import Query
+
         return Query
     raise AttributeError(name)

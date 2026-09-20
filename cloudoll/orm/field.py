@@ -1,8 +1,17 @@
-from typing import Any, Optional
+from __future__ import annotations
+
+import copy
+from collections.abc import Callable
+from typing import Any, Generic, Optional, TypeVar, Union, cast
+
+from cloudoll.orm.values import _Unset
+
+T = TypeVar("T")
+F = TypeVar("F", bound="Field[Any]")
 
 
-class objdict(dict):
-    def __getattr__(self, attr):
+class objdict(dict[str, str]):
+    def __getattr__(self, attr: str) -> str:
         try:
             return self[attr]
         except KeyError:
@@ -79,28 +88,29 @@ OP = objdict(
 )
 
 
+def _op(op: str, inverse: bool = False) -> Callable[[FieldBase, Any], Expression]:
+    def inner(self: FieldBase, rhs: Any) -> Expression:
+        if inverse:
+            return Expression(rhs, op, self)
+        return Expression(self, op, rhs)
+
+    return inner
+
+
 class FieldBase:
     full_name: str
-    lhs: Optional["FieldBase"]
-    rhs: Optional["FieldBase"]
-    op: Optional[str]
+    lhs: Any
+    rhs: Any
+    op: str
 
-    def _op(op, inverse=False):
-        def inner(self, rhs):
-            if inverse:
-                return Expression(rhs, op, self)
-            return Expression(self, op, rhs)
-
-        return inner
-
-    # def __eq__(self, rhs):
+    # def __eq__(self, rhs: Any) -> Function:
     #     return Expression(self, OP.EQ, rhs)
 
-    # def __ne__(self, rhs):
+    # def __ne__(self, rhs: Any) -> Function:
     #     return Expression(self, OP.NE, rhs)
 
-    __eq__ = _op(OP.EQ)  # ==
-    __ne__ = _op(OP.NE)  # !=
+    __eq__ = _op(OP.EQ)  # type: ignore[assignment]  # SQL equality produces an expression, not bool.
+    __ne__ = _op(OP.NE)  # type: ignore[assignment]  # SQL inequality produces an expression.
 
     __lt__ = _op(OP.LT)  # <
     __le__ = _op(OP.LTE)  # <=
@@ -125,172 +135,174 @@ class FieldBase:
     ilike = _op(OP.ILIKE)  # ilike for pg
     not_like = _op(OP.NOT_LIKE)  # not like
 
-    def group_concat(self, *arg):
+    def group_concat(self, *arg: Any) -> Function:
         return Function(self, OP.GROUP_CONCAT, arg)
 
-    def distinct(self, *arg):
+    def distinct(self, *arg: Any) -> Function:
         return Function(self, OP.DISTINCT, arg)
 
-    def desc(self):
+    def desc(self) -> Expression:
         return Expression(self, OP.DESC, None)
 
-    def asc(self):
+    def asc(self) -> Expression:
         return Expression(self, OP.ASC, None)
 
-    def count(self):
+    def count(self) -> Function:
         return Function(self, OP.COUNT)
 
-    def count_when(self, *arg):
+    def count_when(self, *arg: Any) -> Function:
         """
         input: count_when(A.field > 10 ,1 , 0) \n
         output: count(case when A.field > 10 then 1 else 0 end)
         """
         return Function(self, OP.COUNT_WHEN, arg)
 
-    def max(self):
+    def max(self) -> Function:
         return Function(self, OP.MAX)
 
-    def max_when(self, *arg):
+    def max_when(self, *arg: Any) -> Function:
         """
         input: max_when(A.field > 10 ,A.field) \n
         output: max(case when A.field > 10 then A.field end)
         """
         return Function(self, OP.MAX_WHEN, arg)
 
-    def min(self):
+    def min(self) -> Function:
         return Function(self, OP.MIN)
 
-    def min_when(self, *arg):
+    def min_when(self, *arg: Any) -> Function:
         """
         input: min_when(A.field > 10 ,A.field) \n
         output: min(case when A.field > 10 then A.field end)
         """
         return Function(self, OP.MIN_WHEN, arg)
 
-    def sum(self):
+    def sum(self) -> Function:
         return Function(self, OP.SUM)
 
-    def sum_when(self, *arg):
+    def sum_when(self, *arg: Any) -> Function:
         """
         input: sum_when(A.field > 10 ,1 , 0)\n
         output: sum(case when A.field > 10 then 1 else 0 end)
         """
         return Function(self, OP.SUM_WHEN, arg)
 
-    def avg(self):
+    def avg(self) -> Function:
         return Function(self, OP.AVG)
 
-    def avg_when(self, *arg):
+    def avg_when(self, *arg: Any) -> Function:
         """
         input: avg_when(A.field > 10 , A.field)\n
         output: avg(case when A.field > 10 then A.field end)
         """
         return Function(self, OP.AVG_WHEN, arg)
 
-    def date_format(self, args):
+    def date_format(self, args: str) -> Function:
         return Function(self, OP.DATE_FORMAT, args)
 
-    def is_today(self):
+    def is_today(self) -> Function:
         """
         output:  DATE({col_name}) = CURDATE()
         """
         return Function(self, OP.IS_TODAY)
 
-    def is_this_week(self):
+    def is_this_week(self) -> Function:
         return Function(self, OP.IS_THIS_WEEK)
 
-    def is_this_month(self):
+    def is_this_month(self) -> Function:
         return Function(self, OP.IS_THIS_MONTH)
 
-    def is_this_year(self):
+    def is_this_year(self) -> Function:
         return Function(self, OP.IS_THIS_YEAR)
 
-    def lasted_hours(self, args):
+    def lasted_hours(self, args: int) -> Function:
         return Function(self, OP.LASTED_HOURS, args)
 
-    def lasted_minutes(self, args):
+    def lasted_minutes(self, args: int) -> Function:
         return Function(self, OP.LASTED_MINUTES, args)
 
-    def lasted_seconds(self, args):
+    def lasted_seconds(self, args: int) -> Function:
         return Function(self, OP.LASTED_SECONDS, args)
 
-    def lasted_years(self, args):
+    def lasted_years(self, args: int) -> Function:
         return Function(self, OP.LASTED_YEARS, args)
 
-    def lasted_months(self, args):
+    def lasted_months(self, args: int) -> Function:
         return Function(self, OP.LASTED_MONTHS, args)
 
-    def lasted_days(self, args):
+    def lasted_days(self, args: int) -> Function:
         return Function(self, OP.LASTED_DAYS, args)
 
-    def before_months(self, args):
+    def before_months(self, args: int) -> Function:
         return Function(self, OP.BEFORE_MONTHS, args)
 
-    def before_years(self, args):
+    def before_years(self, args: int) -> Function:
         return Function(self, OP.BEFORE_YEARS, args)
 
-    def before_days(self, args):
+    def before_days(self, args: int) -> Function:
         return Function(self, OP.BEFORE_DAYS, args)
 
-    def before_hours(self, args):
+    def before_hours(self, args: int) -> Function:
         return Function(self, OP.BEFORE_HOURS, args)
 
-    def before_minutes(self, args):
+    def before_minutes(self, args: int) -> Function:
         return Function(self, OP.BEFORE_MINUTES, args)
 
-    def before_seconds(self, args):
+    def before_seconds(self, args: int) -> Function:
         return Function(self, OP.BEFORE_SECONDS, args)
 
-    def json_contains_object(self, key, value):
+    def json_contains_object(self, key: Any, value: Any) -> Function:
         """
         input: A.id.json_contains_object("id", key,value)
         output: json_contains(`a`.id,json_object('key',value))
         """
         return Function(self, OP.JSON_CONTAINS_OBJECT, (key, value))
 
-    def json_contains_array(self, *args):
+    def json_contains_array(self, *args: Any) -> Function:
         """
         input: A.id.json_contains_array(key1,key2 ...)
         output: json_contains(`a`.id,json_array( key1, key2 ...))
         """
-        values = args[0] if len(args) == 1 and isinstance(args[0], (tuple, list)) else args
+        values = (
+            args[0] if len(args) == 1 and isinstance(args[0], (tuple, list)) else args
+        )
         return Function(self, OP.JSON_CONTAINS_ARRAY, values)
 
-    def contains(self, args):
+    def contains(self, args: str) -> Function:
         return Function(self, OP.CONTAINS, args)
 
-    def As(self, args):
+    def As(self, args: str) -> Expression:
         return Expression(self, OP.AS, args)
 
-    def is_null(self):
+    def is_null(self) -> Expression:
         return Expression(self, OP.IS_NULL, None)
 
-    def not_null(self):
+    def not_null(self) -> Expression:
         return Expression(self, OP.IS_NOT_NULL, None)
 
-    def between(self, h1, h2):
+    def between(self, h1: Any, h2: Any) -> Expression:
         return Expression(self, OP.BETWEEN, ExpList(h1, OP.AND, h2))
 
-    def not_between(self, h1, h2):
+    def not_between(self, h1: Any, h2: Any) -> Expression:
         return Expression(self, OP.NOT_BETWEEN, ExpList(h1, OP.AND, h2))
 
 
 class ExpList(FieldBase):
-    def __init__(self, lpt, op, rpt):
+    def __init__(self, lpt: Any, op: str, rpt: Any) -> None:
         self.lpt = lpt
         self.op = op
         self.rpt = rpt
 
-    def sql(self):
+    def sql(self) -> tuple[str, Optional[list[Any]]]:
         lpt = self.lpt
         rpt = self.rpt
 
-        p = []
+        p: list[Any] = []
         q = []
         if isinstance(lpt, Expression):
             _q, _p = lpt.sql()
             q.append(_q)
-            p = p + _p
+            p = p + (_p or [])
         else:
             q.append("?")
             p.append(lpt)
@@ -298,7 +310,7 @@ class ExpList(FieldBase):
         if isinstance(rpt, Expression):
             _q, _p = rpt.sql()
             q.append(_q)
-            p = p + _p
+            p = p + (_p or [])
         else:
             q.append("?")
             p.append(rpt)
@@ -307,7 +319,7 @@ class ExpList(FieldBase):
         # return f"{lpt.sql() if isinstance(lpt,Expression) else lpt} {self.op} {rpt.sql() if isinstance(rpt,Expression) else rpt}"
 
 
-def deconstruct(args):
+def deconstruct(args: Any) -> tuple[Optional[str], Any, Any, Any]:
     f = args[0] if len(args) > 0 else None
     v1 = args[1] if len(args) > 1 else 1
     v2 = args[2] if len(args) > 2 and args[2] is not None else "NULL"
@@ -322,12 +334,12 @@ def deconstruct(args):
 
 
 class Function(FieldBase):
-    def __init__(self, col, op, rpt=None):
+    def __init__(self, col: FieldBase, op: str, rpt: Any = None) -> None:
         self.col = col
         self.op = op
         self.rpt = rpt
 
-    def sql(self):
+    def sql(self) -> tuple[str, Optional[list[Any]]]:
         op = self.op
         col_name = self.col.full_name
         # todo:
@@ -423,8 +435,8 @@ class Function(FieldBase):
             if arg:
                 if len(arg) == 0:
                     extra = col_name
-                elif len(arg) == 1 and isinstance(arg[0], FieldBase):
-                    extra = f"{arg[0].op} {arg[0].col.name}"
+                elif len(arg) == 1 and isinstance(arg[0], Function):
+                    extra = f"{arg[0].op} {arg[0].col.full_name}"
             else:
                 # todo : DISTINCT name ORDER BY name ASC SEPARATOR '; '
                 extra = col_name
@@ -433,20 +445,20 @@ class Function(FieldBase):
         elif op == OP.DISTINCT:
             return f"DISTINCT {col_name}", None
         else:
-            return None, None
+            raise NotImplementedError(f"Unsupported SQL function: {op}")
 
 
 class Expression(FieldBase):
-    def __init__(self, lhs, op, rhs):
+    def __init__(self, lhs: Any, op: str, rhs: Any) -> None:
         self.lhs = lhs
         self.op = op
         self.rhs = rhs
 
-    def sql(self):
+    def sql(self) -> tuple[str, Optional[list[Any]]]:
         l = self.lhs
         r = self.rhs
         is_fun = isinstance(l, Function)
-        p = []
+        p: list[Any] = []
         q = []
         if not is_fun and not isinstance(l, Field):
             # select no need ()
@@ -456,12 +468,12 @@ class Expression(FieldBase):
         elif isinstance(l, Expression):
             _q, _p = l.sql()
             q.append(_q)
-            p = p + _p
+            p = p + (_p or [])
         elif is_fun:
             _q, _p = l.sql()
             q.append(_q)
             if _p:
-                p = p + _p
+                p = p + (_p or [])
 
         q.append(f" {self.op} ")
 
@@ -471,11 +483,11 @@ class Expression(FieldBase):
                 p.append(r._value)
             else:
                 q.append(r.full_name)
-        elif isinstance(r, FieldBase):
+        elif isinstance(r, (Function, Expression, ExpList)):
             _q, _p = r.sql()
             q.append(_q)
             if _p:
-                p = p + _p
+                p = p + (_p or [])
         elif self.op == OP.AS:
             q.append(r)
         elif r is not None:
@@ -491,33 +503,33 @@ class Expression(FieldBase):
         q = [str(num) for num in q]
         return "".join(q), p
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         sql, params = self.sql()
         return f"Expression({sql!r}, {params!r})"
 
 
-class Field(FieldBase):
+class Field(FieldBase, Generic[T]):
     def __init__(
         self,
-        name,  # 列名
-        column_type,  # 类型
+        name: Optional[str],  # 列名
+        column_type: str,  # 类型
         default: Optional[Any] = None,  # 默认值
-        primary_key=False,  # 主键
-        charset=None,  # 编码
-        max_length=None,  # 长度
-        scale_length=None,  # 精度
-        auto_increment=False,  # 自增
-        NOT_NULL=False,  # 非空
-        created_generated=False,  # 创建时for datetime
-        update_generated=False,  # 更新时for datetime
-        unsigned=False,  # 无符号，没有负数
-        comment=None,  # 备注
-        **kwargs,
-    ):
+        primary_key: bool = False,  # 主键
+        charset: Optional[str] = None,  # 编码
+        max_length: Optional[int] = None,  # 长度
+        scale_length: Optional[int] = None,  # 精度
+        auto_increment: bool = False,  # 自增
+        NOT_NULL: bool = False,  # 非空
+        created_generated: bool = False,  # 创建时for datetime
+        update_generated: bool = False,  # 更新时for datetime
+        unsigned: bool = False,  # 无符号，没有负数
+        comment: Optional[str] = None,  # 备注
+        **kwargs: Any,
+    ) -> None:
         super().__init__()
         # self.full_name: Optional[str] = None
-        self._value = None
-        self.name = name
+        self._value: Union[T, None, _Unset] = None
+        self.name = name or ""
         self.column_type = column_type
         self.primary_key = primary_key
         self.charset = charset
@@ -525,26 +537,41 @@ class Field(FieldBase):
         self.max_length = max_length
         self.scale_length = scale_length
         self.auto_increment = auto_increment
-        self.NOT_NULL = NOT_NULL
+        self.NOT_NULL = kwargs.pop("not_null", NOT_NULL)
         self.created_generated = created_generated
         self.update_generated = update_generated
         self.comment = comment
         self.unsigned = unsigned
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self._value)
         # "<%s, %s:%s>" % (self.__class__.__name__, self.column_type, self.name)
         # return self.name
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return str(self._value)
 
     # def __getattr__(self, item):
     #     return self[item]
     @property
-    def value(self):
+    def value(self) -> Union[T, None, _Unset]:
         return self._value
 
     @value.setter
-    def value(self, value):
+    def value(self, value: Union[T, None, _Unset]) -> None:
         self._value = value
+
+    def __get__(self: F, instance: Any, owner: Optional[type[Any]] = None) -> F:
+        if instance is None:
+            return self
+        # Records keep independent Field objects, not raw scalar descriptors.
+        return cast(F, instance.__dict__[self.name])
+
+    def __set__(self, instance: Any, value: Union[T, None, _Unset, Field[T]]) -> None:
+        if isinstance(value, Field):
+            instance.__dict__[self.name] = value
+        else:
+            field = copy.copy(instance.__dict__.get(self.name, self))
+            field.value = value
+            field._record_field = True
+            instance.__dict__[self.name] = field

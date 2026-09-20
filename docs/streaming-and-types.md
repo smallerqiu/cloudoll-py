@@ -41,9 +41,33 @@ user: Optional[User] = await query.one_model()
 
 原有 `one()` 保留全部运行行为，类型为 `ModelType | dict[str, Any] | None`：因为同一个可变 Query 可以被 `join()` 改写，不能假装它永远只返回模型。JOIN 仍使用 `one()`；`all()` 和 `stream()` 都返回行字典。
 
-包内加入 `py.typed`，安装 wheel 后类型检查器也可以读取内联注解。mypy 检查范围扩展到 Query、流式迭代器、驱动协议以及 `tests/typing/query_contract.py`。其中负例用于确认错误模型类型会被拒绝，避免泛型退化成 Any 而未被发现。
+包内包含 `py.typed`，安装 wheel 后类型检查器也可以读取内联注解。mypy strict 检查整个 `cloudoll/` 和 `tests/typing/`。类型契约覆盖 Query、字段、真实引擎与 HTTP 客户端；负例用于确认错误类型确实被拒绝，避免退化成 Any 而未被发现。
 
-这不是全库类型化完成：字段表达式、动态字段 `.value`、Web/CLI 等旧模块仍有 Any；Query 暂允许调用尚未完整注解的表达式编译器。字段的声明类型到 Python 值类型的自动推导尚未实现。
+## 字段值类型推导
+
+```python
+from cloudoll.orm.model import Model, models
+
+class User(Model):
+    id = models.IntegerField(primary_key=True)
+    name = models.VarCharField()
+
+user = User(id=1)
+user.name = "Alice"     # 合法：descriptor 保留记录自己的 Field
+user.id.value = 2        # 合法：int
+# user.id = "wrong"     # mypy 拒绝
+# user.name.value = 3    # mypy 拒绝
+```
+
+类上的 `User.id` 仍用于 SQL 表达式；实例上的 `user.id` 仍是 Field，原有 `.value` API 不变。字段现在是 `Field[T]`：整数推导为 int，字符/文本为 str，布尔为 bool，浮点为 float，Numeric/Decimal 为 Decimal，Datetime/Timestamp 为 datetime，Date 为 date。JSON 使用容器/标量联合类型，容器内部保留 Any。
+
+`.value` 的类型为 `T | None | _Unset`：NULL、未加载、未赋值都是合法状态。即使声明 `not_null=True`，部分列查询仍可能返回未加载字段，因此不假装总有值。调用方可用 `isinstance(value, int)` 等缩小类型后使用。注解不做隐式转换或运行时校验，构造器 `**kwargs`、动态字符串字段名和原始 SQL 仍属于动态边界。
+
+全库已纳入 strict 检查，不再允许 Query 调用未注解函数；只对缺少类型元数据的外部依赖做定向导入兼容处理。驱动游标/返回结果、可扩展配置、JSON、动态兼容代理等保留 Any。这不是“零 Any”，也不是对所有运行行为的正确性证明。
+
+保存点与嵌套事务用法见 [可靠性说明](reliability.md)。
+
+类型注解已迁移到 `contextlib.AbstractAsyncContextManager`、`collections.abc` 与内置容器泛型，不再使用对应的旧 typing 别名。`contextlib.asynccontextmanager` 装饰器本身没有弃用，事务和保存点仍使用它。
 
 ## 验证
 

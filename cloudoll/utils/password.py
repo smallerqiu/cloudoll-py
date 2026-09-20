@@ -1,12 +1,13 @@
 import hashlib
 import secrets
 import string
+from collections.abc import Callable
 
 from cryptography.fernet import Fernet
 
 
 class CryFernet:
-    def __init__(self, key: str):
+    def __init__(self, key: str) -> None:
         self.fernet = Fernet(key.encode())
 
     def encrypt(self, value: str) -> str:
@@ -23,7 +24,7 @@ def hash(value: str, key: str) -> str:
     return sha256.hexdigest()
 
 
-def generator(size: int = 16, use_special: bool = False):
+def generator(size: int = 16, use_special: bool = False) -> Callable[[], str]:
     """
     to generate a custom alphabet.
 
@@ -34,7 +35,7 @@ def generator(size: int = 16, use_special: bool = False):
     base_alphabet = string.ascii_letters + string.digits
     alphabet = base_alphabet + (string.punctuation if use_special else "")
 
-    def generator():
+    def generator() -> str:
         return "".join(secrets.choice(alphabet) for _ in range(size))
 
     return generator

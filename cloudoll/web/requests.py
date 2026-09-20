@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 import asyncio
+from types import TracebackType
+from typing import Any, Optional
 
 import aiohttp
 from aiohttp import BasicAuth, ClientSession
@@ -13,10 +17,12 @@ class Session:
         max_retries: int = 1,
         retry_delay: int = 1,
         retry_non_idempotent: bool = False,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         if not isinstance(max_retries, int) or max_retries < 1:
-            raise ValueError("max_retries is the total number of attempts and must be >= 1")
+            raise ValueError(
+                "max_retries is the total number of attempts and must be >= 1"
+            )
         if retry_delay < 0:
             raise ValueError("retry_delay must be >= 0")
         self.max_retries = max_retries
@@ -30,13 +36,20 @@ class Session:
         self,
         method: str,
         url: str,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> aiohttp.ClientResponse:
         last_exception = None
 
         method = method.upper()
         attempts = self.max_retries
-        if not self.retry_non_idempotent and method not in {"GET", "HEAD", "OPTIONS", "PUT", "DELETE", "TRACE"}:
+        if not self.retry_non_idempotent and method not in {
+            "GET",
+            "HEAD",
+            "OPTIONS",
+            "PUT",
+            "DELETE",
+            "TRACE",
+        }:
             attempts = 1
         for attempt in range(attempts):
             try:
@@ -59,28 +72,28 @@ class Session:
     async def get(
         self,
         url: str,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> aiohttp.ClientResponse:
         """Send a GET request"""
         return await self.request("GET", url, **kwargs)
 
     async def post(
         self,
         url: str,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> aiohttp.ClientResponse:
         """Send a POST request"""
         return await self.request("POST", url, **kwargs)
 
     async def put(
         self,
         url: str,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> aiohttp.ClientResponse:
         """Send a PUT request"""
         return await self.request("PUT", url, **kwargs)
 
-    async def delete(self, url: str, **kwargs):
+    async def delete(self, url: str, **kwargs: Any) -> aiohttp.ClientResponse:
         """Send a DELETE request"""
         return await self.request("DELETE", url, **kwargs)
 
@@ -89,8 +102,13 @@ class Session:
         if self.session is not None:
             await self.session.close()
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Session:
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         await self.close()

@@ -1,4 +1,5 @@
 """Native-driver streaming checks. No AWS drivers or Aurora infrastructure."""
+
 import asyncio
 import os
 from uuid import uuid4
@@ -24,12 +25,17 @@ async def dataset(request):
         id = models.IntegerField(primary_key=True)
 
     try:
-        await db.query(f"CREATE TABLE {Entry.__table__} (id INTEGER PRIMARY KEY)", query_type=QueryTypes.UPDATE)
+        await db.query(
+            f"CREATE TABLE {Entry.__table__} (id INTEGER PRIMARY KEY)",
+            query_type=QueryTypes.UPDATE,
+        )
         await Entry.use(db).insert_batch([{"id": i} for i in range(2051)])
         yield db, Entry
     finally:
         try:
-            await db.query(f"DROP TABLE IF EXISTS {Entry.__table__}", query_type=QueryTypes.UPDATE)
+            await db.query(
+                f"DROP TABLE IF EXISTS {Entry.__table__}", query_type=QueryTypes.UPDATE
+            )
         finally:
             await db.close()
 

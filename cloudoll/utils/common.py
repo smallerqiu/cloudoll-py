@@ -1,33 +1,35 @@
 import asyncio
 import errno
+from collections.abc import Mapping
+from typing import Any
 
 from cloudoll.logging import warning
 
 
-class Object(dict):
+class Object(dict[str, Any]):
     # __setattr__ = dict.__setitem__
     # __getattr__ = dict.__getitem__
-    def __setattr__(self, key, value):
+    def __setattr__(self, key: str, value: Any) -> None:
         self[key] = value
 
-    def __getattr__(self, key):
+    def __getattr__(self, key: str) -> Any:
         return self.get(key, None)
 
-    def __delattr__(self, key):
+    def __delattr__(self, key: str) -> None:
         try:
             del self[key]
         except KeyError:
             raise AttributeError(f"'DotDict' object has no attribute '{key}'")
 
-    def __getstate__(self):
+    def __getstate__(self) -> dict[str, Any]:
         """to fix pickle.dumps"""
         return dict(self)
 
-    def __setstate__(self, state):
+    def __setstate__(self, state: Mapping[str, Any]) -> None:
         self.update(state)
 
 
-def chainMap(*dicts):
+def chainMap(*dicts: Mapping[str, Any]) -> Object:
     merged_dict = Object()
     for d in dicts:
         for key, value in d.items():

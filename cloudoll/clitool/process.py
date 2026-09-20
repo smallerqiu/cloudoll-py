@@ -5,7 +5,8 @@ import signal
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from types import FrameType
+from typing import NoReturn, Optional, cast
 
 import click
 import psutil
@@ -14,7 +15,7 @@ from tabulate import tabulate
 
 class ProcessManager:
     @staticmethod
-    def ensure_runtime_dir():
+    def ensure_runtime_dir() -> None:
         """make sure runtime directory exists"""
         try:
             run_dir = ProcessManager.get_run_dir()
@@ -24,7 +25,7 @@ class ProcessManager:
             raise click.Abort()
 
     @staticmethod
-    def get_run_dir():
+    def get_run_dir() -> Path:
         home = Path.home()
         if platform.system() == "Windows":
             run_dir = home / "AppData/Local/cloudoll"
@@ -39,7 +40,7 @@ class ProcessManager:
         return run_dir
 
     @staticmethod
-    def get_pid_path(name: str):
+    def get_pid_path(name: str) -> Path:
         run_dir = ProcessManager.get_run_dir()
         return run_dir / f"{name}.pid"
 
@@ -56,8 +57,8 @@ class ProcessManager:
             click.echo(f"⚠️ can't save pid file: {e}", err=True)
 
     @staticmethod
-    def safe_exit(service_name: str):
-        pid = 0
+    def safe_exit(service_name: str) -> None:
+        pid: Optional[int] = None
         try:
             pid = ProcessManager.get_running_pid(service_name)
             if not pid:
@@ -65,7 +66,7 @@ class ProcessManager:
                 return
 
             if platform.system() == "Windows":
-                os.kill(pid, signal.CTRL_C_EVENT)
+                os.kill(pid, getattr(signal, "CTRL_C_EVENT"))
             else:
                 os.kill(pid, signal.SIGTERM)
 
@@ -109,21 +110,26 @@ class ProcessManager:
         """valid process"""
         try:
             proc = psutil.Process(pid)
-            valid_identifiers = [
-                f"--name {service_name}",
-                f"-n {service_name}",
-            ]
-            cmdline = " ".join(psutil.Process(os.getpid()).cmdline())
+            cmdline = proc.cmdline()
+            matches_name = any(
+                (
+                    argument in {"--name", "-n"}
+                    and index + 1 < len(cmdline)
+                    and cmdline[index + 1] == service_name
+                )
+                or argument == f"--name={service_name}"
+                for index, argument in enumerate(cmdline)
+            )
             return (
-                proc.is_running()
+                bool(proc.is_running())
                 and proc.status() != psutil.STATUS_ZOMBIE
-                and any(ident in cmdline for ident in valid_identifiers)
+                and matches_name
             )
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return False
 
     @staticmethod
-    def cleanup(service_name: str):
+    def cleanup(service_name: str) -> None:
         """Cleaning up residual PID files"""
         app_pid_file = ProcessManager.get_pid_path(service_name)
         if os.path.exists(app_pid_file):
@@ -133,16 +139,16 @@ class ProcessManager:
                 pass
 
     @staticmethod
-    def handle_shutdown(service_name: str):
+    def handle_shutdown(service_name: str) -> NoReturn:
         """Elegant Closure Processing"""
         ProcessManager.cleanup(service_name)
         os._exit(0)
 
     @staticmethod
-    def register_signal_handlers(service_name: str):
+    def register_signal_handlers(service_name: str) -> None:
         """register signal"""
 
-        def guarded_shutdown(signum, frame):
+        def guarded_shutdown(signum: int, frame: Optional[FrameType]) -> None:
             current_pid = os.getpid()
             try:
                 # Double validation to prevent false triggers
@@ -159,7 +165,10 @@ class ProcessManager:
                 signal.SIGTERM: "SIGTERM",
             }
             if platform.system() != "Windows"
-            else {signal.SIGINT: "SIGINT", signal.CTRL_C_EVENT: "CTRL_C_EVENT"}
+            else {
+                signal.SIGINT: "SIGINT",
+                getattr(signal, "CTRL_C_EVENT"): "CTRL_C_EVENT",
+            }
         )
 
         for sig, name in sigmap.items():
@@ -170,7 +179,7 @@ class ProcessManager:
                 click.echo(f"can't register signal {name}: {e}")
 
     @staticmethod
-    def save_start_args(service_name: str, args: list):
+    def save_start_args(service_name: str, args: list[str]) -> None:
         """Save startup parameters to file"""
         run_dir = ProcessManager.get_run_dir()
         args_file = run_dir / f"{service_name}.args"
@@ -178,18 +187,18 @@ class ProcessManager:
             json.dump(args, f)
 
     @staticmethod
-    def load_start_args(service_name: str) -> list:
+    def load_start_args(service_name: str) -> list[str]:
         """Read saved startup parameters"""
         run_dir = ProcessManager.get_run_dir()
         args_file = run_dir / f"{service_name}.args"
         try:
             with open(args_file) as f:
-                return json.load(f)
+                return cast(list[str], json.load(f))
         except (FileNotFoundError, json.JSONDecodeError):
             return []
 
     @staticmethod
-    def is_pid_alive(pid):
+    def is_pid_alive(pid: int) -> bool:
         try:
             os.kill(pid, 0)  # 不发送信号，只检测是否存在
             return True
@@ -197,7 +206,7 @@ class ProcessManager:
             return False
 
     @staticmethod
-    def list():
+    def list() -> None:
         pid_dir = ProcessManager.get_run_dir()
         if not pid_dir.exists():
             click.echo("No services running.")

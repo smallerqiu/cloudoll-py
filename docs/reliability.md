@@ -19,11 +19,31 @@ async with db.transaction():
 事务内固定使用同一条连接，正常退出提交，异常（包括任务取消）退出回滚。无显式事务的单次查询也有独立的提交/回滚边界。批量写入作为一次事务执行。
 
 - 本节描述原生 `mysql` / `postgres`。AWS 包装驱动的事务已另行实现，但未测试；取消、超时和故障切换行为不同，详见 [Aurora 接入说明](aurora.md)。
-- 不支持嵌套事务/保存点。事务属于创建它的 asyncio task，不能在事务内部用 `create_task()` 或 `gather()` 并发共享连接。独立任务可以各自创建事务。
+- 支持嵌套事务（自动使用保存点）和显式 `db.savepoint()`。事务属于创建它的 asyncio task，不能在事务内部用 `create_task()` 或 `gather()` 并发共享连接。独立任务可以各自创建事务。
 - 某条 SQL 失败，即使在块内捕获异常，事务也会被标记失败；后续查询被拒绝，退出时回滚并抛 `TransactionError`。
 - 请勿在事务块中执行 DDL 或原始 `BEGIN` / `COMMIT` / `ROLLBACK`。特别是 MySQL DDL 可能隐式提交，库不解析或阻止所有原始 SQL。
 - COMMIT 响应丢失时，结果可能已提交。库不自动重放写操作；业务必须使用幂等键或独立查询核实结果。
 - 回滚不会撤销 Python 对象已赋的值，但会保留脏字段供调用方重新加载或重试。
+
+### 保存点：只撤销内层操作
+
+```python
+async with db.transaction():
+    await Order.use(db).insert(id=order_id, status="created")
+    try:
+        async with db.savepoint():  # 嵌套 db.transaction() 等价
+            await optional_operation(db)
+    except ValueError:
+        pass  # 内层成功回滚后，外层可以继续
+    await Audit.use(db).insert(message="order created")
+```
+
+- 显式保存点要求已有事务，使用内部生成的唯一名称，不接受用户拼接名称。
+- 内层 SQL 错误即使被内层捕获，退出该层仍回滚并抛出 `TransactionError`；应在保存点块外捕获。成功回滚后原生驱动可继续外层事务。
+- 保存点释放不是提交。只有最外层 COMMIT 成功才执行 ORM 的清理脏字段回调；内层回滚会撤销该层及其子层登记的回调。Python 字段值不自动回退。
+- 超时、取消使连接失效，或保存点控制 SQL 失败时，不能继续外层事务；外层保持失败状态。回滚失败不会覆盖原始异常。
+- DDL、手写事务控制 SQL、跨 task 共享以及与流式读取混用仍不支持。数据库死锁等也可能撤销整个事务，并非所有数据库错误都可由保存点恢复。
+- Aurora 的同名接口已实现，但未测试，恢复边界见 [Aurora 说明](aurora.md)。
 
 ## UNSET、NULL 与脏字段
 
@@ -89,9 +109,9 @@ Redis/Memcached 移到 `cache` extra：`pip install -e '.[cache]'`。版本只�
 python -m pip install -e '.[mysql,postgres,cache,dev]'
 python -m ruff check cloudoll tests
 python -m mypy
-python -m pytest -q -m 'not integration' --cov=cloudoll.orm.engine --cov=cloudoll.web.request_data --cov-fail-under=85
+python -m pytest -q -m 'not integration' -k 'not aws' --cov=cloudoll.orm.engine --cov=cloudoll.orm.streaming --cov=cloudoll.web.request_data --cov-fail-under=85
 ```
 
-静态检查覆盖语法和未定义名称等错误；类型检查已扩展到 Query、流式迭代器和类型契约示例，但不代表整个旧代码库已经完成类型化。覆盖率门槛针对事务引擎、流式迭代器与请求解析模块，不是全库覆盖率。数据库实测见 [架构与验证](architecture.md)。
+静态检查覆盖语法和未定义名称等错误；mypy strict 检查整个 `cloudoll/`（包括 ORM、Web、CLI、邮件、工具、脚手架）及 `tests/typing/`。动态数据库结果、JSON、插件配置等仍明确使用 Any，不代表运行时类型验证或消除所有动态边界。覆盖率门槛针对事务引擎、流式迭代器与请求解析模块，不是全库覆盖率。数据库实测见 [架构与验证](architecture.md)。
 
-原生驱动的流式查询和 Query 泛型已实现，见 [流式查询与类型支持](streaming-and-types.md)。后续仍可补保存点、字段值类型推导和其他模块注解。AWS 事务实现需补测试验证，不能按代码已落地推断云端切换可靠性。
+原生驱动的保存点、流式查询、Query 泛型及字段值推导已实现，见 [流式查询与类型支持](streaming-and-types.md)。AWS 事务和保存点仍需测试验证；当前 CI 显式排除 AWS 用例，不能按代码已落地推断云端切换可靠性。

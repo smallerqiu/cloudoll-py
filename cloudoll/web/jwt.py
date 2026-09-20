@@ -1,17 +1,17 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 __author__ = "Qiu / smallerqiu@gmail.com"
 
 import datetime
-from typing import Union
+from collections.abc import Mapping
+from typing import Any, Optional, Union
 
 import jwt
 
 from cloudoll.logging import error
 
 
-def encode(payload, key, exp: Union[int, str] = 3600) -> str:
+def encode(
+    payload: Mapping[str, Any], key: Union[str, bytes], exp: Union[int, str] = 3600
+) -> str:
     """
     jwt 加密
     :params payload
@@ -30,7 +30,9 @@ def encode(payload, key, exp: Union[int, str] = 3600) -> str:
     return result
 
 
-def decode(token, key):
+def decode(
+    token: Union[str, bytes], key: Union[str, bytes]
+) -> Optional[dict[str, Any]]:
     """
     jwt
     :params token

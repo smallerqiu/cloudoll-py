@@ -1,4 +1,5 @@
 """An omitted database value, distinct from SQL NULL (Python None)."""
+
 from typing import Any
 
 

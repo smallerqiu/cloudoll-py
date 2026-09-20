@@ -2,6 +2,7 @@
 
 Requires an explicitly authorized dedicated test cluster and AWS credentials.
 """
+
 import asyncio
 import json
 import os
@@ -17,7 +18,9 @@ from cloudoll.orm import create_engine
 async def test_aurora_failover_recovers_queries():
     cluster_id = os.getenv("CLOUDOLL_AWS_TEST_CLUSTER")
     if not cluster_id or os.getenv("CLOUDOLL_ALLOW_FAILOVER") != cluster_id:
-        pytest.skip("Failover requires explicit authorization for a dedicated test cluster")
+        pytest.skip(
+            "Failover requires explicit authorization for a dedicated test cluster"
+        )
     boto3 = pytest.importorskip("boto3")
     region = os.environ["CLOUDOLL_AWS_TEST_REGION"]
     config = json.loads(os.environ["CLOUDOLL_AWS_TEST_DB_CONFIG"])
@@ -26,16 +29,24 @@ async def test_aurora_failover_recovers_queries():
     rds = boto3.client("rds", region_name=region)
 
     async def cluster():
-        response = await asyncio.to_thread(rds.describe_db_clusters, DBClusterIdentifier=cluster_id)
+        response = await asyncio.to_thread(
+            rds.describe_db_clusters, DBClusterIdentifier=cluster_id
+        )
         return response["DBClusters"][0]
 
     def writer(value):
-        return next(member["DBInstanceIdentifier"] for member in value["DBClusterMembers"] if member["IsClusterWriter"])
+        return next(
+            member["DBInstanceIdentifier"]
+            for member in value["DBClusterMembers"]
+            if member["IsClusterWriter"]
+        )
 
     before = await cluster()
     assert before["Engine"] in {"aurora-mysql", "aurora-postgresql"}
     assert before["Status"] == "available" and len(before["DBClusterMembers"]) >= 2
-    assert config["host"] == before["Endpoint"], "Use the selected cluster's writer endpoint"
+    assert (
+        config["host"] == before["Endpoint"]
+    ), "Use the selected cluster's writer endpoint"
     engine = await create_engine(**config)
     try:
         assert (await engine.one("SELECT 1 AS value", None))["value"] == 1

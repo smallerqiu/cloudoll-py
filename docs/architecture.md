@@ -63,8 +63,9 @@ application.create(env="local", entry_model=None).run()
 ## 本地验证
 
 ```sh
-python -m pip install -e '.[mysql,postgres,aws,cache,dev]'
-python -m pytest -q -m 'not integration'
+python -m pip install -e '.[mysql,postgres,cache,dev]'
+python -m mypy
+python -m pytest -q -m 'not integration' -k 'not aws'
 python -m build
 python tests/check_wheel.py dist/cloudoll-3.0.14-py3-none-any.whl
 ```
@@ -74,15 +75,16 @@ python tests/check_wheel.py dist/cloudoll-3.0.14-py3-none-any.whl
 ```sh
 export CLOUDOLL_TEST_MYSQL_URL='mysql://user:password@127.0.0.1:3306/cloudoll_test'
 export CLOUDOLL_TEST_POSTGRES_URL='postgres://user:password@127.0.0.1:5432/cloudoll_test'
-python -m pytest -q tests/integration/test_databases.py
+python -m pytest -q tests/integration/test_databases.py -k 'not aws'
 ```
 
-测试会创建随机命名的临时表并在结束时删除，只能连接允许建表的专用测试数据库。覆盖真实 CRUD、自动生成主键、绑定记录更新、批量插入、分组计数、分页和错误后的连接可用性，同时用 AWS 包装驱动连接本地数据库验证适配行为。
+测试会创建随机命名的临时表并在结束时删除，只能连接允许建表的专用测试数据库。覆盖真实 CRUD、自动生成主键、绑定记录更新、批量插入、分组计数、分页和错误后的连接可用性。当前命令明确排除 AWS 包装驱动，其改造仍未验证。
 
 macOS 上也可以通过脚本创建完全隔离的临时数据库实例：
 
 ```sh
 python tests/run_local_databases.py \
+  --native-only \
   --mysql-bin /opt/homebrew/opt/mysql@8.4/bin \
   --postgres-bin /opt/homebrew/opt/postgresql@16/bin \
   --python .venv/bin/python \
@@ -91,7 +93,19 @@ python tests/run_local_databases.py \
 
 此脚本要求本机已有数据库二进制。它在临时目录初始化数据，使用本机临时端口，不使用系统服务的数据目录；完成或失败后停止由它启动的进程并清理临时数据。
 
-GitHub Actions 对 Python 3.9 和 3.13 运行单元测试、MySQL 8.4/PostgreSQL 16 服务容器集成测试以及包构建、wheel 冒烟测试。AWS 包装驱动集成仅在安装该可选依赖的任务中执行。
+GitHub Actions 已配置 Python 3.9–3.14 的全库 strict 类型检查、单元测试、MySQL 8.4/PostgreSQL 16 服务容器集成测试以及包构建、wheel 冒烟测试；另外配置 macOS/Windows 的 Python 3.13 非数据库回归与打包冒烟。扩展后的远程 CI 尚未运行，不能把配置完成视为验证通过。当前配置过滤 AWS 测试，安装可选依赖不代表已测试。
+
+保存点和流式测试分别使用 `--test-file tests/integration/test_savepoints.py` 和 `--test-file tests/integration/test_streaming.py`，均只连接原生数据库。
+
+模型/建表生成器测试使用 `--test-file tests/integration/test_schema.py`，支持范围见 [模型与建表生成器](schema-generation.md)。
+
+### 本轮本地验证结果
+
+Python 3.9.6 / 3.13.1 / 3.14.6 均通过：63 个源码与类型契约文件的 strict mypy、126 项非 AWS 单元测试，以及 wheel 独立脚手架/HTTP 冒烟测试。Python 3.9/3.13 的事务引擎、流式迭代器和请求解析三个模块合计覆盖率为 90.53%，不是全库覆盖率。
+
+原生数据库验证分批进行：上一轮 Python 3.9/3.13 各通过 22 项测试（CRUD/事务 10、保存点 6、流式 6）；本轮新增生成器测试在 Python 3.9/3.13/3.14 各通过 7 项，另有 1 项 MySQL DDL 原子回滚用例按设计跳过。上述结果不代表完整的远程 CI 矩阵已通过。
+
+顺带修复类型检查暴露的问题：`not_null` 参数被忽略、CLI 校验错误 PID 的命令行及服务名子串误匹配、空邮件正文处理；上传模板改用服务端随机文件名，避免客户端路径穿越和覆盖已有上传。没有发布 PyPI，也没有运行 AWS/Aurora 测试。
 
 ## AWS 故障切换测试
 

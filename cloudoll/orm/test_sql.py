@@ -39,9 +39,9 @@ class C(Model):
     c9 = models.BooleanField(default="true", not_null=True)
 
 
-def test_query():
+def test_query() -> None:
     sql, arg = (
-        B.use("")
+        B.use(None)
         .select(
             B.b1.As("host_no"),
             B.b2.count().As("total_count"),
@@ -64,13 +64,14 @@ def test_query():
     # sql = B()._exchange_sql(sql)
     assert "LEFT JOIN `c`" in sql
     assert "GROUP BY" in sql
+    assert arg is not None
     assert arg[-3:] == [1, 1, "aa"]
 
 
-def test_a():
+def test_a() -> None:
     role_id = ("5", 4, 7, 6, 0)
     sql, arg = (
-        B.use("")
+        B.use(None)
         .join(A, A.id == B.id)
         .where(
             # B.b1.In(role_id),
@@ -85,6 +86,7 @@ def test_a():
     )
     assert "LEFT JOIN `a`" in sql
     assert "WHERE" in sql
+    assert arg is not None
     assert arg[:3] == [0, 1, "2"]
 
 

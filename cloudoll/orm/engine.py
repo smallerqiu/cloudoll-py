@@ -1,105 +1,149 @@
 """Task-owned transactions for native asynchronous database drivers."""
+
+from __future__ import annotations
+
 import asyncio
 import inspect
 import math
 import time
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from typing import Any, Optional, TypeVar
 
 from cloudoll.logging import debug, warning
-from cloudoll.orm.base import MeteBase, QueryTypes
+from cloudoll.orm.base import MeteBase, Params, QueryTypes
 from cloudoll.orm.dialects import dialect_for
+from cloudoll.orm.savepoints import SavepointMixin
 from cloudoll.orm.streaming import RowStream
+
+AE = TypeVar("AE", bound="AsyncEngine")
 
 
 class TransactionError(RuntimeError):
     """A transaction was reused, nested, or left in a failed state."""
 
 
-def positive_timeout(value, name):
+def positive_timeout(value: Any, name: str) -> Optional[float]:
     if value is None:
         return None
     if isinstance(value, bool):
         raise ValueError(f"{name} must be a positive number or None")
-    value = float(value)
-    if not math.isfinite(value) or value <= 0:
+    number = float(value)
+    if not math.isfinite(number) or number <= 0:
         raise ValueError(f"{name} must be a positive number or None")
-    return value
+    return number
 
 
 @dataclass
 class TransactionState:
-    connection: object
+    connection: Any
     owner: object
     failed: bool = False
     active: bool = True
     streaming: bool = False
-    callbacks: list = field(default_factory=list)
+    callbacks: list[Callable[[], None]] = field(default_factory=list)
 
 
-class AsyncEngine(MeteBase):
-    def __init__(self):
-        self.pool = None
-        self._transaction = ContextVar(f"cloudoll_transaction_{id(self)}", default=None)
+class AsyncEngine(SavepointMixin, MeteBase):
+    def __init__(self) -> None:
+        self.pool: Any = None
+        self._transaction: ContextVar[Optional[TransactionState]] = ContextVar(
+            f"cloudoll_transaction_{id(self)}", default=None
+        )
         self.configure({})
 
-    def configure(self, options):
-        self.connect_timeout = positive_timeout(options.get("connect_timeout", 60), "connect_timeout")
-        self.acquire_timeout = positive_timeout(options.get("acquire_timeout", 30), "acquire_timeout")
-        self.query_timeout = positive_timeout(options.get("query_timeout", options.get("timeout", 60)), "query_timeout")
-        self.cleanup_timeout = positive_timeout(options.get("cleanup_timeout", 10), "cleanup_timeout")
-        self.slow_query_seconds = positive_timeout(options.get("slow_query_seconds", 1), "slow_query_seconds")
+    def configure(self, options: Mapping[str, Any]) -> None:
+        self.connect_timeout = positive_timeout(
+            options.get("connect_timeout", 60), "connect_timeout"
+        )
+        self.acquire_timeout = positive_timeout(
+            options.get("acquire_timeout", 30), "acquire_timeout"
+        )
+        self.query_timeout = positive_timeout(
+            options.get("query_timeout", options.get("timeout", 60)), "query_timeout"
+        )
+        self.cleanup_timeout = positive_timeout(
+            options.get("cleanup_timeout", 10), "cleanup_timeout"
+        )
+        self.slow_query_seconds = positive_timeout(
+            options.get("slow_query_seconds", 1), "slow_query_seconds"
+        )
 
-    def _state(self):
+    def _state(self) -> Optional[TransactionState]:
         state = self._transaction.get()
         if state is not None:
             if not state.active or state.owner is not asyncio.current_task():
-                raise TransactionError("Transactions cannot be shared with child tasks or reused after exit")
+                raise TransactionError(
+                    "Transactions cannot be shared with child tasks or reused after exit"
+                )
             if state.failed:
-                raise TransactionError("Transaction failed; exit the transaction before issuing more queries")
+                raise TransactionError(
+                    "Transaction failed; exit the transaction before issuing more queries"
+                )
             if state.streaming:
-                raise TransactionError("Exit the row stream before issuing another operation on this engine")
+                raise TransactionError(
+                    "Exit the row stream before issuing another operation on this engine"
+                )
         return state
 
-    def after_commit(self, callback):
+    def after_commit(self, callback: Callable[[], None]) -> None:
         state = self._state()
         if state is None:
             callback()
         else:
             state.callbacks.append(callback)
 
-    async def close(self):
+    async def close(self) -> None:
         state = self._transaction.get()
         if state is not None and state.active:
-            raise TransactionError("Exit the transaction or stream before closing this engine")
+            raise TransactionError(
+                "Exit the transaction or stream before closing this engine"
+            )
         if self.pool is not None:
             self.pool.close()
             await self.pool.wait_closed()
 
-    async def _control(self, connection, command):
+    async def _control(self, connection: Any, command: str) -> None:
         async with connection.cursor() as cursor:
             await cursor.execute(command)
 
-    async def _release(self, connection):
+    async def _release(self, connection: Any) -> None:
         result = self.pool.release(connection)
         if inspect.isawaitable(result):
             await result
 
-    async def _rollback(self, connection):
+    async def _rollback(self, connection: Any) -> None:
         if connection.closed:
             return
-        await asyncio.wait_for(self._control(connection, "ROLLBACK"), self.cleanup_timeout)
+        await asyncio.wait_for(
+            self._control(connection, "ROLLBACK"), self.cleanup_timeout
+        )
+
+    async def _savepoint_control(self, state: TransactionState, command: str) -> None:
+        if state.connection.closed:
+            raise TransactionError("Savepoint connection is closed")
+        try:
+            await asyncio.wait_for(
+                self._control(state.connection, command), self.cleanup_timeout
+            )
+        except BaseException:
+            # Control failure makes savepoint boundaries unknowable.
+            state.connection.close()
+            raise
 
     @asynccontextmanager
-    async def transaction(self):
+    async def transaction(self: AE) -> AsyncIterator[AE]:
         """Pin a connection to the current task; commit or roll back on exit.
 
-        Nested transactions and DDL/explicit transaction-control SQL are not
-        supported. Use one transaction per task; no automatic write retries.
+        Nested scopes use savepoints. DDL/explicit transaction-control SQL is
+        unsupported. Use one transaction per task; no automatic write retries.
         """
         if self._state() is not None:
-            raise TransactionError("Nested transactions are not supported")
+            async with self.savepoint():
+                yield self
+            return
         if self.pool is None:
             raise RuntimeError("Create the database engine first")
         connection = await asyncio.wait_for(self.pool.acquire(), self.acquire_timeout)
@@ -107,7 +151,9 @@ class AsyncEngine(MeteBase):
         token = self._transaction.set(state)
         try:
             try:
-                await asyncio.wait_for(self._control(connection, "BEGIN"), self.query_timeout)
+                await asyncio.wait_for(
+                    self._control(connection, "BEGIN"), self.query_timeout
+                )
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 connection.close()
                 raise
@@ -115,7 +161,9 @@ class AsyncEngine(MeteBase):
             if state.failed:
                 raise TransactionError("Transaction rolled back because a query failed")
             try:
-                await asyncio.wait_for(self._control(connection, "COMMIT"), self.query_timeout)
+                await asyncio.wait_for(
+                    self._control(connection, "COMMIT"), self.query_timeout
+                )
             except BaseException:
                 # A lost COMMIT response has an unknown outcome; never retry it.
                 connection.close()
@@ -134,7 +182,13 @@ class AsyncEngine(MeteBase):
             self._transaction.reset(token)
             await self._release(connection)
 
-    async def query(self, sql, params=None, query_type=QueryTypes.ONE, size=10):
+    async def query(
+        self,
+        sql: str,
+        params: Params = None,
+        query_type: QueryTypes = QueryTypes.ONE,
+        size: int = 10,
+    ) -> Any:
         state = self._state()
         if state is None:
             async with self.transaction():
@@ -142,7 +196,13 @@ class AsyncEngine(MeteBase):
         started = time.monotonic()
         try:
             return await asyncio.wait_for(
-                self._execute(state.connection, dialect_for(self.driver).prepare(sql), params, query_type, size),
+                self._execute(
+                    state.connection,
+                    dialect_for(self.driver).prepare(sql),
+                    params,
+                    query_type,
+                    size,
+                ),
                 self.query_timeout,
             )
         except BaseException as exc:
@@ -153,24 +213,49 @@ class AsyncEngine(MeteBase):
             raise
         finally:
             elapsed = time.monotonic() - started
-            log = warning if self.slow_query_seconds is not None and elapsed >= self.slow_query_seconds else debug
+            log = (
+                warning
+                if self.slow_query_seconds is not None
+                and elapsed >= self.slow_query_seconds
+                else debug
+            )
             # Deliberately omit SQL and bound values: either may contain secrets.
-            log("Database operation driver=%s operation=%s duration_ms=%.2f", self.driver, query_type.name, elapsed * 1000)
+            log(
+                "Database operation driver=%s operation=%s duration_ms=%.2f",
+                self.driver,
+                query_type.name,
+                elapsed * 1000,
+            )
 
-    async def _execute(self, connection, sql, params, query_type, size):
+    async def _execute(
+        self,
+        connection: Any,
+        sql: str,
+        params: Params,
+        query_type: QueryTypes,
+        size: int,
+    ) -> Any:
         raise NotImplementedError
 
     @asynccontextmanager
-    async def stream(self, sql, params=None, *, batch_size=1000):
+    async def stream(
+        self, sql: str, params: Params = None, *, batch_size: int = 1000
+    ) -> AsyncIterator[RowStream]:
         """Dedicated read-only transaction, explicitly scoped to one task.
 
         No implicit draining on early MySQL exit: discard the unread connection.
         Cannot be nested in an existing transaction or another stream.
         """
-        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
+        if (
+            isinstance(batch_size, bool)
+            or not isinstance(batch_size, int)
+            or batch_size < 1
+        ):
             raise ValueError("batch_size must be a positive integer")
         if self._state() is not None:
-            raise TransactionError("Streaming requires a separate read-only transaction")
+            raise TransactionError(
+                "Streaming requires a separate read-only transaction"
+            )
         if self.pool is None:
             raise RuntimeError("Create the database engine first")
         acquisition = asyncio.ensure_future(self.pool.acquire())
@@ -184,9 +269,15 @@ class AsyncEngine(MeteBase):
         token = self._transaction.set(state)
         rows = None
         try:
-            await asyncio.wait_for(self._control(connection, "START TRANSACTION READ ONLY"), self.query_timeout)
+            await asyncio.wait_for(
+                self._control(connection, "START TRANSACTION READ ONLY"),
+                self.query_timeout,
+            )
             cursor = await asyncio.wait_for(
-                self._open_stream(connection, dialect_for(self.driver).prepare(sql), params), self.query_timeout,
+                self._open_stream(
+                    connection, dialect_for(self.driver).prepare(sql), params
+                ),
+                self.query_timeout,
             )
             rows = RowStream(cursor, connection, batch_size, self.query_timeout)
             yield rows
@@ -197,7 +288,9 @@ class AsyncEngine(MeteBase):
                 connection.close()
             else:
                 await asyncio.wait_for(cursor.close(), self.cleanup_timeout)
-                await asyncio.wait_for(self._control(connection, "COMMIT"), self.query_timeout)
+                await asyncio.wait_for(
+                    self._control(connection, "COMMIT"), self.query_timeout
+                )
         except BaseException:
             connection.close()
             raise
@@ -208,11 +301,17 @@ class AsyncEngine(MeteBase):
             self._transaction.reset(token)
             await self._release(connection)
 
-    async def _open_stream(self, connection, sql, params):
+    async def _open_stream(self, connection: Any, sql: str, params: Params) -> Any:
         raise NotImplementedError("This driver does not support server-side streaming")
 
 
-async def cursor_result(cursor, query_type, size, postgres=False, batch_count=None):
+async def cursor_result(
+    cursor: Any,
+    query_type: QueryTypes,
+    size: int,
+    postgres: bool = False,
+    batch_count: Optional[int] = None,
+) -> Any:
     if query_type == QueryTypes.ALL:
         return list(await cursor.fetchall())
     if query_type == QueryTypes.ONE:

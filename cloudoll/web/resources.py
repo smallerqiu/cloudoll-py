@@ -1,4 +1,21 @@
 """Own, initialize and close database/session resources independently of routing."""
+
+from __future__ import annotations
+
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Coroutine,
+)
+from typing import TYPE_CHECKING, Any, Optional
+
+from aiohttp import web
+
+if TYPE_CHECKING:
+    from cloudoll.web.core import Application, RequestHandler
+
 import asyncio
 import inspect
 
@@ -6,14 +23,20 @@ from cloudoll.orm import create_engine
 
 
 class ResourceManager:
-    def __init__(self, owner, factory=None):
+    def __init__(
+        self,
+        owner: Application,
+        factory: Optional[Callable[..., Coroutine[Any, Any, Any]]] = None,
+    ) -> None:
         self.owner = owner
         self.factory = factory or create_engine
-        self.closed = set()
+        self.closed: set[int] = set()
 
-    async def databases(self, app):
+    async def databases(self, app: web.Application) -> None:
         configs = self.owner.config.get("database") or {}
-        tasks = [asyncio.create_task(self.factory(**config)) for config in configs.values()]
+        tasks = [
+            asyncio.create_task(self.factory(**config)) for config in configs.values()
+        ]
         try:
             engines = await asyncio.gather(*tasks, return_exceptions=True)
         except BaseException:
@@ -22,22 +45,24 @@ class ResourceManager:
             engines = await asyncio.gather(*tasks, return_exceptions=True)
             for key, engine in zip(configs, engines):
                 if not isinstance(engine, BaseException):
-                    app.db[key] = engine
+                    getattr(app, "db")[key] = engine
             await self.close(app)
             raise
         for key, engine in zip(configs, engines):
             if not isinstance(engine, BaseException):
-                app.db[key] = engine
+                getattr(app, "db")[key] = engine
         failures = [engine for engine in engines if isinstance(engine, BaseException)]
         if failures:
             await self.close(app)
             raise failures[0]
 
-    async def close(self, app):
+    async def close(self, app: Optional[web.Application]) -> None:
         if app is None:
             return
-        resources = list(app.db.values())
-        resources += [getattr(app, name) for name in ("redis", "memcached") if hasattr(app, name)]
+        resources = list(getattr(app, "db").values())
+        resources += [
+            getattr(app, name) for name in ("redis", "memcached") if hasattr(app, name)
+        ]
         errors = []
         for resource in reversed(resources):
             if id(resource) in self.closed:
