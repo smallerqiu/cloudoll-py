@@ -28,6 +28,7 @@ class ResourceManager:
         self.owner = owner
         self.factory = factory or create_engine
         self.closed: set[int] = set()
+        self._close_task: Optional[asyncio.Task[None]] = None
 
     async def databases(self, app: web.Application) -> None:
         configs = self.owner.config.get("database") or {}
@@ -56,11 +57,33 @@ class ResourceManager:
     async def close(self, app: Optional[web.Application]) -> None:
         if app is None:
             return
+        if self._close_task is None or self._close_task.done():
+            self._close_task = asyncio.create_task(self._close_resources(app))
+        task = self._close_task
+        cancellation: Optional[asyncio.CancelledError] = None
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError as exc:
+                cancellation = exc
+            except Exception:
+                # Retrieved below after all resources have been attempted.
+                break
+        try:
+            task.result()
+        except BaseException as exc:
+            if cancellation is not None:
+                raise cancellation from exc
+            raise
+        if cancellation is not None:
+            raise cancellation
+
+    async def _close_resources(self, app: web.Application) -> None:
         resources = list(getattr(app, "db").values())
         resources += [
             getattr(app, name) for name in ("redis", "memcached") if hasattr(app, name)
         ]
-        errors = []
+        errors: list[BaseException] = []
         for resource in reversed(resources):
             if id(resource) in self.closed:
                 continue
@@ -70,7 +93,10 @@ class ResourceManager:
                 if inspect.isawaitable(result):
                     await result
                 self.closed.add(id(resource))
-            except Exception as exc:
+            except (Exception, asyncio.CancelledError) as exc:
                 errors.append(exc)
         if errors:
+            for error in errors:
+                if isinstance(error, asyncio.CancelledError):
+                    raise error
             raise errors[0]

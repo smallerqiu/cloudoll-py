@@ -321,22 +321,40 @@ class Query(Generic[M]):
 
     async def update(self, *args: Any, **kw: Any) -> bool:
         try:
+            record = self.record
+            pool = self._require_pool()
             condition = self._write_condition(args, kw)
+            provided = self._format_data("u", args or kw)
             keys, values = self._get_update_key_args("u", args or kw)
             if not keys:
                 return False
             compiled = self.compiler.update(self.model, keys, values, condition)
+            # Freeze both driver input and the independent committed baseline before
+            # yielding control: another task may mutate a dict/list in the record.
+            compiled.params[:] = copy.deepcopy(compiled.params)
+            saved = copy.deepcopy(dict(zip(keys, compiled.params[: len(keys)])))
+            generated_before = {
+                key: copy.deepcopy(record[key].value)
+                for key in keys
+                if getattr(self.model, key).update_generated
+                and provided.get(key, UNSET) is UNSET
+            }
         finally:
             self._reset()
-        result = await self._require_pool().update(compiled.sql, compiled.params)
+        result = await pool.update(compiled.sql, compiled.params)
         if result and not args and not kw:
-            saved = copy.deepcopy(dict(zip(keys, values)))
-            record = self.record
 
             def callback() -> None:
+                for key, before in generated_before.items():
+                    current = record[key].value
+                    # Keep user edits made while awaiting I/O or COMMIT. A value
+                    # synced by an earlier callback in this transaction is clean
+                    # and may advance to the next generated value.
+                    if current == before or current == record._original.get(key, UNSET):
+                        setattr(record, key, copy.deepcopy(saved[key]))
                 record._mark_clean(saved)
 
-            after_commit = getattr(self.pool, "after_commit", None)
+            after_commit = getattr(pool, "after_commit", None)
             if after_commit is None:
                 callback()
             else:

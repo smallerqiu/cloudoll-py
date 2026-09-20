@@ -1,6 +1,7 @@
 """Native schema generation and reflection, never AWS."""
 
 import os
+from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -12,6 +13,52 @@ from cloudoll.orm.dialects import dialect_for
 from cloudoll.orm.model import Model, models
 
 pytestmark = pytest.mark.integration
+
+
+async def test_generated_update_state_matches_commit_and_rollback(database):
+    db, tables = database
+
+    class UpdatedItem(Model):
+        __table__ = "updated_" + uuid4().hex
+        id = models.IntegerField(primary_key=True)
+        label = models.VarCharField()
+        updated = models.DatetimeField(update_generated=True)
+
+    tables.append(UpdatedItem.__table__)
+    quote = dialect_for(db.driver).identifier
+    timestamp_type = "DATETIME(6)" if db.driver == "mysql" else "TIMESTAMP(6)"
+    await db.update(
+        f"CREATE TABLE {quote(UpdatedItem.__table__)} "
+        f"({quote('id')} INTEGER PRIMARY KEY, {quote('label')} VARCHAR(30), "
+        f"{quote('updated')} {timestamp_type})",
+        None,
+    )
+    old = datetime(2000, 1, 1)
+    await UpdatedItem.use(db).insert(id=1, label="before", updated=old)
+    record = await UpdatedItem.use(db).where(UpdatedItem.id == 1).one_model()
+    async with db.transaction():
+        record.label = "first"
+        await record.update()
+        record.label = "second"
+        await record.update()
+        assert record.updated.value == old
+    actual = await UpdatedItem.use(db).where(UpdatedItem.id == 1).one_model()
+    assert record.updated.value == actual.updated.value
+    assert record.label.value == actual.label.value == "second"
+    assert not record.dirty_fields
+    assert await record.update() is False
+    saved_time = record.updated.value
+    async with db.transaction():
+        with pytest.raises(ValueError):
+            async with db.savepoint():
+                record.label = "rolled back"
+                await record.update()
+                raise ValueError("abort")
+    assert record.updated.value == saved_time
+    assert record.dirty_fields == {"label"}
+    actual = await UpdatedItem.use(db).where(UpdatedItem.id == 1).one_model()
+    assert actual.label.value == "second"
+    assert actual.updated.value == saved_time
 
 
 async def test_orm_percent_names_distinct_and_stream(database):
