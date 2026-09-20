@@ -182,7 +182,7 @@ async def test_lifecycle_registers_initially_empty_signals():
     application.app = web.Application()
     shutdown = AsyncMock()
     with patch.object(
-        core.importlib,
+        application.registry,
         "import_module",
         return_value=SimpleNamespace(on_shutdown=shutdown),
     ):

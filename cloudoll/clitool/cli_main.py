@@ -28,14 +28,13 @@ def run_app(**config_kwargs: Any) -> None:
     # return
     if config.mode == "production":
         ProcessManager.ensure_runtime_dir()
-        ProcessManager.save_start_args(config.name, sys.argv[1:])
         # ProcessManager.cleanup(config.name)
 
         pid = ProcessManager.get_running_pid(config.name)
         if pid:
             error(f"⚠️  {config.name} is already running with PID {pid}. Exiting.")
             return
-        ProcessManager.register_signal_handlers(config.name)
+        ProcessManager.save_start_args(config.name, sys.argv[1:])
         try:
             App = app.current().create(
                 env=config.environment, config=app_config, entry_model=config.entry

@@ -44,7 +44,9 @@ class ModelMetaclass(type):
                 v.full_name = f"`{table_name}`.{k}"
                 if v.primary_key:
                     if primary_key:
-                        warning(f"Duplicate primary key for {table_name}")
+                        raise ValueError(
+                            f"Composite primary keys are not supported: {table_name}"
+                        )
                     primary_key = k
                 fields.append(k)
 

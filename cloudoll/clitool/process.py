@@ -1,12 +1,12 @@
 import json
 import os
 import platform
+import re
 import signal
-import time
 from datetime import datetime
 from pathlib import Path
 from types import FrameType
-from typing import NoReturn, Optional, cast
+from typing import Any, NoReturn, Optional
 
 import click
 import psutil
@@ -34,27 +34,69 @@ class ProcessManager:
 
         try:
             run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        except (PermissionError, OSError):
-            run_dir = Path("/tmp/cloudoll")
-            run_dir.mkdir(parents=True, exist_ok=True, mode=0o777)
+        except (PermissionError, OSError) as exc:
+            raise click.ClickException(
+                f"Cannot create private runtime directory: {exc}"
+            ) from exc
+        if run_dir.is_symlink():
+            raise click.ClickException("Runtime directory must not be a symlink")
+        if os.name != "nt":
+            if run_dir.stat().st_uid != os.getuid():
+                raise click.ClickException("Runtime directory belongs to another user")
+            run_dir.chmod(0o700)
         return run_dir
 
     @staticmethod
     def get_pid_path(name: str) -> Path:
+        ProcessManager.validate_name(name)
         run_dir = ProcessManager.get_run_dir()
         return run_dir / f"{name}.pid"
+
+    @staticmethod
+    def validate_name(name: str) -> None:
+        if name.upper() in {
+            "CON",
+            "PRN",
+            "AUX",
+            "NUL",
+            *(f"COM{i}" for i in range(1, 10)),
+            *(f"LPT{i}" for i in range(1, 10)),
+        }:
+            raise click.ClickException("Reserved service name")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", name):
+            raise click.ClickException(
+                "Service name must contain only letters, digits, '_' or '-' (1–64 characters)"
+            )
+
+    @staticmethod
+    def _write_json(path: Path, data: Any) -> None:
+        import tempfile
+
+        fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".cloudoll-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(data, stream)
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
 
     @staticmethod
     def save_pid(name: str, pid: int) -> None:
         """save pid file"""
         try:
             app_pid_file = ProcessManager.get_pid_path(name)
-            os.makedirs(os.path.dirname(app_pid_file), exist_ok=True)
-            with open(app_pid_file, "w") as f:
-                f.write(str(pid))
-            os.chmod(app_pid_file, 0o644)  # 设置合理权限
+            proc = psutil.Process(pid)
+            ProcessManager._write_json(
+                app_pid_file,
+                {
+                    "pid": pid,
+                    "created": proc.create_time(),
+                    "cmdline": proc.cmdline(),
+                },
+            )
         except (IOError, PermissionError) as e:
-            click.echo(f"⚠️ can't save pid file: {e}", err=True)
+            raise click.ClickException(f"Cannot save process identity: {e}") from e
 
     @staticmethod
     def safe_exit(service_name: str) -> None:
@@ -65,24 +107,25 @@ class ProcessManager:
                 click.echo("⚠️  Cloudoll server not running.")
                 return
 
-            if platform.system() == "Windows":
-                os.kill(pid, getattr(signal, "CTRL_C_EVENT"))
-            else:
-                os.kill(pid, signal.SIGTERM)
-
-            # wait to exit
-            for _ in range(10):
-                if not ProcessManager._valid_process(pid, service_name):
-                    break
-                time.sleep(1)
-            else:
-                os.kill(pid, signal.SIGKILL)
+            proc = psutil.Process(pid)
+            if not ProcessManager._valid_process(pid, service_name):
+                raise click.ClickException(
+                    "Process identity changed; refusing to stop it"
+                )
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except psutil.TimeoutExpired:
+                # psutil also guards against PID reuse when signalling this object.
+                if ProcessManager._valid_process(pid, service_name):
+                    proc.kill()
+                    proc.wait(timeout=5)
 
             ProcessManager.cleanup(service_name)
             click.echo(f"🛑 Already stop service (PID: {pid})")
-        except ProcessLookupError:
+        except (ProcessLookupError, psutil.NoSuchProcess):
             ProcessManager.cleanup(service_name)
-        except PermissionError:
+        except (PermissionError, psutil.AccessDenied):
             click.echo(f"❌ No permission to operate the process {pid}", err=True)
             raise click.Abort()
 
@@ -94,8 +137,16 @@ class ProcessManager:
             if not os.path.exists(app_pid_file):
                 return None
 
-            with open(app_pid_file) as f:
-                pid = int(f.read().strip())
+            if app_pid_file.is_symlink():
+                raise click.ClickException("Refusing symlink PID file")
+            data = json.loads(app_pid_file.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise click.ClickException(
+                    "Legacy PID file has no process identity; stop the old service manually before upgrading"
+                )
+            pid = data.get("pid")
+            if type(pid) is not int or pid <= 0:
+                raise click.ClickException("Invalid process identity")
 
             # valid process is running
             if not ProcessManager._valid_process(pid, service_name):
@@ -109,6 +160,12 @@ class ProcessManager:
     def _valid_process(pid: int, service_name: str) -> bool:
         """valid process"""
         try:
+            path = ProcessManager.get_pid_path(service_name)
+            if path.is_symlink():
+                return False
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict) or data.get("pid") != pid:
+                return False
             proc = psutil.Process(pid)
             cmdline = proc.cmdline()
             matches_name = any(
@@ -124,8 +181,14 @@ class ProcessManager:
                 bool(proc.is_running())
                 and proc.status() != psutil.STATUS_ZOMBIE
                 and matches_name
+                and proc.create_time() == data.get("created")
+                and cmdline == data.get("cmdline")
             )
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+        except psutil.AccessDenied as exc:
+            raise click.ClickException(
+                "Cannot verify process identity; refusing operation"
+            ) from exc
+        except (psutil.NoSuchProcess, OSError, ValueError):
             return False
 
     @staticmethod
@@ -181,21 +244,36 @@ class ProcessManager:
     @staticmethod
     def save_start_args(service_name: str, args: list[str]) -> None:
         """Save startup parameters to file"""
-        run_dir = ProcessManager.get_run_dir()
-        args_file = run_dir / f"{service_name}.args"
-        with open(args_file, "w") as f:
-            json.dump(args, f)
+        args_file = ProcessManager.get_pid_path(service_name).with_suffix(".args")
+        ProcessManager._write_json(args_file, {"args": args, "cwd": str(Path.cwd())})
 
     @staticmethod
     def load_start_args(service_name: str) -> list[str]:
+        return ProcessManager.load_start_context(service_name)[0]
+
+    @staticmethod
+    def load_start_context(service_name: str) -> tuple[list[str], str]:
         """Read saved startup parameters"""
-        run_dir = ProcessManager.get_run_dir()
-        args_file = run_dir / f"{service_name}.args"
+        args_file = ProcessManager.get_pid_path(service_name).with_suffix(".args")
         try:
-            with open(args_file) as f:
-                return cast(list[str], json.load(f))
+            if args_file.is_symlink():
+                raise click.ClickException("Refusing symlink startup file")
+            data = json.loads(args_file.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise click.ClickException(
+                    "Legacy startup arguments have no project directory; start the service again explicitly"
+                )
+            args, cwd = data.get("args"), data.get("cwd")
+            if (
+                not isinstance(args, list)
+                or not all(isinstance(arg, str) for arg in args)
+                or not isinstance(cwd, str)
+                or not Path(cwd).is_absolute()
+            ):
+                raise click.ClickException("Invalid saved startup context")
+            return args, cwd
         except (FileNotFoundError, json.JSONDecodeError):
-            return []
+            return [], ""
 
     @staticmethod
     def is_pid_alive(pid: int) -> bool:
@@ -223,12 +301,12 @@ class ProcessManager:
             "Mem(MB)",
             "Process",
         ]
-        rows = []
+        rows: list[list[Any]] = []
         for pid_file in sorted(pid_dir.glob("*.pid")):
             service = pid_file.stem
             try:
-                pid = int(pid_file.read_text())
-                if not psutil.pid_exists(pid):
+                pid = ProcessManager.get_running_pid(service)
+                if pid is None:
                     rows.append([service, pid, "🔴 Exited", "-", "-", "-", "-"])
                     continue
 

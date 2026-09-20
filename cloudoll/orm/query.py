@@ -71,7 +71,13 @@ class Query(Generic[M]):
 
     def __setattr__(self, name: str, value: Any) -> None:
         model = self.__dict__.get("model")
-        if model is not None and name in model.__fields__ and "record" in self.__dict__:
+        internal = {"model", "pool", "record", "dialect", "compiler", "state", "params"}
+        if (
+            name not in internal
+            and model is not None
+            and name in model.__fields__
+            and "record" in self.__dict__
+        ):
             setattr(self.record, name, value)
         else:
             object.__setattr__(self, name, value)

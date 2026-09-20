@@ -18,11 +18,20 @@ from cloudoll.orm.parse import parse_sql, to_list
         (["cloudoll", "start", "--name"], False),
     ],
 )
-def test_process_checks_target_pid_and_exact_name(monkeypatch, arguments, expected):
+def test_process_checks_target_pid_and_exact_name(
+    monkeypatch, tmp_path, arguments, expected
+):
+    import json
+
+    monkeypatch.setattr(ProcessManager, "get_run_dir", lambda: tmp_path)
+    (tmp_path / "api.pid").write_text(
+        json.dumps({"pid": 12345, "created": 123.0, "cmdline": arguments})
+    )
     process = Mock(
         cmdline=Mock(return_value=arguments),
         is_running=Mock(return_value=True),
         status=Mock(return_value="running"),
+        create_time=Mock(return_value=123.0),
     )
     factory = Mock(return_value=process)
     monkeypatch.setattr("cloudoll.clitool.process.psutil.Process", factory)

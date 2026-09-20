@@ -3,8 +3,9 @@ from __future__ import annotations
 import logging
 import os
 import platform
+import re
 from contextvars import ContextVar
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from logging import Handler
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -55,9 +56,20 @@ class DailyFileHandler(Handler):
     """Automatically rotate log files on a daily basis"""
 
     def __init__(
-        self, base_name: str, level: int = logging.INFO, filter_exact: bool = False
+        self,
+        base_name: str,
+        level: int = logging.INFO,
+        filter_exact: bool = False,
+        retention_days: int = 14,
     ) -> None:
         super().__init__(level)
+        if (
+            isinstance(retention_days, bool)
+            or not isinstance(retention_days, int)
+            or retention_days < 1
+        ):
+            raise ValueError("retention_days must be a positive integer")
+        self.retention_days = retention_days
         self.base_name = base_name
         self.filter_exact = filter_exact
         self.current_date: Optional[date] = None
@@ -94,11 +106,27 @@ class DailyFileHandler(Handler):
             if self.filter_exact:
                 self.handler.addFilter(lambda record: record.levelno == self.level)
             self.current_date = today
+            self._prune_logs(today)
+
+    def _prune_logs(self, today: date) -> None:
+        cutoff = today - timedelta(days=self.retention_days - 1)
+        for path in self._log_dir.iterdir():
+            match = re.fullmatch(
+                r"(\d{4}-\d{2}-\d{2})-(?:all|error)\.log(?:\.\d+)?", path.name
+            )
+            if match is None or path.is_symlink() or not path.is_file():
+                continue
+            try:
+                if date.fromisoformat(match[1]) < cutoff:
+                    path.unlink()
+            except (OSError, ValueError):
+                # Other workers may have removed the same archive already.
+                continue
 
     def emit(self, record: logging.LogRecord) -> None:
         self._update_handler()
         if self.handler is not None:
-            self.handler.emit(record)
+            self.handler.handle(record)
 
     def close(self) -> None:
         if self.handler:
@@ -112,6 +140,7 @@ def configure_logging(
     console: bool = True,
     files: bool = False,
     propagate: bool = False,
+    retention_days: int = 14,
 ) -> logging.Logger:
     """Opt in to Cloudoll handlers; importing the library never opens log files."""
     import colorlog
@@ -143,8 +172,13 @@ def configure_logging(
     if files:
         handlers.extend(
             [
-                DailyFileHandler("all", level),
-                DailyFileHandler("error", logging.ERROR, filter_exact=True),
+                DailyFileHandler("all", level, retention_days=retention_days),
+                DailyFileHandler(
+                    "error",
+                    logging.ERROR,
+                    filter_exact=True,
+                    retention_days=retention_days,
+                ),
             ]
         )
     for handler in handlers:

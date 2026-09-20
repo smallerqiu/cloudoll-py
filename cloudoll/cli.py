@@ -130,16 +130,18 @@ def restart(name: str, force: bool) -> None:
             click.echo(f"⚠️  Service {name} not running，use --force to force restart")
             return
 
-    ProcessManager.safe_exit(name)
-
-    args = ProcessManager.load_start_args(name)
+    args, cwd = ProcessManager.load_start_context(name)
     if not args:
         click.echo(
             "❌ Can't find historical startup parameters, you can add --force option",
             err=True,
         )
         raise click.Abort()
-    os.execvp(sys.executable, [sys.executable, sys.argv[0], *args])
+    if not os.path.isdir(cwd):
+        raise click.ClickException(f"Original project directory is unavailable: {cwd}")
+    ProcessManager.safe_exit(name)
+    os.chdir(cwd)
+    os.execvp(sys.executable, [sys.executable, "-m", "cloudoll.cli", *args])
 
 
 @cli.command()
