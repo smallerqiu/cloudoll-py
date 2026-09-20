@@ -1,0 +1,27 @@
+name: Dependency security
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e '.[mysql,postgres,cache,aws]' pip-audit
+      # Audit exact installed versions, excluding only Cloudoll itself.
+      # Advisory service failures also fail the gate; no blanket ignores or fixes.
+      - run: python tests/audit_dependencies.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-audit
+          path: dist/audit/*
+          if-no-files-found: warn

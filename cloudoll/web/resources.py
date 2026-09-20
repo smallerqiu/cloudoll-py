@@ -17,6 +17,8 @@ import asyncio
 import inspect
 
 from cloudoll.orm import create_engine
+from cloudoll.orm.engine import positive_timeout
+from cloudoll.utils.async_tools import bounded_wait
 
 
 class ResourceManager:
@@ -29,6 +31,7 @@ class ResourceManager:
         self.factory = factory or create_engine
         self.closed: set[int] = set()
         self._close_task: Optional[asyncio.Task[None]] = None
+        self._pending_closes: dict[int, asyncio.Future[Any]] = {}
 
     async def databases(self, app: web.Application) -> None:
         configs = self.owner.config.get("database") or {}
@@ -79,6 +82,16 @@ class ResourceManager:
             raise cancellation
 
     async def _close_resources(self, app: web.Application) -> None:
+        server = getattr(self.owner, "config", {}).get("server") or {}
+        per_resource = positive_timeout(
+            server.get("resource_close_timeout", 10), "resource_close_timeout"
+        )
+        total = positive_timeout(
+            server.get("resource_shutdown_timeout", 30), "resource_shutdown_timeout"
+        )
+        if per_resource is None or total is None:
+            raise ValueError("Resource shutdown deadlines cannot be None")
+        deadline = asyncio.get_running_loop().time() + total
         resources = list(getattr(app, "db").values())
         resources += [
             getattr(app, name) for name in ("redis", "memcached") if hasattr(app, name)
@@ -88,10 +101,24 @@ class ResourceManager:
             if id(resource) in self.closed:
                 continue
             try:
+                pending = self._pending_closes.get(id(resource))
+                if pending is not None:
+                    if not pending.done():
+                        raise RuntimeError("Previous resource close is still running")
+                    del self._pending_closes[id(resource)]
+                    if not pending.cancelled() and pending.exception() is None:
+                        self.closed.add(id(resource))
+                        continue
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError("Resource shutdown budget exhausted")
                 closer = getattr(resource, "aclose", None) or resource.close
                 result = closer()
                 if inspect.isawaitable(result):
-                    await result
+                    pending = asyncio.ensure_future(result)
+                    self._pending_closes[id(resource)] = pending
+                    await bounded_wait(pending, min(per_resource, remaining))
+                    del self._pending_closes[id(resource)]
                 self.closed.add(id(resource))
             except (Exception, asyncio.CancelledError) as exc:
                 errors.append(exc)

@@ -2,6 +2,10 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+See [production contracts](docs/production.md) for shutdown deadlines, configuration,
+JWT policies and observability; [maintenance policy](docs/maintenance.md) for release
+checks and compatibility; and [SECURITY.md](SECURITY.md) for private reporting.
+
 Quickly create web applications based on Python.
 
 ## Documentation

@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+生产配置、资源关闭期限、JWT 验证、JSON 日志与监控接入见 [生产运行契约](docs/production.md)；版本兼容及发布检查见 [维护政策](docs/maintenance.md)，安全问题报告见 [SECURITY.md](SECURITY.md)。
+
 Cloudoll 是一个基于 aiohttp 的 Python Web 开发库，提供路由自动注册、中间件、模板渲染、会话管理、JWT、数据库访问及命令行脚手架，帮助快速构建 Web 应用和微服务。
 
 本文对应当前仓库代码；尚未发布的修复和可选依赖配置，请通过源码安装使用。

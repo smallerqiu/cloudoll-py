@@ -17,6 +17,8 @@ from cloudoll.orm.base import MeteBase, Params, QueryTypes
 from cloudoll.orm.dialects import dialect_for
 from cloudoll.orm.savepoints import SavepointMixin
 from cloudoll.orm.streaming import RowStream
+from cloudoll.observability import Event, Observer, emit
+from cloudoll.utils.async_tools import bounded_wait
 
 AE = TypeVar("AE", bound="AsyncEngine")
 
@@ -64,12 +66,23 @@ class TransactionState:
 class AsyncEngine(SavepointMixin, MeteBase):
     def __init__(self) -> None:
         self.pool: Any = None
+        self._pool_close_task: Optional[asyncio.Future[Any]] = None
+        self._pool_close_interrupted = False
         self._transaction: ContextVar[Optional[TransactionState]] = ContextVar(
             f"cloudoll_transaction_{id(self)}", default=None
         )
         self.configure({})
 
     def configure(self, options: Mapping[str, Any]) -> None:
+        self.observer: Optional[Observer] = options.get("observer")
+        if self.observer is not None and not callable(self.observer):
+            raise ValueError("observer must be callable")
+        close_timeout = positive_timeout(
+            options.get("close_timeout", 10), "close_timeout"
+        )
+        if close_timeout is None:
+            raise ValueError("close_timeout must be finite")
+        self.close_timeout = close_timeout
         self.echo = boolean_option(options.get("echo", False), "echo")
         self.echo_params = boolean_option(
             options.get("echo_params", False), "echo_params"
@@ -122,12 +135,53 @@ class AsyncEngine(SavepointMixin, MeteBase):
             )
         if self.pool is not None:
             self.pool.close()
-            await self.pool.wait_closed()
+            deadline = asyncio.get_running_loop().time() + self.close_timeout
+            if (
+                self._pool_close_interrupted
+                and self._pool_close_task is not None
+                and not self._pool_close_task.done()
+            ):
+                # A previous timeout requested cancellation, but the driver may
+                # not have processed it yet. Settle it before starting a retry;
+                # never leak the previous waiter's CancelledError into this one.
+                done, _ = await asyncio.wait(
+                    {self._pool_close_task}, timeout=self.close_timeout
+                )
+                if not done:
+                    raise asyncio.TimeoutError("Previous pool close is still running")
+            if self._pool_close_task is None or self._pool_close_task.done():
+                self._pool_close_task = asyncio.ensure_future(self.pool.wait_closed())
+                self._pool_close_interrupted = False
+            try:
+                await bounded_wait(
+                    self._pool_close_task, deadline - asyncio.get_running_loop().time()
+                )
+            except BaseException:
+                self._pool_close_interrupted = True
+                terminate = getattr(self.pool, "terminate", None)
+                if terminate is not None:
+                    try:
+                        terminate()
+                    except Exception:
+                        warning("Pool termination failed during cleanup")
+                raise
 
     async def _control(self, connection: Any, command: str) -> None:
         self._log_sql("CONTROL", command)
         async with connection.cursor() as cursor:
             await cursor.execute(command)
+
+    def pool_stats(self) -> dict[str, int]:
+        """Snapshot for host metrics; contains counts only, never credentials."""
+        if self.pool is None:
+            return {"size": 0, "free": 0, "used": 0, "max": 0}
+        size, free = int(self.pool.size), int(self.pool.freesize)
+        return {
+            "size": size,
+            "free": free,
+            "used": max(0, size - free),
+            "max": int(self.pool.maxsize),
+        }
 
     def _log_sql(self, operation: str, sql: str, params: Params = None) -> None:
         if not self.echo:
@@ -235,6 +289,7 @@ class AsyncEngine(SavepointMixin, MeteBase):
             async with self.transaction():
                 return await self.query(sql, params, query_type, size)
         started = time.monotonic()
+        outcome = "ok"
         try:
             self._log_sql(query_type.name, sql, params)
             return await asyncio.wait_for(
@@ -250,6 +305,9 @@ class AsyncEngine(SavepointMixin, MeteBase):
                 self.query_timeout,
             )
         except BaseException as exc:
+            outcome = (
+                "cancelled" if isinstance(exc, asyncio.CancelledError) else "error"
+            )
             state.failed = True
             if isinstance(exc, (asyncio.CancelledError, asyncio.TimeoutError)):
                 # Cancelling an in-flight protocol exchange invalidates this connection.
@@ -257,6 +315,16 @@ class AsyncEngine(SavepointMixin, MeteBase):
             raise
         finally:
             elapsed = time.monotonic() - started
+            emit(
+                Event(
+                    "db.query",
+                    elapsed,
+                    outcome,
+                    driver=self.driver,
+                    operation=query_type.name,
+                ),
+                self.observer,
+            )
             log = (
                 warning
                 if self.slow_query_seconds is not None

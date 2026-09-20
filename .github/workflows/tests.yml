@@ -8,6 +8,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         python: ['3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
@@ -49,10 +50,21 @@ jobs:
       # AWS implementation remains unverified; enable its tests only after explicit approval.
       - run: python -m pytest -q -m 'not aws_failover' -k 'not aws' --cov=cloudoll.orm.engine --cov=cloudoll.orm.streaming --cov=cloudoll.web.request_data --cov-report=term-missing --cov-fail-under=85
       - run: python -m build
+      - run: python -m pip install twine
+      - run: python -m twine check dist/*
       - run: python tests/check_wheel.py dist/*.whl
+      - run: python tests/check_release.py dist/*.whl
+      - run: python -m pip freeze > resolved-dependencies.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-python-${{ matrix.python }}
+          path: |
+            dist/*
+            resolved-dependencies.txt
 
   platform-smoke:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       matrix:
         os: [macos-latest, windows-latest]

@@ -27,9 +27,10 @@ from jinja2 import Environment
 from cloudoll.logging import exception, info
 from cloudoll.logging import request_id as _request_id
 from cloudoll.orm.model import Model
+from cloudoll.observability import Event, Observer, _observer, emit
 from cloudoll.utils.common import Object, chainMap
 from cloudoll.web import jwt
-from cloudoll.web.configuration import Configuration
+from cloudoll.web.configuration import Configuration, validate_config
 from cloudoll.web.configuration import parse_int as _parse_int
 from cloudoll.web.context import ApplicationProxy
 from cloudoll.web.context import active_application as _active_app
@@ -90,8 +91,12 @@ def _sa_ignore_middleware() -> Middleware:
         token = _active_app.set(getattr(request.app, "cloudoll_application"))
         trace_id = uuid.uuid4().hex
         trace_token = _request_id.set(trace_id)
+        observer_token = _observer.set(
+            getattr(request.app, "cloudoll_application").observer
+        )
         setattr(request, "request_id", trace_id)
         response = None
+        cancelled = False
         json_errors = (
             getattr(request.app, "cloudoll_application").config.get("server") or {}
         ).get("json_errors", False)
@@ -120,6 +125,9 @@ def _sa_ignore_middleware() -> Middleware:
                         status=exc.status,
                         headers=headers,
                     )
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
             except Exception:
                 exception("Unhandled request error")
                 if not json_errors:
@@ -139,14 +147,31 @@ def _sa_ignore_middleware() -> Middleware:
             return response
         finally:
             elapsed_ms = (time.monotonic() - start_time) * 1000
+            metric_route = getattr(
+                request.match_info.route.resource, "canonical", "<unmatched>"
+            )
+            status = (
+                499 if cancelled else (response.status if response is not None else 500)
+            )
+            emit(
+                Event(
+                    "http.request",
+                    elapsed_ms / 1000,
+                    "cancelled" if cancelled else ("error" if status >= 500 else "ok"),
+                    method=request.method,
+                    route=metric_route,
+                    status=status,
+                )
+            )
             info(
                 "%s %s %s %.2fms",
                 request.method,
-                response.status if response is not None else 500,
-                request.path,
+                status,
+                metric_route,
                 elapsed_ms,
             )
             _request_id.reset(trace_token)
+            _observer.reset(observer_token)
             _active_app.reset(token)
 
     return set_ignore
@@ -157,7 +182,11 @@ class Application(object):
         self,
         root: Optional[Union[str, Path]] = None,
         database_factory: Optional[Callable[..., Coroutine[Any, Any, Any]]] = None,
+        observer: Optional[Observer] = None,
     ) -> None:
+        if observer is not None and not callable(observer):
+            raise ValueError("observer must be callable")
+        self.observer = observer
         self.configuration = Configuration(root)
         self.registry = RouteRegistry(self.configuration.root)
         self.sessions = SessionManager(self)
@@ -211,10 +240,11 @@ class Application(object):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         self._loop = loop
-        self.config = self.configuration.load(env or "local", config)
+        self.config = self.configuration.load(env, config)
 
         # try to load func and override configuration
         self._load_life_cycle(entry_model, func_name="on_create")
+        validate_config(self.config)
 
         sa_ignore_mid = _sa_ignore_middleware()
         setattr(sa_ignore_mid, "__middleware_version__", 1)
@@ -357,14 +387,27 @@ class Application(object):
         exp = jwt_conf.get("exp")
         if not key or not exp:
             raise KeyError("Please set jwt key or exp...")
-        return jwt.encode(payload, key, exp)
+        claims = dict(payload)
+        if jwt_conf.get("issuer") is not None:
+            claims["iss"] = jwt_conf["issuer"]
+        if jwt_conf.get("audience") is not None:
+            claims["aud"] = jwt_conf["audience"]
+        return jwt.encode(claims, key, exp)
 
     def jwt_decode(self, token: Union[str, bytes]) -> Optional[dict[str, Any]]:
         jwt_conf = self.config.get("jwt", {})
         key = jwt_conf.get("key")
         if not key:
-            return None
-        return jwt.decode(token, key)
+            raise ValueError("Please configure jwt.key before decoding tokens")
+        return jwt.decode(
+            token,
+            key,
+            **{
+                name: jwt_conf[name]
+                for name in ("issuer", "audience", "leeway", "require")
+                if name in jwt_conf
+            },
+        )
 
     @property
     def route_table(self) -> web.RouteTableDef:

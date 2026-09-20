@@ -15,10 +15,11 @@ def get_config(
     conf_path = Path(root or Path.cwd()) / "config" / f"conf.{env}.yaml"
     info(f"loading config {conf_path}")
     if not conf_path.exists():
-        error(f"Configuration file does not exist: {conf_path}")
-        return {}
+        raise FileNotFoundError(f"Configuration file does not exist: {conf_path}")
     with open(conf_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
+    if config is not None and not isinstance(config, dict):
+        raise ValueError("Application configuration must be a mapping")
     try:
         config_ori = EnvYAML(conf_path, strict=True)
         config = dict(config_ori)

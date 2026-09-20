@@ -231,3 +231,64 @@ async def test_server_disconnect_does_not_poison_pool(database):
             with pytest.raises(Exception):
                 await database.count("SELECT 1 AS n", None)
     assert await database.count("SELECT 1 AS n", None) == 1
+
+
+async def test_real_deadlock_rolls_back_victim_without_automatic_retry(database):
+    if database.driver.startswith("aws-"):
+        pytest.skip("Native driver deadlock contract only")
+    table = "cloudoll_deadlock_" + uuid4().hex
+    await database.query(
+        f"CREATE TABLE {table} (id INTEGER PRIMARY KEY, value INTEGER NOT NULL)",
+        query_type=QueryTypes.UPDATE,
+    )
+    await database.query(
+        f"INSERT INTO {table} VALUES (1, 0), (2, 0)", query_type=QueryTypes.UPDATE
+    )
+    ready = [asyncio.Event(), asyncio.Event()]
+
+    async def worker(index):
+        async with database.transaction():
+            await database.query(
+                f"UPDATE {table} SET value=value+1 WHERE id=?",
+                [index + 1],
+                QueryTypes.UPDATE,
+            )
+            ready[index].set()
+            await asyncio.wait_for(ready[1 - index].wait(), 5)
+            await database.query(
+                f"UPDATE {table} SET value=value+1 WHERE id=?",
+                [2 - index],
+                QueryTypes.UPDATE,
+            )
+
+    try:
+        results = await asyncio.wait_for(
+            asyncio.gather(worker(0), worker(1), return_exceptions=True), 15
+        )
+        failures = [item for item in results if isinstance(item, Exception)]
+        assert len(failures) == 1
+        failure = failures[0]
+        if database.driver == "postgres":
+            assert failure.pgcode == "40P01"
+        else:
+            assert failure.args[0] == 1213
+        # Exactly one transaction commits; the victim is not silently replayed.
+        assert await database.count(f"SELECT SUM(value) FROM {table}", None) == 2
+        assert await database.count("SELECT 1", None) == 1
+    finally:
+        await database.query(f"DROP TABLE {table}", query_type=QueryTypes.UPDATE)
+
+
+async def test_pool_shutdown_deadline_terminates_checked_out_connection(database):
+    if database.driver.startswith("aws-"):
+        pytest.skip("Native pool shutdown deadline only")
+    held = await database.pool.acquire()
+    database.close_timeout = 0.02
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(database.close(), 1)
+        assert held.closed
+    finally:
+        await database._release(held)
+        database.close_timeout = 5
+        await database.close()

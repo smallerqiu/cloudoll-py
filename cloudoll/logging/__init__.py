@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+import json
+from collections.abc import Callable, Mapping
 import os
 import platform
 import re
 from contextvars import ContextVar
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from logging import Handler
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -19,6 +21,7 @@ __all__ = [
     "critical",
     "setLevel",
     "configure_logging",
+    "JSONFormatter",
 ]
 
 request_id = ContextVar("cloudoll_request_id", default="-")
@@ -28,6 +31,69 @@ class RequestContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = request_id.get()
         return True
+
+
+class JSONFormatter(logging.Formatter):
+    """JSON lines with allowlisted fields and recursive structured-data redaction.
+
+    Free-form messages/tracebacks need an application supplied string redactor.
+    Arbitrary LogRecord extras are not exported; use ``extra={'data': {...}}``.
+    """
+
+    def __init__(self, *, redact: Optional[Callable[[str], str]] = None) -> None:
+        super().__init__()
+        self.redact = redact or (lambda value: value)
+
+    def _safe(self, value: Any, depth: int = 0) -> Any:
+        if depth > 8:
+            return "<depth-limit>"
+        if isinstance(value, Mapping):
+            return {
+                str(key): "[REDACTED]"
+                if any(
+                    word in str(key).lower()
+                    for word in (
+                        "password",
+                        "secret",
+                        "token",
+                        "authorization",
+                        "cookie",
+                        "api_key",
+                    )
+                )
+                else self._safe(item, depth + 1)
+                for key, item in value.items()
+            }
+        if isinstance(value, (list, tuple)):
+            return [self._safe(item, depth + 1) for item in value]
+        if isinstance(value, str):
+            return self.redact(value)
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+        return "<" + type(value).__name__ + ">"
+
+    def format(self, record: logging.LogRecord) -> str:
+        from cloudoll.observability import span_id, trace_id
+
+        values = {
+            "timestamp": datetime.fromtimestamp(
+                record.created, timezone.utc
+            ).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "request_id": getattr(record, "request_id", request_id.get()),
+            "trace_id": trace_id.get(),
+            "span_id": span_id.get(),
+            "data": getattr(record, "data", {}),
+        }
+        if record.exc_info:
+            values["exception"] = self.formatException(record.exc_info)
+        try:
+            return json.dumps(self._safe(values), ensure_ascii=False, default=str)
+        except Exception:
+            # A faulty redactor must not fall back to unredacted data.
+            return '{"level":"ERROR","message":"Log redaction/serialization failed"}'
 
 
 LOG_MAX_BYTES = 20 * 1024 * 1024
@@ -126,6 +192,8 @@ class DailyFileHandler(Handler):
     def emit(self, record: logging.LogRecord) -> None:
         self._update_handler()
         if self.handler is not None:
+            if self.formatter is not None:
+                self.handler.setFormatter(self.formatter)
             self.handler.handle(record)
 
     def close(self) -> None:
@@ -141,9 +209,16 @@ def configure_logging(
     files: bool = False,
     propagate: bool = False,
     retention_days: int = 14,
+    format: str = "text",
+    redact: Optional[Callable[[str], str]] = None,
 ) -> logging.Logger:
     """Opt in to Cloudoll handlers; importing the library never opens log files."""
     import colorlog
+
+    if format not in {"text", "json"}:
+        raise ValueError("format must be 'text' or 'json'")
+    if redact is not None and format != "json":
+        raise ValueError("redact requires format='json'")
 
     logger = logging.getLogger("cloudoll")
     logger.setLevel(level)
@@ -182,6 +257,8 @@ def configure_logging(
             ]
         )
     for handler in handlers:
+        if format == "json":
+            handler.setFormatter(JSONFormatter(redact=redact))
         setattr(handler, "_cloudoll_owned", True)
         handler.addFilter(RequestContextFilter())
         logger.addHandler(handler)

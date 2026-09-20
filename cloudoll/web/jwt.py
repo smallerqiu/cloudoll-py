@@ -1,26 +1,29 @@
 __author__ = "Qiu / smallerqiu@gmail.com"
 
 import datetime
-from collections.abc import Mapping
+import math
+from collections.abc import Mapping, Sequence
 from typing import Any, Optional, Union
 
 import jwt
-
-from cloudoll.logging import error
 
 
 def encode(
     payload: Mapping[str, Any], key: Union[str, bytes], exp: Union[int, str] = 3600
 ) -> str:
     """
-    jwt 加密
+    Sign a JWT (the payload is not encrypted).
     :params payload
     :params key
     :params exp 过期时间单位秒，默认1个小时
     """
     headers = dict(typ="jwt", alg="HS256")
     exp_seconds = int(exp.strip()) if isinstance(exp, str) else exp
-    if not isinstance(exp_seconds, int) or exp_seconds <= 0:
+    if (
+        isinstance(exp_seconds, bool)
+        or not isinstance(exp_seconds, int)
+        or exp_seconds <= 0
+    ):
         raise ValueError("exp must be a positive number of seconds")
     exp_datetime = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
         seconds=exp_seconds
@@ -31,21 +34,68 @@ def encode(
 
 
 def decode(
-    token: Union[str, bytes], key: Union[str, bytes]
+    token: Union[str, bytes],
+    key: Union[str, bytes],
+    *,
+    issuer: Optional[str] = None,
+    audience: Optional[Union[str, Sequence[str]]] = None,
+    leeway: float = 0,
+    require: Sequence[str] = ("exp",),
 ) -> Optional[dict[str, Any]]:
+    """Verify HS256 tokens; invalid credentials return None, bad config raises.
+
+    Expiry is required by default. Explicit ``require=()`` permits legacy tokens.
+    No credential contents are logged by this helper.
     """
-    jwt
-    :params token
-    :params key
-    """
+    validate_policy(issuer=issuer, audience=audience, leeway=leeway, require=require)
+    if not isinstance(key, (str, bytes)) or not key:
+        raise ValueError("JWT key must be a non-empty string or bytes")
     try:
-        payload = jwt.decode(token, key, algorithms=["HS256"])
-        # if not payload:
-        #     return None
-        # now = datetime.datetime.now().timestamp()  # 当前时间
-        # if int(now) > int(payload["exp"]):  # 登录时间过期
-        #     return None
-        return payload  # 返回自定义内容
-    except Exception as e:
-        error(e)
+        required = list(require)
+        if issuer is not None:
+            required.append("iss")
+        if audience is not None:
+            required.append("aud")
+        return jwt.decode(
+            token,
+            key,
+            algorithms=["HS256"],
+            issuer=issuer,
+            audience=audience,
+            leeway=leeway,
+            options={"require": required},
+        )
+    except jwt.InvalidTokenError:
         return None
+
+
+def validate_policy(
+    *,
+    issuer: Optional[str] = None,
+    audience: Optional[Union[str, Sequence[str]]] = None,
+    leeway: float = 0,
+    require: Sequence[str] = ("exp",),
+) -> None:
+    if issuer is not None and (not isinstance(issuer, str) or not issuer):
+        raise ValueError("JWT issuer must be a non-empty string")
+    if audience is not None:
+        audiences = [audience] if isinstance(audience, str) else audience
+        if (
+            not isinstance(audiences, (list, tuple))
+            or not audiences
+            or any(not isinstance(item, str) or not item for item in audiences)
+        ):
+            raise ValueError(
+                "JWT audience must be a string or a non-empty list of strings"
+            )
+    if (
+        isinstance(leeway, bool)
+        or not isinstance(leeway, (int, float))
+        or not math.isfinite(leeway)
+        or leeway < 0
+    ):
+        raise ValueError("JWT leeway must be a finite non-negative number")
+    if not isinstance(require, (list, tuple)) or any(
+        not isinstance(item, str) or not item for item in require
+    ):
+        raise ValueError("JWT require must be a list or tuple of claim names")

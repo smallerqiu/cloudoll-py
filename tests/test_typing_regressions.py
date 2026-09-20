@@ -53,7 +53,8 @@ def test_missing_jwt_key_never_accepts_unsigned_configuration():
     from cloudoll.web import Application
 
     application = Application()
-    assert application.jwt_decode("irrelevant") is None
+    with pytest.raises(ValueError, match="jwt.key"):
+        application.jwt_decode("irrelevant")
 
 
 async def test_upload_uses_server_generated_path(tmp_path, monkeypatch):
