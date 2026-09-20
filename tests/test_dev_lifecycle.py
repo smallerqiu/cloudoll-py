@@ -1,5 +1,6 @@
 import asyncio
 import io
+import multiprocessing
 import subprocess
 import sys
 import threading
@@ -10,6 +11,8 @@ import pytest
 from aiohttp import web
 
 from cloudoll.clitool import cli_main, watch
+from cloudoll.web import Application, app
+from cloudoll.web.context import active_application
 
 
 @pytest.mark.parametrize(
@@ -178,9 +181,14 @@ async def test_background_failure_requests_cli_shutdown(tmp_path):
     assert str(supervisor.failure) == "watch failed"
 
 
+@pytest.mark.parametrize("start_method", multiprocessing.get_all_start_methods())
+@pytest.mark.parametrize("inherited", ["context", "default"])
 async def test_real_child_readiness_reload_and_cleanup(
-    tmp_path, monkeypatch, unused_tcp_port
+    tmp_path, monkeypatch, unused_tcp_port, start_method, inherited
 ):
+    context = multiprocessing.get_context(start_method)
+    for name in ("Process", "Pipe", "Event"):
+        monkeypatch.setattr(watch, name, getattr(context, name))
     monkeypatch.chdir(tmp_path)
     (tmp_path / "entry.py").write_text(
         "from pathlib import Path\n"
@@ -195,6 +203,14 @@ async def test_real_child_readiness_reload_and_cleanup(
         "entry",
         "local",
     )
+    # fork inherits context variables and cached applications from the parent.
+    # The child must load its own project, not this unrelated parent's root.
+    stale = Application(root=tmp_path / "parent-project")
+    previous_default = object.__getattribute__(app, "_default")
+    object.__setattr__(app, "_default", stale)
+    token = active_application.set(stale if inherited == "context" else None)
+    # The explicit project root must win even if the parent changes directory.
+    monkeypatch.chdir(tmp_path.parent)
     try:
         await supervisor._start_dev_server()
         assert (tmp_path / "started").read_text() == "1"
@@ -208,6 +224,8 @@ async def test_real_child_readiness_reload_and_cleanup(
         assert (tmp_path / "started").read_text() == "11"
         assert (tmp_path / "cleaned").read_text() == "1"
     finally:
+        active_application.reset(token)
+        object.__setattr__(app, "_default", previous_default)
         await supervisor.close()
     assert (tmp_path / "cleaned").read_text() == "11"
     assert supervisor._process is None

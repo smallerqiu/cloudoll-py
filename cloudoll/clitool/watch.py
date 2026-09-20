@@ -13,7 +13,7 @@ from aiohttp import web
 from watchfiles import DefaultFilter, awatch
 
 from cloudoll.logging import info
-from cloudoll.web import Application, app
+from cloudoll.web import Application
 
 
 class CloudollFilter(DefaultFilter):
@@ -92,11 +92,12 @@ def mian_app(
     env: str,
     ready: Any = None,
     stop: Any = None,
+    root: Optional[Union[str, Path]] = None,
 ) -> None:
     """Child entry point; keep the legacy name for import compatibility."""
 
     async def serve() -> None:
-        runner = await create_main_app(config, entry, env)
+        runner = await create_main_app(config, entry, env, root=root)
         try:
             await start_main_app(
                 runner,
@@ -113,6 +114,8 @@ def mian_app(
 
     with set_tty(tty_path):
         try:
+            if root is not None:
+                os.chdir(root)
             asyncio.run(serve())
         except KeyboardInterrupt:
             pass
@@ -127,9 +130,15 @@ def mian_app(
 
 
 async def create_main_app(
-    config: dict[str, Any], entry: Optional[str], env: str
+    config: dict[str, Any],
+    entry: Optional[str],
+    env: str,
+    *,
+    root: Optional[Union[str, Path]] = None,
 ) -> web.AppRunner:
-    application: Application = app.current().create(
+    # fork copies both the legacy proxy's cached application and ContextVars.
+    # Neither belongs to this child; create fresh state for every server/reload.
+    application = Application(root=root).create(
         env=env, config=config, entry_model=entry
     )
     assert application.app is not None
@@ -158,7 +167,7 @@ class AppTask(WatchTask):
         entry: Optional[str],
         env: str,
     ) -> None:
-        super().__init__(watch_path)
+        super().__init__(Path(watch_path).resolve())
         self._config = config
         self._entry = entry
         self._env = env
@@ -235,6 +244,7 @@ class AppTask(WatchTask):
                 self._env,
                 sender,
                 self._stop_event,
+                self._path,
             ),
         )
         try:
