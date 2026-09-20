@@ -164,7 +164,7 @@ async def test_lifecycle_registers_initially_empty_signals():
     shutdown = AsyncMock()
     with patch.object(core.importlib, "import_module", return_value=SimpleNamespace(on_shutdown=shutdown)):
         application._load_life_cycle("entry")
-    assert shutdown in application.app.on_shutdown
+    assert any(getattr(callback, "__wrapped__", None) is shutdown for callback in application.app.on_shutdown)
 
 
 async def test_independent_apps_routes_sessions_and_dynamic_ignore(tmp_path, monkeypatch):

@@ -35,7 +35,8 @@ class SQLCompiler:
                     return "1 = 0" if node.op == "IN" else "1 = 1"
                 right = "(" + ",".join(self.expression(v, params) for v in node.rhs) + ")"
             else:
-                right = self.expression(node.rhs, params)
+                value = node.rhs.value if isinstance(node.rhs, Field) and node.rhs.value is not None else node.rhs
+                right = self.expression(value, params)
             return f"({left} {node.op} {right})"
         if isinstance(node, Function):
             return self.function(node, params)
@@ -122,7 +123,7 @@ class SQLCompiler:
         inner.limit = inner.offset = inner.order_by = None
         # Retain selected aliases for HAVING; ordinary count needs no projections.
         if inner.having is None or not inner.columns:
-            inner.columns = inner.group_by or None
+            inner.columns = inner.group_by or [Expression(1, "AS", "cloudoll_row")]
         query = self.select(model, inner)
         return CompiledQuery(f"SELECT COUNT(*) FROM ({query.sql}) AS cloudoll_count", query.params)
 

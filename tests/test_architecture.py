@@ -71,6 +71,21 @@ def test_null_empty_in_and_invalid_pagination():
         query.offset(-1)
 
 
+async def test_count_join_uses_unambiguous_projection():
+    engine = db()
+    await Account.use(engine).join(Account, Account.id > 0).count()
+    sql, params = engine.count.call_args.args
+    assert "SELECT *" not in sql
+    assert 'AS "cloudoll_row"' in sql
+    assert params == [1, 0]
+
+
+def test_record_field_as_operand_is_a_bound_value():
+    record = Account(id=7)
+    sql, params = Account.use(db()).where(Account.id == record.id).test()
+    assert params == [7]
+
+
 async def test_two_roots_share_no_modules_routes_configs_or_app_proxy(tmp_path):
     roots = [tmp_path / "first", tmp_path / "second"]
     config = {"label": "unchanged"}
@@ -136,3 +151,26 @@ async def test_cleanup_attempts_every_resource_and_retries_only_failures():
     await resources.close(application)
     first.close.assert_awaited_once()
     assert second.close.await_count == 2
+
+
+async def test_lifecycle_hooks_have_the_explicit_application_context(tmp_path):
+    (tmp_path / "entry.py").write_text(
+        "from cloudoll.web import app\n"
+        "async def on_startup(a):\n"
+        "    a.events.append(('startup', app.config['label']))\n"
+        "async def on_shutdown(a):\n"
+        "    a.events.append(('shutdown', app.config['label']))\n"
+        "async def on_cleanup(a):\n"
+        "    a.events.append(('cleanup', app.config['label']))\n"
+        "async def on_task(a):\n"
+        "    a.events.append(('task-start', app.config['label']))\n"
+        "    yield\n"
+        "    a.events.append(('task-end', app.config['label']))\n"
+    )
+    application = Application(root=tmp_path).create(config={"label": "explicit"}, entry_model="entry")
+    application.app.events = []
+    runner = web.AppRunner(application.app)
+    await runner.setup()
+    await asyncio.create_task(runner.cleanup())
+    assert len(application.app.events) == 5
+    assert all(label == "explicit" for _, label in application.app.events)

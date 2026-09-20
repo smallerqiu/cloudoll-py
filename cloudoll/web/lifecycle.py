@@ -1,5 +1,7 @@
 """Lifecycle hook loading and failure-safe aiohttp startup/cleanup."""
 from cloudoll.logging import info
+from functools import wraps
+from cloudoll.web.context import active_application
 
 
 class LifecycleManager:
@@ -23,7 +25,43 @@ class LifecycleManager:
         for name in ("on_startup", "on_shutdown", "on_cleanup", "on_task"):
             callbacks = getattr(self.owner, name)
             if callbacks is not None and hasattr(entry, name):
-                callbacks.append(getattr(entry, name))
+                callback = getattr(entry, name)
+                callbacks.append(self.context_hook(callback) if name == "on_task" else self.hook(callback))
+
+    def hook(self, callback):
+        @wraps(callback)
+        async def run(app):
+            token = active_application.set(self.owner)
+            try:
+                return await callback(app)
+            finally:
+                active_application.reset(token)
+        return run
+
+    def context_hook(self, callback):
+        @wraps(callback)
+        async def run(app):
+            generator = callback(app)
+            token = active_application.set(self.owner)
+            try:
+                await generator.__anext__()
+            finally:
+                active_application.reset(token)
+            try:
+                yield
+            finally:
+                token = active_application.set(self.owner)
+                try:
+                    try:
+                        await generator.__anext__()
+                    except StopAsyncIteration:
+                        pass
+                    else:
+                        await generator.aclose()
+                        raise RuntimeError("Cleanup context must yield exactly once")
+                finally:
+                    active_application.reset(token)
+        return run
 
     async def resources(self, app):
         try:
