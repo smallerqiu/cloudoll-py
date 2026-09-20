@@ -121,7 +121,13 @@ from cloudoll.logging import configure_logging
 configure_logging(files=True)  # CLI 会主动调用；普通 import 不会
 ```
 
-重复配置只替换 Cloudoll 自己的 handler，保留宿主 handler。数据库操作日志仅记录驱动、操作类型与耗时，不输出 SQL 文本或参数；旧的 SQL `echo` 输出关闭。请求 ID 可通过 `request.request_id` 读取，并在未发送响应头的普通响应中返回 `X-Request-ID`。流式响应/WebSocket 若已发送响应头，不再补写该头。
+重复配置只替换 Cloudoll 自己的 handler，保留宿主 handler。数据库耗时日志不包含 SQL 或参数；原生 MySQL/PostgreSQL 可显式设置 `echo: true`，通过 `cloudoll` logger 在 INFO 级别记录 SQL。参数只有同时设置 `echo_params: true` 才输出，两项默认均为 false。覆盖查询、写入、批量操作、流式查询及 BEGIN/COMMIT/ROLLBACK/保存点控制语句；在执行前记录的是尝试执行的 SQL，不代表执行成功。SQL 保留占位符，参数单独输出，不拼接成可执行字符串。底层驱动 echo 仍关闭，避免重复输出或绕过参数开关。Aurora 不在本功能范围。
+
+直接创建引擎时使用 `await create_engine(type="postgres", ..., echo=True, echo_params=False)`；也支持 URL 参数 `?echo=true&echo_params=false`，显式关键字优先。作为库使用时先调用 `configure_logging()` 或由宿主配置 `cloudoll` logger 的 INFO 输出；CLI 已配置日志。布尔 URL 值支持 true/false、1/0、yes/no、on/off，非法值会报错。
+
+SQL 文本本身可能含敏感字面量，参数输出更可能含密码、令牌及个人数据，也可能产生大量批量日志；建议仅本地调试开启。返回结果不会被此开关记录。
+
+请求 ID 可通过 `request.request_id` 读取，并在未发送响应头的普通响应中返回 `X-Request-ID`。流式响应/WebSocket 若已发送响应头，不再补写该头。
 
 处理器支持 `()`、`(request)`、`(request, field)`，也支持对应 keyword-only 参数；不支持任意 `*args/**kwargs`。双参数处理器用于单个 multipart 字段，类型不匹配返回 415、无字段返回 400。原始请求仍可直接访问 aiohttp API。
 

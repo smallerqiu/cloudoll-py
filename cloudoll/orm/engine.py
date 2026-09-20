@@ -12,7 +12,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Optional, TypeVar
 
-from cloudoll.logging import debug, warning
+from cloudoll.logging import debug, info, warning
 from cloudoll.orm.base import MeteBase, Params, QueryTypes
 from cloudoll.orm.dialects import dialect_for
 from cloudoll.orm.savepoints import SavepointMixin
@@ -36,6 +36,21 @@ def positive_timeout(value: Any, name: str) -> Optional[float]:
     return number
 
 
+def boolean_option(value: Any, name: str) -> bool:
+    """Accept YAML booleans and explicit URL spellings, never bool('false')."""
+    if isinstance(value, bool):
+        return value
+    if type(value) is int and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    raise ValueError(f"{name} must be a boolean")
+
+
 @dataclass
 class TransactionState:
     connection: Any
@@ -55,6 +70,10 @@ class AsyncEngine(SavepointMixin, MeteBase):
         self.configure({})
 
     def configure(self, options: Mapping[str, Any]) -> None:
+        self.echo = boolean_option(options.get("echo", False), "echo")
+        self.echo_params = boolean_option(
+            options.get("echo_params", False), "echo_params"
+        )
         self.connect_timeout = positive_timeout(
             options.get("connect_timeout", 60), "connect_timeout"
         )
@@ -106,8 +125,30 @@ class AsyncEngine(SavepointMixin, MeteBase):
             await self.pool.wait_closed()
 
     async def _control(self, connection: Any, command: str) -> None:
+        self._log_sql("CONTROL", command)
         async with connection.cursor() as cursor:
             await cursor.execute(command)
+
+    def _log_sql(self, operation: str, sql: str, params: Params = None) -> None:
+        if not self.echo:
+            return
+        # Log SQL and parameters separately: never render values into executable
+        # SQL, and leave driver echo off so it cannot bypass the parameter gate.
+        if self.echo_params and params is not None:
+            info(
+                "Database SQL driver=%s operation=%s sql=%r params=%r",
+                self.driver,
+                operation,
+                sql,
+                params,
+            )
+        else:
+            info(
+                "Database SQL driver=%s operation=%s sql=%r",
+                self.driver,
+                operation,
+                sql,
+            )
 
     async def _release(self, connection: Any) -> None:
         result = self.pool.release(connection)
@@ -195,6 +236,7 @@ class AsyncEngine(SavepointMixin, MeteBase):
                 return await self.query(sql, params, query_type, size)
         started = time.monotonic()
         try:
+            self._log_sql(query_type.name, sql, params)
             return await asyncio.wait_for(
                 self._execute(
                     state.connection,
@@ -221,7 +263,7 @@ class AsyncEngine(SavepointMixin, MeteBase):
                 and elapsed >= self.slow_query_seconds
                 else debug
             )
-            # Deliberately omit SQL and bound values: either may contain secrets.
+            # Timing logs remain value-free, regardless of the explicit SQL echo.
             log(
                 "Database operation driver=%s operation=%s duration_ms=%.2f",
                 self.driver,
@@ -275,6 +317,7 @@ class AsyncEngine(SavepointMixin, MeteBase):
                 self._control(connection, "START TRANSACTION READ ONLY"),
                 self.query_timeout,
             )
+            self._log_sql("STREAM", sql, params)
             cursor = await asyncio.wait_for(
                 self._open_stream(
                     connection,

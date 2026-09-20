@@ -48,6 +48,16 @@ pip install 'cloudoll[aws]'
 pip install 'cloudoll[cache]'
 ```
 
+### SQL debug logging
+
+Native MySQL/PostgreSQL SQL debug logging can be enabled per connection with
+`echo=True` (SQL) and optionally `echo_params=True` (bound values). Both default
+to false. SQL is logged at INFO through the `cloudoll` logger; library users
+must configure logging, while the CLI already does. See the
+[Chinese SQL logging examples](README.zh-CN.md#orm-sql-调试日志). Avoid enabling
+parameter logs in production; SQL literals can also contain sensitive data.
+This option does not enable Aurora logging.
+
 ### Upgrading from 3.0.14
 
 - Replace arithmetic strings such as `3600 * 24 * 7` in `session.max_age`,

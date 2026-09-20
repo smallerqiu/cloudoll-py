@@ -9,8 +9,12 @@ server:
 # database:
 #   mysql_db:
 #     url: mysql://username:password@host:port/database
+#     echo: false  # SQL debug logging (INFO)
+#     echo_params: false  # Requires echo; may expose sensitive values
 #   postgres_db:
-#     url: mysql://username:password@host:port/database
+#     url: postgres://username:password@host:port/database
+#     echo: false
+#     echo_params: false
 #   redis_0:
 #     url: redis://host:port:/0
 

@@ -1,6 +1,7 @@
 """Native schema generation and reflection, never AWS."""
 
 import os
+import logging
 from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
@@ -13,6 +14,36 @@ from cloudoll.orm.dialects import dialect_for
 from cloudoll.orm.model import Model, models
 
 pytestmark = pytest.mark.integration
+
+
+async def test_native_sql_echo_and_parameter_gate(database, caplog):
+    db, tables = database
+    caplog.set_level(logging.INFO, logger="cloudoll")
+    secret = "echo-private-parameter"
+    db.configure({"echo": True})
+    try:
+        row = await db.one("SELECT ? AS echo_value", [secret])
+        assert row["echo_value"] == secret
+        assert "SELECT ? AS echo_value" in caplog.text
+        assert secret not in caplog.text
+        assert "COMMIT" in caplog.text
+        caplog.clear()
+        db.configure({"echo": True, "echo_params": True})
+        await db.one("SELECT ? AS echo_value", [secret])
+        assert secret in caplog.text
+        caplog.clear()
+        db.configure({"echo": True, "echo_params": False})
+        async with db.stream("SELECT ? AS echo_value", [secret]) as rows:
+            assert [row async for row in rows] == [{"echo_value": secret}]
+        assert "operation=STREAM" in caplog.text
+        assert secret not in caplog.text
+        caplog.clear()
+        db.configure({"echo": False, "echo_params": True})
+        await db.one("SELECT ? AS echo_value", [secret])
+        assert "Database SQL" not in caplog.text
+        assert secret not in caplog.text
+    finally:
+        db.configure({})
 
 
 async def test_generated_update_state_matches_commit_and_rollback(database):

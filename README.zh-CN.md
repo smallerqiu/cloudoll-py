@@ -231,6 +231,40 @@ jwt:
 cloudoll start -n myapp -env test
 ```
 
+### ORM SQL 调试日志
+
+原生 MySQL 和 PostgreSQL 都支持在对应数据库配置中开启：
+
+```yaml
+database:
+  mysql:
+    url: mysql://user:password@127.0.0.1:3306/app_db
+    echo: true
+    echo_params: false
+  postgres:
+    url: postgres://user:password@127.0.0.1:5432/app_db
+    echo: true
+    echo_params: false
+```
+
+`echo` 打印带占位符的 SQL；如需打印绑定参数，再设置 `echo_params: true`。两项默认关闭。覆盖普通查询、增删改、批量写入、流式读取和事务控制，使用 `cloudoll` logger 的 INFO 级别。
+
+直接使用 ORM 时：
+
+```python
+from cloudoll.logging import configure_logging
+from cloudoll.orm import create_engine
+
+configure_logging()  # CLI 启动时已配置；宿主也可自行配置 logging
+db = await create_engine(
+    url="postgres://user:password@127.0.0.1:5432/app_db",
+    echo=True,
+    echo_params=True,  # 仅在需要查看参数时开启
+)
+```
+
+也可使用连接 URL 参数 `?echo=true&echo_params=false`。SQL 和参数不拼接；SQL 内的字面量及参数均可能包含敏感数据，不建议在生产环境长期打开。此功能不包含 Aurora 驱动。
+
 ### 会话与 JWT
 
 - Cookie 会话使用 `session.secret_key` 或环境变量 `CLOUDOLL_SESSION_SECRET`。生产环境应配置足够长的随机密钥，并在所有工作进程间保持一致。
