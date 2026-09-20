@@ -1,2 +1,3 @@
 recursive-include tests *.py
 include README.zh-CN.md
+recursive-include docs *.md

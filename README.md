@@ -74,6 +74,9 @@ pip install 'cloudoll[aws]'
 
 ### Development checks
 
+See [architecture and integration testing (Chinese)](docs/architecture.md) for the
+record/query split, application components, migration notes and real database tests.
+
 ```sh
 python -m pip install -e '.[mysql,postgres,aws,dev]'
 python -m pytest -q

@@ -45,6 +45,7 @@ dev = ["pytest>=7", "pytest-asyncio>=0.21", "build", "setuptools>=77", "wheel"]
 [tool.pytest.ini_options]
 testpaths = ["tests", "cloudoll/orm/test_sql.py"]
 asyncio_mode = "auto"
+markers = ["integration: requires an explicitly configured disposable database", "aws_failover: requires dedicated AWS staging infrastructure"]
 
 [tool.setuptools.packages.find]
 include = ["cloudoll*"]

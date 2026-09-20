@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 
 from cloudoll.logging import error
 from cloudoll.orm.base import MeteBase, QueryTypes
+from cloudoll.orm.dialects import dialect_for
 
 
 class AwsPostgres(MeteBase):
@@ -39,7 +40,7 @@ class AwsPostgres(MeteBase):
         return await asyncio.to_thread(self._query, sql, params, query_type, size)
 
     def _query(self, sql, params, query_type, size):
-        sql = sql.replace("?", "%s").replace("`", '"')
+        sql = dialect_for(self.driver).prepare(sql)
         try:
             with AwsWrapperConnection.connect(
                 psycopg.Connection.connect, **self._params

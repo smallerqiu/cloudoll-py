@@ -62,7 +62,7 @@ def test_query():
         .test()
     )
     # sql = B()._exchange_sql(sql)
-    assert "LEFT JOIN c" in sql
+    assert "LEFT JOIN `c`" in sql
     assert "GROUP BY" in sql
     assert arg[-3:] == [1, 1, "aa"]
 
@@ -83,7 +83,7 @@ def test_a():
         )
         .test()
     )
-    assert "LEFT JOIN a" in sql
+    assert "LEFT JOIN `a`" in sql
     assert "WHERE" in sql
     assert arg[:3] == [0, 1, "2"]
 

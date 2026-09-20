@@ -4,6 +4,7 @@ import aiomysql
 
 from cloudoll.logging import error, info
 from cloudoll.orm.base import MeteBase, QueryTypes
+from cloudoll.orm.dialects import dialect_for
 
 
 class AttrDict(dict):
@@ -36,7 +37,7 @@ class Mysql(MeteBase):
         self, sql, params=None, query_type: QueryTypes = QueryTypes.ONE, size: int = 10
     ):
         try:
-            sql = sql.replace("?", "%s")
+            sql = dialect_for(self.driver).prepare(sql)
             if not self.pool:
                 raise ValueError("must be create_engine first.")
             if self.pool._closing or self.pool._closed:
@@ -58,11 +59,11 @@ class Mysql(MeteBase):
                     await conn.commit()
 
                     if query_type == QueryTypes.ALL:
-                        return await cursor.fetchall()
+                        return list(await cursor.fetchall())
                     elif query_type == QueryTypes.ONE:
                         return await cursor.fetchone()
                     elif query_type == QueryTypes.MANY:
-                        return await cursor.fetchmany(size)
+                        return list(await cursor.fetchmany(size))
                     elif query_type == QueryTypes.COUNT:
                         rows = await cursor.fetchone()
                         count = 0
@@ -99,7 +100,7 @@ class Mysql(MeteBase):
                 host=kw.get("host") or "localhost",
                 port=int(kw.get("port") or 3306),
                 user=kw.get("username"),
-                password=str(kw.get("password", "")),
+                password=str(kw.get("password") or ""),
                 db=kw.get("db"),
                 echo=kw.get("echo", False),
                 charset=kw.get("charset", "utf8"),

@@ -12,6 +12,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from cloudoll.orm.model import Model, models
 from cloudoll.orm.parse import parse_coon
 from cloudoll.web import core, jwt
+from cloudoll.web import sessions
 
 
 class Row(Model):
@@ -125,7 +126,7 @@ async def test_session_keys_are_private_and_configurable(monkeypatch):
     for config in ({}, {}, {"session": {"secret_key": "s" * 48, "secure": True}}):
         application = core.Application()
         application.config = config
-        with patch.object(core, "setup") as setup:
+        with patch.object(sessions, "setup") as setup:
             await application._init_session(web.Application())
             stores.append(setup.call_args.args[1])
     encrypted = stores[0]._fernet.encrypt(b"private")
@@ -142,8 +143,8 @@ async def test_redis_session_structured_config():
     application = core.Application()
     application.config = {"session": {"redis": {"host": "localhost", "password": "a@b", "db": 2}}}
     with patch("redis.asyncio.from_url", new=AsyncMock()) as connect, patch.object(
-        core.redis_storage, "RedisStorage"
-    ), patch.object(core, "setup"):
+        sessions.redis_storage, "RedisStorage"
+    ), patch.object(sessions, "setup"):
         await application._init_session(web.Application())
     assert connect.call_args.args[0] == "redis://:a%40b@localhost:6379/2"
 

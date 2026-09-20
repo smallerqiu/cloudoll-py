@@ -2,7 +2,7 @@ from redis import asyncio as aioredis
 
 from cloudoll.orm.parse import parse_coon
 
-__all__ = ["create_engine"]
+__all__ = ["create_engine", "Query"]
 
 
 async def create_engine(**kw):
@@ -56,4 +56,7 @@ def __getattr__(name):
     if name == "Postgres":
         from .postgres import Postgres
         return Postgres
+    if name == "Query":
+        from .query import Query
+        return Query
     raise AttributeError(name)

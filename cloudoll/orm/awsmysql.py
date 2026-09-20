@@ -9,6 +9,7 @@ from mysql.connector import Connect
 
 from cloudoll.logging import error
 from cloudoll.orm.base import MeteBase, QueryTypes
+from cloudoll.orm.dialects import dialect_for
 
 
 class AttrDict(dict):
@@ -67,7 +68,7 @@ class AwsMysql(MeteBase):
         return await asyncio.to_thread(self._query, sql, params, query_type, size)
 
     def _query(self, sql, params, query_type, size):
-        sql = sql.replace("?", "%s")
+        sql = dialect_for(self.driver).prepare(sql)
         try:
             with AwsWrapperConnection.connect(
                 Connect, **self._params

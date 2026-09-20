@@ -6,10 +6,10 @@ from envyaml import EnvYAML
 from cloudoll.logging import error, info
 
 
-def get_config(env):
+def get_config(env, root=None):
     if env is None:
         return {}
-    conf_path = Path().cwd() / "config" / f"conf.{env}.yaml"
+    conf_path = Path(root or Path.cwd()) / "config" / f"conf.{env}.yaml"
     info(f"loading config {conf_path}")
     if not conf_path.exists():
         error(f"Configuration file does not exist: {conf_path}")

@@ -310,6 +310,8 @@ cloudoll restart -n myapp
 
 ## 开发与验证
 
+组件职责、架构迁移和真实数据库测试方法见 [架构与验证](docs/architecture.md)。
+
 在仓库根目录执行：
 
 ```sh

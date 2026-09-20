@@ -5,6 +5,7 @@ from psycopg2.extras import RealDictCursor
 
 from cloudoll.logging import error, info
 from cloudoll.orm.base import MeteBase, QueryTypes
+from cloudoll.orm.dialects import dialect_for
 
 
 class Postgres(MeteBase):
@@ -29,7 +30,7 @@ class Postgres(MeteBase):
         size: int = 10,
     ):
         try:
-            sql = sql.replace("?", "%s").replace("`", '"')
+            sql = dialect_for(self.driver).prepare(sql)
             if not self.pool:
                 raise ValueError("must be create_engine first.")
             if self.pool._closing or self.pool._closed:
@@ -45,7 +46,16 @@ class Postgres(MeteBase):
                         query_type == QueryTypes.CREATEBATCH
                         or query_type == QueryTypes.UPDATEBATCH
                     ):
-                        await cursor.executemany(sql, params)
+                        batch_count = 0
+                        await cursor.execute("BEGIN")
+                        try:
+                            for row in params:
+                                await cursor.execute(sql, row)
+                                batch_count += max(cursor.rowcount, 0)
+                            await cursor.execute("COMMIT")
+                        except BaseException:
+                            await cursor.execute("ROLLBACK")
+                            raise
                     else:
                         await cursor.execute(sql, params)
 
@@ -73,13 +83,13 @@ class Postgres(MeteBase):
                         id = next(iter(row.values())) if row else None
                         return result, id
                     elif query_type == QueryTypes.CREATEBATCH:
-                        count = cursor.rowcount
+                        count = batch_count
                         id = None
                         return count, id
                     elif query_type == QueryTypes.UPDATE:
                         return cursor.rowcount > 0
                     elif query_type == QueryTypes.UPDATEBATCH:
-                        return cursor.rowcount
+                        return batch_count
                     elif query_type == QueryTypes.DELETE:
                         return cursor.rowcount > 0
         except Exception as e:

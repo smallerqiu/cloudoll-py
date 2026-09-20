@@ -1,0 +1,74 @@
+"""SQL dialect rules and token-aware DB-API placeholder conversion."""
+import re
+
+
+# Preserve literals, quoted identifiers and comments when adapting SQL.
+_TOKENS = re.compile(
+    r"('(?:''|\\.|[^'\\])*'|\"(?:\"\"|\\.|[^\"\\])*\"|"
+    r"`(?:``|[^`])*`|--[^\n]*(?:\n|$)|/\*[\s\S]*?\*/|"
+    r"\$(?P<tag>[A-Za-z_][A-Za-z_0-9]*|)\$[\s\S]*?\$(?P=tag)\$)"
+)
+
+
+class MySQLDialect:
+    is_postgres = False
+    quote = "`"
+
+    def identifier(self, name):
+        if not isinstance(name, str) or not name or "\0" in name:
+            raise ValueError("SQL identifiers must be non-empty strings")
+        return self.quote + name.replace(self.quote, self.quote * 2) + self.quote
+
+    def _code(self, text):
+        return text
+
+    def adapt(self, sql, placeholders=False):
+        chunks, last = [], 0
+        for match in _TOKENS.finditer(sql):
+            code = self._code(sql[last:match.start()])
+            chunks.append(code.replace("?", "%s") if placeholders else code)
+            token = match.group(0)
+            if token.startswith("`") and self.is_postgres:
+                token = self.identifier(token[1:-1].replace("``", "`"))
+            chunks.append(token)
+            last = match.end()
+        code = self._code(sql[last:])
+        chunks.append(code.replace("?", "%s") if placeholders else code)
+        return "".join(chunks)
+
+    def normalize(self, sql):
+        return self.adapt(sql)
+
+    def prepare(self, sql):
+        return self.adapt(sql, placeholders=True)
+
+    def returning(self, primary_key):
+        return ""
+
+    def interval(self, amount, unit):
+        return f"INTERVAL {amount} {unit}"
+
+
+class PostgreSQLDialect(MySQLDialect):
+    is_postgres = True
+    quote = '"'
+
+    def _code(self, text):
+        text = re.sub(r"\bCURDATE\(\)", "CURRENT_DATE", text, flags=re.I)
+        text = re.sub(r"\bNOW\(\)", "CURRENT_TIMESTAMP", text, flags=re.I)
+        return re.sub(
+            r"\bINTERVAL\s+(\d+)\s+(DAY|MONTH|YEAR|HOUR|MINUTE|SECOND)\b",
+            lambda match: self.interval(match[1], match[2]), text, flags=re.I,
+        )
+
+    def returning(self, primary_key):
+        return " RETURNING " + self.identifier(primary_key)
+
+    def interval(self, amount, unit):
+        return f"INTERVAL '{amount} {unit.lower()}'"
+
+
+def dialect_for(driver):
+    if driver in {"postgres", "postgresql", "postgressql", "aws-postgres", "aws-postgresql", "aws-postgressql"}:
+        return PostgreSQLDialect()
+    return MySQLDialect()

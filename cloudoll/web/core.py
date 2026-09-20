@@ -3,21 +3,14 @@
 
 __author__ = "Qiu / smallerqiu@gmail.com"
 
-import argparse
 import asyncio
-import hashlib
 import importlib.util
 import inspect
 import json
-import os
-import secrets
-import sys
 import time
 import uuid
-from contextvars import ContextVar
 from datetime import date, datetime
 from decimal import Decimal
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Awaitable, Callable, Iterable, Optional
 from urllib import parse
@@ -28,21 +21,19 @@ from aiohttp.web import Response
 from aiohttp.web_request import Request
 from aiohttp.web_response import StreamResponse
 from aiohttp.web_ws import WebSocketResponse
-from aiohttp_session import (
-    cookie_storage,
-    get_session,
-    memcached_storage,
-    redis_storage,
-    setup,
-)
-from cloudoll.logging import info, warning
-from cloudoll.orm import create_engine
+from aiohttp_session import get_session
+from cloudoll.logging import info
 from cloudoll.orm.model import Model
 from cloudoll.utils.common import Object, chainMap
 from cloudoll.web import jwt
 from cloudoll.web.settings import get_config
 
-_active_app = ContextVar("cloudoll_application", default=None)
+from cloudoll.web.configuration import Configuration, parse_int as _parse_int
+from cloudoll.web.context import ApplicationProxy, active_application as _active_app
+from cloudoll.web.routing import RouteRegistry, ignore_key as _sa_ignore_hash
+from cloudoll.web.sessions import SessionManager
+from cloudoll.web.resources import ResourceManager
+from cloudoll.web.lifecycle import LifecycleManager
 
 
 class RequestHandler(object):
@@ -67,25 +58,6 @@ async def _set_session_route(request: Request):
     session = await get_session(request)
     # session = await new_session(request)
     request.session = session
-
-
-def _auto_reg_module(module_dir: str):
-    info(f"Auto-registration {module_dir}")
-    base_path = Path(module_dir).resolve()
-    if str(base_path.parent) not in sys.path:
-        sys.path.insert(0, str(base_path.parent))
-    for py_file in base_path.rglob("*.py"):
-        if py_file.name == "__init__.py":
-            continue
-        relative_path = py_file.relative_to(base_path.parent)
-        module_name = ".".join(relative_path.with_suffix("").parts)
-
-        spec = importlib.util.spec_from_file_location(module_name, py_file)
-        if spec and spec.loader:
-            module = importlib.util.module_from_spec(spec)
-            module.__package__ = module_name.rpartition(".")[0]
-            sys.modules[module_name] = module
-            spec.loader.exec_module(module)
 
 
 async def _render_result(request: Request, func):
@@ -133,82 +105,43 @@ async def _render_result(request: Request, func):
     return render_json(result)
 
 
-def _sa_ignore_hash(method, path):
-    md5 = hashlib.md5()
-    hash_str = f"{method}{path}"
-    md5.update(hash_str.encode("utf-8"))
-    return md5.hexdigest()
-
-
-def _parse_int(num):
-    if num is None or isinstance(num, int):
-        return num
-    if isinstance(num, str):
-        return int(num.strip())
-    raise TypeError(f"Expected an integer or numeric string, got {type(num).__name__}")
-
-
 def _sa_ignore_middleware():
     async def set_ignore(ctx, handler):
         route_path = getattr(ctx.match_info.route.resource, "canonical", ctx.path)
         hash_str = _sa_ignore_hash(ctx.method, route_path)
         ctx.is_sa_ignore = hash_str in ctx.app.ignore_paths
         start_time = time.time()
-        response = await handler(ctx)
-        end_time = time.time()
-        elapsed_ms = (end_time - start_time) * 1000
-        info(f"{ctx.method} {response.status} {ctx.path} {elapsed_ms:.2f}ms")
-        return response
+        token = _active_app.set(ctx.app.cloudoll_application)
+        try:
+            response = await handler(ctx)
+            elapsed_ms = (time.time() - start_time) * 1000
+            info(f"{ctx.method} {response.status} {ctx.path} {elapsed_ms:.2f}ms")
+            return response
+        finally:
+            _active_app.reset(token)
 
     return set_ignore
 
 
 class Application(object):
-    def __init__(self):
+    def __init__(self, root=None, database_factory=None):
+        self.configuration = Configuration(root)
+        self.registry = RouteRegistry(self.configuration.root)
+        self.sessions = SessionManager(self)
+        self.resources = ResourceManager(self, database_factory)
+        self.lifecycle = LifecycleManager(self)
         self._loop = None
         self.env = None
         self.app: Optional[web.Application] = None
-        self._route_table = web.RouteTableDef()
-        self._middleware = []
+        self._route_table = self.registry.table
+        self._middleware = self.registry.middlewares
         self.config = {}
         self.clean_up = False
-        self._session_secret = None
-        self._ignore_paths = set()
+        self._ignore_paths = self.registry.ignore_paths
         self.template_env = None
 
     def _load_life_cycle(self, entry_model=None, func_name=None):
-        try:
-            if not entry_model:
-                return
-
-            entry = importlib.import_module(entry_model, ".")
-
-            if func_name:
-                if hasattr(entry, func_name):
-                    getattr(entry, func_name)(self)
-                return
-
-            life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "on_task"]
-            for cycle in life_cycle:
-                if hasattr(entry, cycle):
-                    cy = getattr(self, cycle)
-                    if cy is not None:
-                        cy.append(getattr(entry, cycle))
-        except ModuleNotFoundError as exc:
-            if exc.name != entry_model:
-                raise
-            info(f"Entry model:{entry_model} can not find.")
-
-    def _init_parse(self):
-        try:
-            parser = argparse.ArgumentParser(description="Cloudapp parse")
-
-            parser.add_argument("-host", type=str, help="Server Host", required=False)
-            parser.add_argument("-port", type=int, help="Server Port", required=False)
-            parser.add_argument("-env", type=str, help="Environment", required=False)
-            self.args = parser.parse_args()
-        except Exception:
-            pass
+        return self.lifecycle.load(entry_model, func_name)
 
     def create(self, env: str = "local", entry_model: str = "app", config=None):
         if self.app is not None:
@@ -216,6 +149,9 @@ class Application(object):
         token = _active_app.set(self)
         try:
             return self._create(env, entry_model, config)
+        except BaseException:
+            self.registry.close()
+            raise
         finally:
             _active_app.reset(token)
 
@@ -228,9 +164,7 @@ class Application(object):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         self._loop = loop
-        if config is None:
-            config = get_config(env or "local")
-        self.config = config
+        self.config = self.configuration.load(env or "local", config)
 
         # try to load func and override configuration
         self._load_life_cycle(entry_model, func_name="on_create")
@@ -240,7 +174,7 @@ class Application(object):
         self._middleware.append(sa_ignore_mid)
 
         # middlewares
-        _auto_reg_module("middlewares")
+        self.registry.discover("middlewares")
 
         conf_server = self.config.get("server") or {}
         client_max_size = 1024**2 * 2
@@ -256,20 +190,21 @@ class Application(object):
         entry = conf_server.get("entry", entry_model)
 
         # database
+        self.registry.application = self.app
         self.app.ignore_paths = self._ignore_paths
         self.app.cloudoll_application = self
         self.app.db = Object()
-        self.app.on_startup.append(self._init_database)
-        self.app.on_cleanup.append(self._close_database)
+        self.app.cleanup_ctx.append(self.lifecycle.resources)
         self.app.config = self.config
         self.app.env = env
         self.app.jwt_encode = self.jwt_encode
         self.app.jwt_decode = self.jwt_decode
         # session
-        self.app.on_startup.append(self._init_session)
         self._load_life_cycle(entry)
         # router:
-        _auto_reg_module("controllers")
+        self.registry.discover("controllers")
+
+        self.app.on_cleanup.append(self.lifecycle.unregister)
 
         self.app.add_routes(self._route_table)
 
@@ -277,9 +212,9 @@ class Application(object):
         if conf_server is not None:
             conf_st = conf_server.get("static", {})
             if conf_st:
-                self.app.router.add_static(**conf_st, path=Path("static"))
+                self.app.router.add_static(**conf_st, path=self.configuration.path("static"))
                 info("Suggest using nginx or others instead.")
-        templates_dir = Path("templates")
+        templates_dir = self.configuration.path("templates")
         if templates_dir.exists():
             from jinja2 import Environment, FileSystemLoader
 
@@ -293,124 +228,14 @@ class Application(object):
         await self._close_database(self.app)
 
     async def _close_database(self, apps):
-        if apps is None or self.clean_up:
-            return
-        errors = []
-        resources = list(apps.db.values())
-        resources += [getattr(apps, name) for name in ("redis", "memcached") if hasattr(apps, name)]
-        for resource in resources:
-            try:
-                result = resource.close()
-                if inspect.isawaitable(result):
-                    await result
-            except Exception as exc:
-                errors.append(exc)
-        if errors:
-            raise errors[0]
+        await self.resources.close(apps)
         self.clean_up = True
 
     async def _init_database(self, apps):
-        conf_db = self.config.get("database")
-        if conf_db:
-            # for db_key in conf_db:
-            #     apps.db[db_key] = await create_engine(**conf_db[db_key])
-
-            tasks = [create_engine(**conf_db[db_key]) for db_key in conf_db]
-            engines = await asyncio.gather(*tasks, return_exceptions=True)
-            for db_key, engine in zip(conf_db.keys(), engines):
-                if not isinstance(engine, BaseException):
-                    apps.db[db_key] = engine
-            failures = [engine for engine in engines if isinstance(engine, BaseException)]
-            if failures:
-                await self._close_database(apps)
-                raise failures[0]
+        await self.resources.databases(apps)
 
     async def _init_session(self, apps):
-        config = self.config or {}
-        sess = config.get("session", {})
-
-        max_age = sess.get("max_age")
-        httponly = sess.get("httponly", True)
-        cookie_name = sess.get("key", "CLOUDOLL_SESSION")
-        secure = sess.get("secure", False)
-
-        # redis
-        redis_conf = sess.get("redis")
-        if isinstance(redis_conf, str):
-            redis_conf = {"url": redis_conf}
-        mcache_conf = sess.get("memcached")
-
-        if redis_conf:
-            redis_url = redis_conf.get("url")
-            qs = {}
-            if not redis_url:
-                redis_type = redis_conf.get("type", "redis")
-                username = redis_conf.get("username")
-                password = redis_conf.get("password")
-                auth = ""
-                if username is not None:
-                    auth = f"{parse.quote(str(username), safe='')}:{parse.quote(str(password or ''), safe='')}@"
-                elif password is not None:
-                    auth = f":{parse.quote(str(password), safe='')}@"
-                host = redis_conf.get("host", "localhost")
-                port = redis_conf.get("port", 6379)
-                db = redis_conf.get("db", 0)
-                redis_url = f"{redis_type}://{auth}{host}:{port}/{db}"
-
-            from redis import asyncio as aioredis
-
-            redis = await aioredis.from_url(redis_url, **qs)
-            apps.redis = redis
-            storage = redis_storage.RedisStorage(
-                redis,
-                cookie_name=cookie_name,
-                max_age=_parse_int(max_age),
-                httponly=httponly,
-                secure=secure,
-            )
-            setup(apps, storage)
-            info("starting a redis session.")
-        elif mcache_conf:
-            host = mcache_conf.get("host")
-            port = mcache_conf.get("port", 11211)
-
-            import aiomcache
-
-            mc = aiomcache.Client(host, port)
-            apps.memcached = mc
-            storage = memcached_storage.MemcachedStorage(
-                mc,
-                cookie_name=cookie_name,
-                max_age=_parse_int(max_age),
-                httponly=httponly,
-                secure=secure,
-            )
-            setup(apps, storage)
-            info("starting a memcached session.")
-        else:
-            configured_secret = sess.get("secret_key") or os.getenv(
-                "CLOUDOLL_SESSION_SECRET"
-            )
-            if configured_secret:
-                secret_key = hashlib.sha256(str(configured_secret).encode()).digest()
-            else:
-                if self._session_secret is None:
-                    self._session_secret = secrets.token_bytes(32)
-                    warning(
-                        "No session secret configured; using a random process-local key. "
-                        "Set session.secret_key or CLOUDOLL_SESSION_SECRET in production."
-                    )
-                secret_key = self._session_secret
-
-            storage = cookie_storage.EncryptedCookieStorage(
-                secret_key,
-                cookie_name=cookie_name,
-                max_age=_parse_int(max_age),
-                httponly=httponly,
-                secure=secure,
-            )
-            setup(apps, storage)
-            info("starting local cookie.")
+        await self.sessions.start(apps)
 
     def run(self, **kw):
         """
@@ -439,23 +264,28 @@ class Application(object):
             print=None,
         )
 
-    def add_router(self, path, method, name, sa_ignore):
-        def inner(handler):
-            handler = RequestHandler(handler)
-            if self.router is not None:
-                self.router.add_route(method, path, handler.__call__, name=name)
-            else:
-                self._route_table.route(method, path, name=name)(handler.__call__)
-            return handler
-
-        if sa_ignore:
-            self._ignore_paths.add(_sa_ignore_hash(method, path))
-        return inner
+    def add_router(self, path, method="GET", name=None, sa_ignore=False):
+        return self.registry.route(path, method, name, sa_ignore, RequestHandler)
 
     def add_middleware(self, func):
-        func.__middleware_version__ = 1
-        self._middleware.append(func)
-        return func
+        return self.registry.middleware(func)
+
+    def get(self, path, name=None, sa_ignore=False):
+        return self.add_router(path, "GET", name, sa_ignore)
+
+    def post(self, path, name=None, sa_ignore=False):
+        return self.add_router(path, "POST", name, sa_ignore)
+
+    def put(self, path, name=None, sa_ignore=False):
+        return self.add_router(path, "PUT", name, sa_ignore)
+
+    def delete(self, path, name=None, sa_ignore=False):
+        return self.add_router(path, "DELETE", name, sa_ignore)
+
+    def routes(self, path, sa_ignore=False):
+        return self.registry.view(path, sa_ignore)
+
+    middleware = add_middleware
 
     def jwt_encode(self, payload):
         jwt_conf = self.config.get("jwt", {})
@@ -527,7 +357,7 @@ class View(web.View):
             _active_app.reset(token)
 
 
-app = Application()
+app = ApplicationProxy(Application)
 
 
 class JsonEncoder(json.JSONEncoder):
@@ -603,12 +433,7 @@ def delete(path: str, name=None, sa_ignore=False):
 
 
 def routes(path: str, sa_ignore=False):
-    current = _active_app.get() or app
-    if sa_ignore:
-        for method in hdrs.METH_ALL:
-            hash_str = _sa_ignore_hash(method, path)
-            current._ignore_paths.add(hash_str)
-    return current.route_table.view(path)
+    return (_active_app.get() or app).routes(path, sa_ignore)
 
 
 def render_error(msg, status=500) -> Response:

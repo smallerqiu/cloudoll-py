@@ -253,7 +253,8 @@ class FieldBase:
         input: A.id.json_contains_array(key1,key2 ...)
         output: json_contains(`a`.id,json_array( key1, key2 ...))
         """
-        return Function(self, OP.JSON_CONTAINS_ARRAY, *args)
+        values = args[0] if len(args) == 1 and isinstance(args[0], (tuple, list)) else args
+        return Function(self, OP.JSON_CONTAINS_ARRAY, values)
 
     def contains(self, args):
         return Function(self, OP.CONTAINS, args)
@@ -366,7 +367,7 @@ class Function(FieldBase):
             return f"{col_name} < NOW() - INTERVAL {self.rpt} SECOND", None
         elif op == OP.CONTAINS:
             return f"{col_name} LIKE CONCAT('%%',?,'%%')", [self.rpt]
-        elif op == OP.JSON_CONTAINS_OBJECT and isinstance(self.rpt, (dict | tuple)):
+        elif op == OP.JSON_CONTAINS_OBJECT and isinstance(self.rpt, (dict, tuple)):
             _k, _v = self.rpt
             key = _k.full_name if isinstance(_k, Field) else f"'{_k}'"
             return f"json_contains({col_name},json_object({key},?))", [_v]
