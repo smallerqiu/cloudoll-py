@@ -67,7 +67,7 @@ def main():
                            CLOUDOLL_TEST_POSTGRES_URL=f"postgres://cloudoll@127.0.0.1:{pg_port}/postgres")
                 for python in interpreters:
                     print("Integration runtime:", python, flush=True)
-                    subprocess.run([python, "-m", "pytest", "-q", "tests/integration"],
+                    subprocess.run([python, "-m", "pytest", "-q", "tests/integration/test_databases.py"],
                                    cwd=root, env=env, check=True, timeout=180)
         except subprocess.CalledProcessError as exc:
             if exc.stderr:
