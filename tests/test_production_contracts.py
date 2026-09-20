@@ -41,11 +41,21 @@ def test_release_checker_rejects_wrong_tag_and_metadata(tmp_path):
     wheel = tmp_path / "test.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr(
+            "cloudoll/template/requirements.txt", f"cloudoll=={__version__}\n"
+        )
+        archive.writestr(
             "cloudoll.dist-info/METADATA", f"Name: cloudoll\nVersion: {__version__}\n"
         )
     check(wheel, "v" + __version__)
     with pytest.raises(AssertionError, match="tag/wheel"):
         check(wheel, "v0.0.0-wrong")
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(
+            "cloudoll.dist-info/METADATA", f"Name: cloudoll\nVersion: {__version__}\n"
+        )
+        archive.writestr("cloudoll/template/requirements.txt", "cloudoll==0.0.0\n")
+    with pytest.raises(AssertionError, match="Scaffold/package"):
+        check(wheel)
 
 
 async def test_resource_total_budget_and_retry_of_unattempted_resources():

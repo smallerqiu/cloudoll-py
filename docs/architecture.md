@@ -67,7 +67,7 @@ python -m pip install -e '.[mysql,postgres,cache,dev]'
 python -m mypy
 python -m pytest -q -m 'not integration' -k 'not aws'
 python -m build
-python tests/check_wheel.py dist/cloudoll-3.0.14-py3-none-any.whl
+python tests/check_wheel.py dist/cloudoll-4.0.0-py3-none-any.whl
 ```
 
 真实数据库集成测试需要明确的测试连接：
@@ -93,19 +93,19 @@ python tests/run_local_databases.py \
 
 此脚本要求本机已有数据库二进制。它在临时目录初始化数据，使用本机临时端口，不使用系统服务的数据目录；完成或失败后停止由它启动的进程并清理临时数据。
 
-GitHub Actions 已配置 Python 3.9–3.14 的全库 strict 类型检查、单元测试、MySQL 8.4/PostgreSQL 16 服务容器集成测试以及包构建、wheel 冒烟测试；另外配置 macOS/Windows 的 Python 3.13 非数据库回归与打包冒烟。扩展后的远程 CI 尚未运行，不能把配置完成视为验证通过。当前配置过滤 AWS 测试，安装可选依赖不代表已测试。
+GitHub Actions 覆盖 Python 3.9–3.14 的全库 strict 类型检查、单元测试、MySQL 8.4/PostgreSQL 16 服务容器集成测试以及包构建、wheel 冒烟测试；另外覆盖 macOS/Windows 的 Python 3.13 非数据库回归与打包冒烟。发布时以对应提交/tag 的实际 CI 结果为准，不把工作流配置本身当作验证结果。当前配置过滤 AWS 测试，安装可选依赖不代表已测试。
 
 保存点和流式测试分别使用 `--test-file tests/integration/test_savepoints.py` 和 `--test-file tests/integration/test_streaming.py`，均只连接原生数据库。
 
 模型/建表生成器测试使用 `--test-file tests/integration/test_schema.py`，支持范围见 [模型与建表生成器](schema-generation.md)。
 
-### 本轮本地验证结果
+### 验证范围与结果记录
 
-Python 3.9.6 / 3.13.1 / 3.14.6 均通过：63 个源码与类型契约文件的 strict mypy、126 项非 AWS 单元测试，以及 wheel 独立脚手架/HTTP 冒烟测试。Python 3.9/3.13 的事务引擎、流式迭代器和请求解析三个模块合计覆盖率为 90.53%，不是全库覆盖率。
+单元测试包括请求解析、配置/JWT、日志与观察器、事务状态与取消、CLI 进程身份及生命周期。开发子进程测试显式覆盖平台提供的 spawn、fork、forkserver，验证父进程缓存和上下文不会污染新应用。类型检查覆盖库和 tests/typing 中的公开契约。
 
-原生数据库验证分批进行：上一轮 Python 3.9/3.13 各通过 22 项测试（CRUD/事务 10、保存点 6、流式 6）；本轮新增生成器测试在 Python 3.9/3.13/3.14 各通过 7 项，另有 1 项 MySQL DDL 原子回滚用例按设计跳过。上述结果不代表完整的远程 CI 矩阵已通过。
+原生集成测试覆盖 CRUD、事务、保存点、流式读取、生成器，以及死锁、断连、连接池耗尽和关闭超时等故障。MySQL DDL 隐式提交等限制通过显式跳过/说明保留，不伪称原子回滚。覆盖率门槛针对事务引擎、流式迭代器和请求解析模块，并非全库覆盖率。
 
-顺带修复类型检查暴露的问题：`not_null` 参数被忽略、CLI 校验错误 PID 的命令行及服务名子串误匹配、空邮件正文处理；上传模板改用服务端随机文件名，避免客户端路径穿越和覆盖已有上传。没有发布 PyPI，也没有运行 AWS/Aurora 测试。
+每次发布保留对应 CI 报告、构建产物和 resolved-dependencies.txt；依赖安全工作流另保存精确依赖列表和漏洞审计报告。固定在文档中的旧测试数量不作为发布凭证。AWS/Aurora 仍未实测。
 
 ## AWS 故障切换测试
 

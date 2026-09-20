@@ -31,6 +31,11 @@ def check(wheel: Path, tag: str = "") -> None:
         metadata = Parser().parsestr(archive.read(names[0]).decode("utf-8"))
         assert metadata["Name"] == "cloudoll"
         assert metadata["Version"] == versions[0], "Wheel/source version mismatch"
+        template_requirements = "cloudoll/template/requirements.txt"
+        assert (
+            archive.read(template_requirements).decode("utf-8").strip()
+            == "cloudoll==" + versions[0]
+        ), "Scaffold/package version mismatch"
         if tag:
             assert tag == "v" + versions[0], "Release tag/wheel version mismatch"
     print("Package metadata/source/tag consistency: OK")

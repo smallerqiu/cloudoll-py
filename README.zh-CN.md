@@ -6,7 +6,7 @@
 
 Cloudoll 是一个基于 aiohttp 的 Python Web 开发库，提供路由自动注册、中间件、模板渲染、会话管理、JWT、数据库访问及命令行脚手架，帮助快速构建 Web 应用和微服务。
 
-本文对应当前仓库代码；尚未发布的修复和可选依赖配置，请通过源码安装使用。
+本文适用于 Cloudoll 4.0.0。从 3.x 升级前请阅读下方迁移说明。
 
 ## 环境要求
 
@@ -16,10 +16,10 @@ Cloudoll 是一个基于 aiohttp 的 Python Web 开发库，提供路由自动�
 
 ## 安装
 
-安装已发布版本：
+安装 4.0.0：
 
 ```sh
-python -m pip install cloudoll
+python -m pip install 'cloudoll==4.0.0'
 ```
 
 在当前仓库目录安装源码：
@@ -28,25 +28,25 @@ python -m pip install cloudoll
 python -m pip install -e .
 ```
 
-当前源码将数据库驱动作为可选依赖，可按需安装：
+数据库驱动作为可选依赖，按需安装：
 
 ```sh
 # MySQL
-python -m pip install -e '.[mysql]'
+python -m pip install 'cloudoll[mysql]==4.0.0'
 
 # PostgreSQL
-python -m pip install -e '.[postgres]'
+python -m pip install 'cloudoll[postgres]==4.0.0'
 
 # AWS 数据库驱动
-python -m pip install -e '.[aws]'
+python -m pip install 'cloudoll[aws]==4.0.0'
 
 # Redis / Memcached 会话或 Redis 数据库
-python -m pip install -e '.[cache]'
+python -m pip install 'cloudoll[cache]==4.0.0'
 ```
 
-这些变更发布后，也可以使用 `pip install 'cloudoll[mysql]'` 等形式安装。
+源码开发时可用 `python -m pip install -e '.[mysql,postgres,cache,dev]'` 安装。
 
-## 本轮改造与迁移
+## 4.0.0 能力与迁移
 
 支持原生数据库保存点/嵌套事务、流式查询、`Query[Model]` 和 `Field[T]` 字段值推导；全库纳入严格类型检查。详见 [事务与保存点](docs/reliability.md)及[类型说明](docs/streaming-and-types.md)。Aurora 实现仍未测试。
 
@@ -356,6 +356,10 @@ cloudoll restart -n myapp
 5. PostgreSQL ORM 单条插入通过 `RETURNING` 获取主键。未指定 `RETURNING` 的原始插入及批量插入，返回结果中的 ID 为 `None`。
 6. `Model.use(pool)` 只绑定返回的查询对象。每个 `Application` 实例只能调用一次 `create()`，多个应用应使用不同实例。
 7. HTTP 客户端 `Session.max_retries` 仍表示总尝试次数。POST/PATCH 默认只尝试一次；只有显式设置 `retry_non_idempotent=True` 才允许重试，且请求体必须可重复发送。
+8. 指定配置文件不存在会抛 `FileNotFoundError`；无配置运行须显式传 `env=None` 或 `config={}`。核心配置会在启动前校验。
+9. JWT 默认要求 `exp`，可配置 issuer、audience、leeway 和 require。无效凭证返回 None，缺少密钥等配置错误会抛异常；旧无过期 Token 需明确迁移策略。
+10. 原生池 close_timeout 默认 10 秒，资源关闭单项/总预算默认 10/30 秒；均不可用 None 禁用。进程管理器的退出期限仍需另行协调。
+11. JSON 日志、脱敏、观察器与追踪关联为可选扩展，详见 [生产运行契约](docs/production.md)。模板只供参考，业务鉴权仍由应用实现。
 
 ## 开发与验证
 
@@ -364,10 +368,11 @@ cloudoll restart -n myapp
 在仓库根目录执行：
 
 ```sh
-python -m pip install -e '.[mysql,postgres,aws,cache,dev]'
-python -m pytest -q
+python -m pip install -e '.[mysql,postgres,cache,dev]'
+python -m pytest -q -m 'not integration' -k 'not aws'
 python -m build
-python tests/check_wheel.py dist/cloudoll-3.0.14-py3-none-any.whl
+python tests/check_wheel.py dist/cloudoll-4.0.0-py3-none-any.whl
+python tests/check_release.py dist/cloudoll-4.0.0-py3-none-any.whl
 ```
 
 最后一条命令用于验证构建出的 wheel，版本号变化后请调整文件名。测试使用模拟数据库连接及本机 HTTP 服务；真实数据库连接和 AWS 故障切换需要单独的集成环境。

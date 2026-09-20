@@ -59,6 +59,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 assert Path(cloudoll.__file__).resolve().is_relative_to(Path("installed").resolve()), cloudoll.__file__
 create_project("sample")
+assert (Path("sample") / "requirements.txt").read_text().strip() == "cloudoll==" + cloudoll.__version__
 os.chdir("sample")
 
 async def verify():

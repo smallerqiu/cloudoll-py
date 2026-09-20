@@ -1,3 +1,10 @@
+# Cloudoll 4.0.0 example project
+
+This project is a starting point, not a production authorization system. Replace
+demo credentials and implement your application's authentication, permissions
+and upload policy. Install requirements.txt, configure independent secrets and
+read the [deployment documentation](https://cloudoll.chuchur.com/deployment).
+
 # Starting dev server
 
 ## with console
@@ -26,14 +33,15 @@ cloudoll start -n myapp
         "development"
       ],
       "cwd": "${workspaceFolder}"
-    },
+    }
   ]
 }
 ```
 
 # Production environment deployment
-In production environment, dont' suggest to use cloudoll to start your application.
-You can use a daemon to deploy your application. like supervisor or pm2 or systemd.
+Cloudoll production mode runs in the foreground. Use a process manager for
+automatic restarts and its own stop/restart commands. Create config/conf.prod.yaml
+before selecting -env prod; a missing configuration file is an error.
 
 ## with systemd
 create service file `/etc/systemd/system/myapp.service` (only for linux)
@@ -48,6 +56,7 @@ ExecStart=/usr/local/bin/cloudoll start -n myapp -m production -env prod
 WorkingDirectory=/opt/myapp
 Restart=always
 RestartSec=5
+TimeoutStopSec=90
 Environment=PYTHONUNBUFFERED=1
 StandardOutput=journal
 StandardError=journal
@@ -61,22 +70,22 @@ WantedBy=multi-user.target
 then you can use systemctl to start your service
 ```bash
 # start
-systemctl start myservice.service 
+systemctl start myapp.service
 # status
-systemctl status myservice.service
+systemctl status myapp.service
 # stop
-systemctl stop myservice.service
+systemctl stop myapp.service
 # restart
-systemctl restart myservice.service
+systemctl restart myapp.service
 # enable
-systemctl enable myservice.service
+systemctl enable myapp.service
 ```
 
 ## with docker
 
 ```dockerfile
 
-FROM python:3
+FROM python:3.13-slim
 
 WORKDIR /app
 EXPOSE 9001
@@ -84,7 +93,7 @@ COPY requirements.txt ./
 RUN pip install -r requirements.txt
 COPY . .
 
-CMD ["/usr/local/bin/cloudoll","start" ,"-n", "myapp", "-m", "production", "-env", "prod"]
+CMD ["/usr/local/bin/cloudoll", "start", "-n", "myapp", "-m", "production", "-env", "prod", "--host", "0.0.0.0"]
 ```
 
 ## with suporvisor
@@ -115,40 +124,13 @@ numprocs=1
 directory=/app
 autostart=true
 autorestart=true
+stopsignal=TERM
+stopwaitsecs=90
+stopasgroup=true
+killasgroup=true
 redirect_stderr=true
 stdout_logfile=/app/logs/myapp.log
 ```
 
-## with pm2
-create ecosystem.config.js
-```js
-// ecosystem.config.js
-module.exports = {
-  apps: [
-    {
-      name: 'myapp',
-      script: 'cloudoll',
-      args: 'start -n myapp -m production -env prod',
-      env: {
-        NODE_ENV: 'production',
-      }
-    }
-  ]
-}
-```
-pm2 + docker 
-```dockerfile
-FROM node:20-slim
-
-RUN apt-get update && \
-    apt-get install -y python3 python3-pip && \
-    npm install -g pm2
-
-COPY . /app
-WORKDIR /app
-RUN pip install .
-
-COPY ecosystem.config.js .
-
-CMD ["pm2-runtime", "ecosystem.config.js"]
-```
+Keep one process-management authority per service. Coordinate its stop timeout
+with request draining, resource cleanup and any application-owned background work.

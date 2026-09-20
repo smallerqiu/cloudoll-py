@@ -1,6 +1,6 @@
 # 事务、字段与运行行为迁移说明
 
-本文件描述当前源码改造，尚未发布到 PyPI。Aurora 故障切换实测暂缓。
+本文件描述 Cloudoll 4.0.0 的行为与迁移要求。Aurora 故障切换实测暂缓。
 
 ## CLI、ORM 与日志的兼容性修正
 
@@ -105,6 +105,7 @@ await user.update()                          # 只更新 name，而不是整个�
 | `acquire_timeout` | 30 | 等待连接池空闲连接 |
 | `query_timeout` | 60 | 执行 SQL、BEGIN、COMMIT；兼容旧 `timeout` 作为回退 |
 | `cleanup_timeout` | 10 | 回滚最长等待时间 |
+| `close_timeout` | 10 | 原生连接池关闭期限；必须有限且为正数，不接受 None |
 | `slow_query_seconds` | 1 | 超过阈值输出慢操作警告；None 关闭阈值 |
 
 URL 查询参数和结构化参数都可使用，显式关键字优先。TLS 保留驱动的原生差异：MySQL 传 `ssl=ssl.create_default_context(cafile=...)`；PostgreSQL 传 `sslmode="verify-full"`、`sslrootcert`，必要时 `sslcert` / `sslkey`。默认不强制 TLS，生产配置必须自行启用。

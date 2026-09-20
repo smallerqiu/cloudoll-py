@@ -1,6 +1,39 @@
 # Changelog
 
-## 4.0.0 — Unreleased
+## 4.0.0
+
+Release notes for 4.0.0. Publication date is recorded by the release tag/PyPI;
+preparing these files does not publish the package.
+
+### Breaking changes and migration
+
+- Python 3.9+ is required; database/cache drivers are optional extras.
+- Configuration values no longer execute Python expressions. Supply literal
+  numeric values and inject required environment variables explicitly.
+- `Model.use()` returns an independent Query. Records use UNSET and dirty-field
+  snapshots; successful outer commits update the saved baseline. Database errors
+  propagate instead of appearing as empty results.
+- PostgreSQL ORM inserts use RETURNING. Raw inserts without RETURNING and batch
+  inserts do not manufacture a primary key.
+- Sessions require a private, stable key for multi-worker/restart persistence;
+  discard cookies created with old publicly derivable keys.
+- Middleware uses the direct async decorator contract. Application creation is
+  instance-local and may only be performed once per instance.
+- CLI service identity includes process creation time and command line. Unknown
+  legacy PID identities are not killed automatically; stop old services safely
+  before upgrading. Production mode remains foreground, not a process supervisor.
+
+### ORM and developer experience
+
+- Added native MySQL/PostgreSQL transactions, nested savepoints, scoped streaming,
+  generic Query/Field typing and dialect-specific schema generation.
+- Added opt-in SQL/parameter echo, connection/query/cleanup timeouts, and safe
+  cancellation. Writes and uncertain commits are never automatically replayed.
+- Added isolated route/module discovery and explicit application components.
+- Development children and reloads create a fresh Application at the explicit
+  project root instead of inheriting a parent's cached app/context through fork.
+- Scaffold dependencies now target Cloudoll 4.0.0; scaffold business code remains
+  illustrative, not a complete application authorization system.
 
 ### Core production hardening
 
@@ -22,4 +55,5 @@ See [reliability](docs/reliability.md) for the existing transaction, savepoint,
 UNSET/dirty-field, CLI/PID, SQL echo and request parsing changes. See
 [production contracts](docs/production.md) for the new configuration and APIs.
 
-This file does not change package version metadata or publish a release.
+Aurora transactions and connection reuse are implemented but remain untested.
+Native driver validation must not be presented as Aurora failover validation.
