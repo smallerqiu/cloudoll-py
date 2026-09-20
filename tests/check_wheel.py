@@ -26,7 +26,16 @@ def main():
         subprocess.run([sys.executable, "-c", '''
 import asyncio
 import os
+import sys
+import importlib.abc
 from pathlib import Path
+
+class NoOptionalDrivers(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".")[0] in {"redis", "aiomcache", "aiomysql", "aiopg", "aws_advanced_python_wrapper"}:
+            raise ModuleNotFoundError("Optional driver unavailable: " + fullname)
+
+sys.meta_path.insert(0, NoOptionalDrivers())
 import cloudoll
 from cloudoll.clitool.cli_main import create_project
 from cloudoll.web import Application

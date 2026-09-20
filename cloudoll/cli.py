@@ -8,13 +8,13 @@ import click
 from cloudoll import __version__
 from cloudoll.clitool.cli_main import create_project, run_app, run_gen
 from cloudoll.clitool.process import ProcessManager
-from cloudoll.logging import error
+from cloudoll.logging import error, configure_logging
 
 
 @click.group()
 @click.version_option(__version__, "-V", "--version", prog_name="cloudoll")
 def cli() -> None:
-    pass
+    configure_logging(files=True)
 
 
 life_cycle = ["on_startup", "on_shutdown", "on_cleanup", "cleanup_ctx"]

@@ -90,6 +90,8 @@ venv/
 .venv/
 .venv39/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 ENV/
 
 # Spyder project settings

@@ -1,8 +1,8 @@
-from redis import asyncio as aioredis
-
 from cloudoll.orm.parse import parse_coon
 
-__all__ = ["create_engine", "Query"]
+from cloudoll.orm.values import UNSET
+
+__all__ = ["create_engine", "Query", "UNSET"]
 
 
 async def create_engine(**kw):
@@ -14,6 +14,7 @@ async def create_engine(**kw):
     if url is not None:
         configs, query = parse_coon(url)
         driver = configs["type"]
+        query = {**query, **{key: value for key, value in kw.items() if key != "url"}}
     else:
         driver = kw.get("type")
         configs = kw
@@ -37,6 +38,7 @@ async def create_engine(**kw):
 
         return await Postgres().create_engine(**{**configs, **query})
     elif driver in ["redis", "rediss"]:
+        from redis import asyncio as aioredis
         """
         redis://[[username]:[password]]@localhost:6379/0
         rediss://[[username]:[password]]@localhost:6379/0

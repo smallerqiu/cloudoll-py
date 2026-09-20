@@ -3,7 +3,7 @@ import hashlib
 import os
 import secrets
 from urllib import parse
-from aiohttp_session import cookie_storage, memcached_storage, redis_storage, setup
+from aiohttp_session import cookie_storage, setup
 from cloudoll.logging import info, warning
 from cloudoll.web.configuration import parse_int
 
@@ -29,6 +29,7 @@ class SessionManager:
         mcache_conf = sess.get("memcached")
 
         if redis_conf:
+            from aiohttp_session import redis_storage
             redis_url = redis_conf.get("url")
             qs = {}
             if not redis_url:
@@ -59,6 +60,7 @@ class SessionManager:
             setup(apps, storage)
             info("starting a redis session.")
         elif mcache_conf:
+            from aiohttp_session import memcached_storage
             host = mcache_conf.get("host")
             port = mcache_conf.get("port", 11211)
 

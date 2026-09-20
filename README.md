@@ -45,6 +45,7 @@ Database drivers are optional. Install the drivers your application uses:
 pip install 'cloudoll[mysql]'
 pip install 'cloudoll[postgres]'
 pip install 'cloudoll[aws]'
+pip install 'cloudoll[cache]'
 ```
 
 ### Upgrading from 3.0.14
@@ -74,11 +75,17 @@ pip install 'cloudoll[aws]'
 
 ### Development checks
 
+See [reliability migration notes (Chinese)](docs/reliability.md) for native
+transactions, UNSET/dirty tracking, timeouts, opt-in logging and request parsing.
+These changes are currently source-only; AWS wrapper transactions are not supported.
+
 See [architecture and integration testing (Chinese)](docs/architecture.md) for the
 record/query split, application components, migration notes and real database tests.
 
 ```sh
-python -m pip install -e '.[mysql,postgres,aws,dev]'
+python -m pip install -e '.[mysql,postgres,aws,cache,dev]'
+python -m ruff check cloudoll tests
+python -m mypy
 python -m pytest -q
 python -m build
 ```

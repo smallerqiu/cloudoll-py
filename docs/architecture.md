@@ -63,7 +63,7 @@ application.create(env="local", entry_model=None).run()
 ## 本地验证
 
 ```sh
-python -m pip install -e '.[mysql,postgres,aws,dev]'
+python -m pip install -e '.[mysql,postgres,aws,cache,dev]'
 python -m pytest -q -m 'not integration'
 python -m build
 python tests/check_wheel.py dist/cloudoll-3.0.14-py3-none-any.whl

@@ -1,19 +1,2 @@
-aiomysql==0.3.2
-aiopg==1.4.0
-PyJWT==2.14.0
-aiohttp==3.14.3
-Jinja2==3.1.6
-colorlog==6.12.0
-PyYAML==6.0.3
-redis==8.1.0
-hiredis==3.4.1
-aiomcache==0.8.2
-aiohttp-session[secure]==2.12.1
-watchfiles==1.2.0
-envyaml==1.10.211231
-psutil==7.2.2
-tabulate==0.10.0
-concurrent_log_handler==0.9.29
-aws-advanced-python-wrapper==3.1.0
-psycopg==3.3.4
-mysql-connector-python==26.7.0
+# Development/full-feature installation; metadata and version live in pyproject.toml.
+-e .[mysql,postgres,aws,cache]

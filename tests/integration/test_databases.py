@@ -1,4 +1,5 @@
 """Real CRUD tests. Only run against explicit disposable test databases."""
+import asyncio
 import os
 from uuid import uuid4
 
@@ -9,6 +10,7 @@ from cloudoll.orm.base import QueryTypes
 from cloudoll.orm.dialects import dialect_for
 from cloudoll.orm.model import Model, models
 from cloudoll.orm.parse import parse_coon
+from cloudoll.orm.engine import TransactionError
 
 pytestmark = pytest.mark.integration
 
@@ -70,3 +72,121 @@ async def test_real_crud_batches_group_count_and_record_binding(database):
         assert await Item.use(database).count() == 2
     finally:
         await database.query("DROP TABLE " + table, query_type=QueryTypes.UPDATE)
+
+
+async def test_transactions_null_defaults_rollback_and_task_isolation(database):
+    if database.driver.startswith("aws-"):
+        pytest.skip("Native transaction API; AWS wrapper transactions not yet supported")
+
+    class Entry(Model):
+        __table__ = "cloudoll_tx_" + uuid4().hex
+        id = models.IntegerField(primary_key=True)
+        value = models.VarCharField()
+
+    table = dialect_for(database.driver).identifier(Entry.__table__)
+    await database.query(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY, value VARCHAR(80) DEFAULT 'default')", query_type=QueryTypes.UPDATE)
+    try:
+        async with database.transaction():
+            await Entry.use(database).insert(id=1)
+            await Entry.use(database).insert(id=2, value=None)
+            with pytest.raises(TransactionError):
+                await asyncio.create_task(Entry.use(database).count())
+        first = await Entry.use(database).where(Entry.id == 1).one()
+        assert first.get("value") == "default"
+        second = await Entry.use(database).where(Entry.id == 2).one()
+        assert second.value.value is None
+        first.value = None
+        with pytest.raises(ValueError):
+            async with database.transaction():
+                await first.update()
+                await Entry.use(database).insert(id=3)
+                raise ValueError("abort")
+        assert first.dirty_fields == {"value"}
+        assert (await Entry.use(database).where(Entry.id == 1).one()).get("value") == "default"
+        assert await Entry.use(database).count() == 2
+        async with database.transaction():
+            await first.update()
+        assert not first.dirty_fields
+        assert (await Entry.use(database).where(Entry.id == 1).one()).value.value is None
+        with pytest.raises(Exception):
+            async with database.transaction():
+                await Entry.use(database).insert(id=4)
+                await Entry.use(database).insert(id=2)
+        assert await Entry.use(database).count() == 2
+    finally:
+        await database.query("DROP TABLE " + table, query_type=QueryTypes.UPDATE)
+
+
+async def test_query_timeout_cancel_pool_exhaustion_and_recovery(database):
+    if database.driver.startswith("aws-"):
+        pytest.skip("Timeouts apply to native async engines")
+    sleep_sql = "SELECT pg_sleep(2)" if database.driver == "postgres" else "SELECT SLEEP(2)"
+    database.query_timeout = 0.05
+    with pytest.raises(asyncio.TimeoutError):
+        await database.one(sleep_sql, None)
+    database.query_timeout = 5
+    assert await database.count("SELECT 1 AS n", None) == 1
+    task = asyncio.create_task(database.one(sleep_sql, None))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert await database.count("SELECT 1 AS n", None) == 1
+    held = []
+    try:
+        for _ in range(database.pool.maxsize):
+            held.append(await database.pool.acquire())
+        database.acquire_timeout = 0.05
+        with pytest.raises(asyncio.TimeoutError):
+            await database.count("SELECT 1 AS n", None)
+    finally:
+        for connection in held:
+            await database._release(connection)
+    assert await database.count("SELECT 1 AS n", None) == 1
+
+
+async def test_cancelled_transaction_rolls_back_prior_write(database):
+    if database.driver.startswith("aws-"):
+        pytest.skip("Native transaction API only")
+    table = "cloudoll_cancel_" + uuid4().hex
+    await database.query(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY)", query_type=QueryTypes.UPDATE)
+    ready = asyncio.Event()
+
+    async def write_and_wait():
+        async with database.transaction():
+            await database.query(f"INSERT INTO {table} VALUES (1)", query_type=QueryTypes.UPDATE)
+            ready.set()
+            await asyncio.Event().wait()
+
+    try:
+        task = asyncio.create_task(write_and_wait())
+        await asyncio.wait_for(ready.wait(), 5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert await database.count(f"SELECT COUNT(*) FROM {table}", None) == 0
+    finally:
+        await database.query(f"DROP TABLE {table}", query_type=QueryTypes.UPDATE)
+
+
+async def test_server_disconnect_does_not_poison_pool(database):
+    if database.driver.startswith("aws-"):
+        pytest.skip("Native connection recovery test")
+    postgres = database.driver == "postgres"
+    with pytest.raises(TransactionError):
+        async with database.transaction():
+            pid = await database.count("SELECT pg_backend_pid()" if postgres else "SELECT CONNECTION_ID()", None)
+            killer = await database.pool.acquire()
+            try:
+                async with killer.cursor() as cursor:
+                    if postgres:
+                        await cursor.execute("SELECT pg_terminate_backend(%s)", (pid,))
+                        assert (await cursor.fetchone())[0]
+                    else:
+                        await cursor.execute(f"KILL CONNECTION {int(pid)}")
+                # Only kills this test's dedicated connection, never the server.
+            finally:
+                await database._release(killer)
+            with pytest.raises(Exception):
+                await database.count("SELECT 1 AS n", None)
+    assert await database.count("SELECT 1 AS n", None) == 1

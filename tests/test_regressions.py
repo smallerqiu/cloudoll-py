@@ -140,10 +140,11 @@ async def test_session_keys_are_private_and_configurable(monkeypatch):
 
 
 async def test_redis_session_structured_config():
+    from aiohttp_session import redis_storage
     application = core.Application()
     application.config = {"session": {"redis": {"host": "localhost", "password": "a@b", "db": 2}}}
     with patch("redis.asyncio.from_url", new=AsyncMock()) as connect, patch.object(
-        sessions.redis_storage, "RedisStorage"
+        redis_storage, "RedisStorage"
     ), patch.object(sessions, "setup"):
         await application._init_session(web.Application())
     assert connect.call_args.args[0] == "redis://:a%40b@localhost:6379/2"
@@ -242,7 +243,9 @@ async def test_postgres_count_returns_value_and_insert_returns_id(module):
         cursor.description = ["count"]
         db.pool = MagicMock()
         db.pool._closing = db.pool._closed = False
-        conn = db.pool.acquire.return_value.__aenter__.return_value
+        conn = MagicMock()
+        conn.closed = False
+        db.pool.acquire = AsyncMock(return_value=conn)
         conn.echo = False
         conn.cursor = MagicMock()
         conn.cursor.return_value.__aenter__.return_value = cursor

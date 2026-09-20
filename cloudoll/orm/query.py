@@ -8,6 +8,7 @@ from typing import Any, List, Tuple
 
 from cloudoll.orm.field import Expression, Field, Function
 from cloudoll.orm.model import Model
+from cloudoll.orm.values import UNSET
 from cloudoll.orm.compiler import SQLCompiler
 from cloudoll.orm.dialects import dialect_for
 from cloudoll.utils.common import Object
@@ -70,7 +71,7 @@ class Query:
         return self.record._get_primary()
 
     def clone(self):
-        result = type(self)(self.model, self.pool, self.model(**self.record.to_dict()))
+        result = type(self)(self.model, self.pool, self.record._copy_record())
         result.state = copy.deepcopy(self.state)
         return result
 
@@ -127,99 +128,69 @@ class Query:
         return self
 
     def _format_data(self, action, args):
-        data = dict()
-        if args is None or not args:
-            for k in self.__fields__:
-                f = getattr(self, k)
-                x = f.value
-                data[k] = x
-        elif args and isinstance(args, dict):
-            data = args
+        if not args:
+            items = (self.record,)
+        elif isinstance(args, dict):
+            items = (args,)
         else:
-            for item in args:
-                if isinstance(item, Query):
-                    item = item.record
-                if isinstance(item, Model):
-                    for k in item.__fields__:
-                        if (
-                            action == "u" and item[k].value is not None
-                        ) or action == "i":
-                            data[k] = item[k]
-
-                else:  # for object
-                    for k, v in item.items():
-                        data[k] = v
-
+            items = args
+        data = {}
+        for item in items:
+            if isinstance(item, Query):
+                item = item.record
+            if isinstance(item, Model):
+                keys = item.dirty_fields if action == "u" else item.__fields__
+                data.update({key: item[key].value for key in keys})
+            elif isinstance(item, dict):
+                data.update(item)
+            else:
+                raise TypeError("Write values must be models or dictionaries")
+        for key in data:
+            if key not in self.__fields__:
+                raise ValueError(f"Unknown model field: {key}")
         return data
 
-    def _get_update_key_args(self, action, args):
+    def _write_values(self, action, args):
         data = self._format_data(action, args)
-        keys = []
-        params = []
-        for k, v in data.items():
-            if isinstance(v, Field):
-                value = v.value
-                if value is None:
-                    if v.created_generated == True or v.update_generated == True:
-                        value = datetime.datetime.now()
-                    else:
-                        value = v.default
-                if value is not None:
-                    keys.append(k)
-                    params.append(value)
-            elif v is not None:  # fix sql format %s
-                keys.append(k)
-                params.append(v)
-            elif args:
-                keys.append(k)
-                params.append(None)
+        if action == "i":
+            # Fill only omitted values. Explicit None always means SQL NULL.
+            for key in self.__fields__:
+                field = getattr(self.model, key)
+                if data.get(key, UNSET) is UNSET:
+                    if field.created_generated or field.update_generated:
+                        data[key] = datetime.datetime.now()
+                    elif field.default is not None and field.default is not UNSET:
+                        data[key] = field.default() if callable(field.default) else copy.deepcopy(field.default)
+        elif any(value is not UNSET for value in data.values()):
+            for key in self.__fields__:
+                field = getattr(self.model, key)
+                if field.update_generated and data.get(key, UNSET) is UNSET:
+                    data[key] = datetime.datetime.now()
+        keys, params = [], []
+        for key in self.__fields__:
+            value = data.get(key, UNSET)
+            if isinstance(value, Field):
+                value = value.value
+            if value is not UNSET:
+                keys.append(key)
+                params.append(value)
         return keys, params
+
+    def _get_update_key_args(self, action, args):
+        return self._write_values("u", args)
 
     def _get_insert_key_args(self, action, args):
-        data = self._format_data(action, args)
-        keys = []
-        params = []
-        for k, v in data.items():
-            if isinstance(v, Field):
-                value = v.value
-                if value is None:
-                    if v.created_generated == True or v.update_generated == True:
-                        value = datetime.datetime.now()
-                    else:
-                        value = v.default
-                if value is not None:
-                    keys.append(k)
-                    params.append(value)
-            elif v is not None:  # fix sql format %s
-                keys.append(k)
-                params.append(v)
-        return keys, params
+        return self._write_values("i", args)
 
     def _get_batch_keys_values(self, items: list):
-        keys = []
-        values = []
-        item = items[0]
-        if isinstance(item, Model):
-            keys = item.__fields__
-        elif isinstance(item, dict):
-            keys = item.keys()
-
+        keys, values = None, []
         for item in items:
-            value = []
-            if isinstance(item, Model):
-                if set(item.__fields__) != set(keys):
-                    raise ValueError("Batch rows must have identical columns")
-                for k in keys:
-                    value.append(item[k].value)
-            elif isinstance(item, dict):  # for object
-                if set(item) != set(keys):
-                    raise ValueError("Batch rows must have identical columns")
-                for k in keys:
-                    value.append(item[k])
-            else:
-                raise TypeError("Batch rows must be models or dictionaries")
-            value = tuple(key for key in value)
-            values.append(value)
+            row_keys, row_values = self._write_values("i", (item,))
+            if keys is None:
+                keys = row_keys
+            elif row_keys != keys:
+                raise ValueError("Batch rows must have identical columns after defaults")
+            values.append(tuple(row_values))
         return keys, values
 
     def _sql(self):
@@ -248,7 +219,7 @@ class Query:
             rs = await self.pool.one(sql, args)
             if rs:
                 # join 时返回dict
-                return Object(rs) if has_join else self.model(**rs).bind(self.pool)
+                return Object(rs) if has_join else self.model(**rs)._mark_clean().bind(self.pool)
             return None
         finally:
             self._reset()
@@ -283,10 +254,22 @@ class Query:
         try:
             condition = self._write_condition(args, kw)
             keys, values = self._get_update_key_args("u", args or kw)
+            if not keys:
+                return False
             compiled = self.compiler.update(self.model, keys, values, condition)
         finally:
             self._reset()
-        return await self.pool.update(compiled.sql, compiled.params)
+        result = await self.pool.update(compiled.sql, compiled.params)
+        if result and not args and not kw:
+            saved = copy.deepcopy(dict(zip(keys, values)))
+            record = self.record
+            callback = lambda: record._mark_clean(saved)
+            after_commit = getattr(self.pool, "after_commit", None)
+            if after_commit is None:
+                callback()
+            else:
+                after_commit(callback)
+        return result
 
     async def delete(self) -> bool:
         try:

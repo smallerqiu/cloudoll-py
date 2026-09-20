@@ -5,7 +5,6 @@ __author__ = "Qiu / smallerqiu@gmail.com"
 
 import asyncio
 import importlib.util
-import inspect
 import json
 import time
 import uuid
@@ -13,7 +12,6 @@ from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Awaitable, Callable, Iterable, Optional
-from urllib import parse
 
 from aiohttp import hdrs, web
 from aiohttp.typedefs import LooseHeaders
@@ -22,7 +20,7 @@ from aiohttp.web_request import Request
 from aiohttp.web_response import StreamResponse
 from aiohttp.web_ws import WebSocketResponse
 from aiohttp_session import get_session
-from cloudoll.logging import info
+from cloudoll.logging import info, exception, request_id as _request_id
 from cloudoll.orm.model import Model
 from cloudoll.utils.common import Object, chainMap
 from cloudoll.web import jwt
@@ -34,11 +32,12 @@ from cloudoll.web.routing import RouteRegistry, ignore_key as _sa_ignore_hash
 from cloudoll.web.sessions import SessionManager
 from cloudoll.web.resources import ResourceManager
 from cloudoll.web.lifecycle import LifecycleManager
+from cloudoll.web.request_data import HandlerAdapter
 
 
 class RequestHandler(object):
     def __init__(self, fn):
-        self.fn = fn
+        self.fn = HandlerAdapter(fn)
 
     async def __call__(self, request: Request):
         token = _active_app.set(request.app.cloudoll_application)
@@ -61,47 +60,11 @@ async def _set_session_route(request: Request):
 
 
 async def _render_result(request: Request, func):
-    content_type = request.content_type
-    # Get the names and default values of function parameters
-    props = inspect.getfullargspec(func)
-    args = list(props.args)
-    if "self" in args:
-        args.remove("self")
-
     await _set_session_route(request)
-    if len(args) == 2 and content_type == "multipart/form-data":
-        multipart = await request.multipart()
-        field = await multipart.next()
-        result = await func(request, field)
-    elif len(args) == 1:
-        if content_type == "multipart/form-data":
-            data = await request.post()
-        elif content_type == "application/json":
-            data = await request.json()
-        else:
-            data = await request.post()
-        query_string = request.query_string
-        qs = {}
-        if query_string:
-            for k, v in parse.parse_qs(query_string, True).items():
-                qs[k] = v[0]
-        request.qs = Object(qs)
-        request.body = data
-        result = await func(request)
-    else:
-        result = await func()
-    try:
-        if isinstance(result, Response):
-            return result
-        if isinstance(result, StreamResponse):
-            return result
-        if isinstance(result, WebSocketResponse):  # maybe catch error
-            return result
-        if "content_type" in result and "text/html" in result["content_type"]:
-            return result
-    except Exception:
-        pass
-
+    adapter = func if isinstance(func, HandlerAdapter) else HandlerAdapter(func)
+    result = await adapter(request)
+    if isinstance(result, StreamResponse):
+        return result
     return render_json(result)
 
 
@@ -110,14 +73,42 @@ def _sa_ignore_middleware():
         route_path = getattr(ctx.match_info.route.resource, "canonical", ctx.path)
         hash_str = _sa_ignore_hash(ctx.method, route_path)
         ctx.is_sa_ignore = hash_str in ctx.app.ignore_paths
-        start_time = time.time()
+        start_time = time.monotonic()
         token = _active_app.set(ctx.app.cloudoll_application)
+        trace_id = uuid.uuid4().hex
+        trace_token = _request_id.set(trace_id)
+        ctx.request_id = trace_id
+        response = None
+        json_errors = (ctx.app.cloudoll_application.config.get("server") or {}).get("json_errors", False)
         try:
-            response = await handler(ctx)
-            elapsed_ms = (time.time() - start_time) * 1000
-            info(f"{ctx.method} {response.status} {ctx.path} {elapsed_ms:.2f}ms")
+            try:
+                response = await handler(ctx)
+            except web.HTTPException as exc:
+                if exc.status < 400 or not json_errors:
+                    response = exc
+                    exc.headers["X-Request-ID"] = trace_id
+                    raise
+                else:
+                    headers = {key: value for key, value in exc.headers.items() if key.lower() not in {"content-type", "content-length"}}
+                    response = web.json_response(
+                        {"error": {"status": exc.status, "message": exc.reason, "request_id": trace_id}},
+                        status=exc.status, headers=headers,
+                    )
+            except Exception:
+                exception("Unhandled request error")
+                if not json_errors:
+                    raise
+                response = web.json_response(
+                    {"error": {"status": 500, "message": "Internal Server Error", "request_id": trace_id}},
+                    status=500,
+                )
+            if not response.prepared:
+                response.headers["X-Request-ID"] = trace_id
             return response
         finally:
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+            info("%s %s %s %.2fms", ctx.method, response.status if response is not None else 500, ctx.path, elapsed_ms)
+            _request_id.reset(trace_token)
             _active_app.reset(token)
 
     return set_ignore
@@ -171,7 +162,7 @@ class Application(object):
 
         sa_ignore_mid = _sa_ignore_middleware()
         sa_ignore_mid.__middleware_version__ = 1
-        self._middleware.append(sa_ignore_mid)
+        self._middleware.insert(0, sa_ignore_mid)
 
         # middlewares
         self.registry.discover("middlewares")

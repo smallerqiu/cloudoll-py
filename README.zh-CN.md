@@ -37,9 +37,18 @@ python -m pip install -e '.[postgres]'
 
 # AWS 数据库驱动
 python -m pip install -e '.[aws]'
+
+# Redis / Memcached 会话或 Redis 数据库
+python -m pip install -e '.[cache]'
 ```
 
 这些变更发布后，也可以使用 `pip install 'cloudoll[mysql]'` 等形式安装。
+
+## 本轮改造与迁移
+
+新增原生 MySQL/PostgreSQL 事务、`UNSET` 与脏字段跟踪、超时与取消保护；日志改为显式配置，重复查询参数可通过 `request.query_params.getall()` 读取。安装 Redis/Memcached 功能请增加 `cache` extra。
+
+完整用法、兼容性变化及限制见 [事务、字段与运行行为迁移说明](docs/reliability.md)。AWS 包装驱动暂不支持新事务接口，Aurora 故障切换测试暂缓。
 
 ## 快速开始
 
@@ -315,7 +324,7 @@ cloudoll restart -n myapp
 在仓库根目录执行：
 
 ```sh
-python -m pip install -e '.[mysql,postgres,aws,dev]'
+python -m pip install -e '.[mysql,postgres,aws,cache,dev]'
 python -m pytest -q
 python -m build
 python tests/check_wheel.py dist/cloudoll-3.0.14-py3-none-any.whl

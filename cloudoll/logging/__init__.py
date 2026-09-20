@@ -4,11 +4,18 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from logging import Handler
-from concurrent_log_handler import ConcurrentRotatingFileHandler
-import colorlog
+from contextvars import ContextVar
 
 
-__all__ = ["debug", "info", "warning", "error", "exception", "critical", "setLevel"]
+__all__ = ["debug", "info", "warning", "error", "exception", "critical", "setLevel", "configure_logging"]
+
+request_id = ContextVar("cloudoll_request_id", default="-")
+
+
+class RequestContextFilter(logging.Filter):
+    def filter(self, record):
+        record.request_id = request_id.get()
+        return True
 
 
 LOG_MAX_BYTES = 20 * 1024 * 1024
@@ -16,7 +23,9 @@ LOG_BACKUP_COUNT = 3
 
 def _get_log_dir():
     if "CLOUDOLL_LOG_DIR" in os.environ:
-        return Path(os.environ["CLOUDOLL_LOG_DIR"])
+        log_dir = Path(os.environ["CLOUDOLL_LOG_DIR"])
+        log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        return log_dir
     home = Path.home()
     if platform.system() == "Windows":
         log_dir = home / "AppData/Local/cloudoll/logs"
@@ -48,6 +57,7 @@ class DailyFileHandler(Handler):
         return str(self._log_dir / f"{today}{suffix}")
 
     def _update_handler(self, force=False):
+        from concurrent_log_handler import ConcurrentRotatingFileHandler
         today = datetime.now().date()
         if force or self.current_date != today:
             if self.handler:
@@ -61,7 +71,7 @@ class DailyFileHandler(Handler):
             )
             self.handler.setFormatter(
                 logging.Formatter(
-                    fmt="%(asctime)s [%(levelname)-8s] %(message)s",
+                    fmt="%(asctime)s [%(levelname)-8s] [%(request_id)s] %(message)s",
                     # datefmt="%Y-%m-%d %H:%M:%S.%f",
                 )
             )
@@ -81,17 +91,22 @@ class DailyFileHandler(Handler):
         super().close()
 
 
-def _init_logger(name="cloudoll", level=logging.INFO):
-    logger = logging.getLogger(name)
+def configure_logging(level=logging.INFO, *, console=True, files=False, propagate=False):
+    """Opt in to Cloudoll handlers; importing the library never opens log files."""
+    import colorlog
+
+    logger = logging.getLogger("cloudoll")
     logger.setLevel(level)
-    logger.propagate = False
+    logger.propagate = propagate
+    for handler in list(logger.handlers):
+        if getattr(handler, "_cloudoll_owned", False):
+            logger.removeHandler(handler)
+            handler.close()
 
-    if logger.handlers:
-        return logger
-
-    console = logging.StreamHandler()
+    handlers = []
+    stream = logging.StreamHandler()
     formatter = colorlog.ColoredFormatter(
-        fmt="%(log_color)s%(asctime)s [%(levelname)-8s] %(message)s",
+        fmt="%(log_color)s%(asctime)s [%(levelname)-8s] [%(request_id)s] %(message)s",
         # datefmt="%Y-%m-%d %H:%M:%S.%f",
         log_colors={
             "DEBUG": "cyan",
@@ -101,17 +116,21 @@ def _init_logger(name="cloudoll", level=logging.INFO):
             "CRITICAL": "bold_white,bg_red",
         },
     )
-    console.setFormatter(formatter)
-    console.setLevel(logging.DEBUG)
-    logger.addHandler(console)
-
-    logger.addHandler(DailyFileHandler("all", logging.INFO))
-    logger.addHandler(DailyFileHandler("error", logging.ERROR, filter_exact=True))
+    stream.setFormatter(formatter)
+    if console:
+        handlers.append(stream)
+    if files:
+        handlers.extend([DailyFileHandler("all", level), DailyFileHandler("error", logging.ERROR, filter_exact=True)])
+    for handler in handlers:
+        handler._cloudoll_owned = True
+        handler.addFilter(RequestContextFilter())
+        logger.addHandler(handler)
 
     return logger
 
 
-_logger = _init_logger()
+_logger = logging.getLogger("cloudoll")
+_logger.addHandler(logging.NullHandler())
 
 
 def debug(msg, *args, **kwargs):

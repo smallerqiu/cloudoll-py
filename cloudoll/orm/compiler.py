@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import copy
 
 from cloudoll.orm.field import Expression, ExpList, Field, Function
+from cloudoll.orm.values import UNSET
 
 
 @dataclass(frozen=True)
@@ -23,11 +24,14 @@ class SQLCompiler:
             return f"{self.expression(node.lpt, params)} {node.op} {self.expression(node.rpt, params)}"
         if isinstance(node, Expression):
             left = self.expression(node.lhs, params)
+            rhs = node.rhs
+            if isinstance(rhs, Field) and getattr(rhs, "_record_field", False):
+                rhs = rhs.value
             if node.op == "AS":
                 return left + " AS " + self.dialect.identifier(node.rhs)
             if node.op in {"ASC", "DESC", "IS NULL", "IS NOT NULL"}:
                 return f"{left} {node.op}"
-            if node.rhs is None and node.op in {"=", "!=", "IS", "IS NOT"}:
+            if rhs is None and node.op in {"=", "!=", "IS", "IS NOT"}:
                 op = "IS NULL" if node.op in {"=", "IS"} else "IS NOT NULL"
                 return f"{left} {op}"
             if node.op in {"IN", "NOT IN"} and isinstance(node.rhs, (tuple, list)):
@@ -35,11 +39,12 @@ class SQLCompiler:
                     return "1 = 0" if node.op == "IN" else "1 = 1"
                 right = "(" + ",".join(self.expression(v, params) for v in node.rhs) + ")"
             else:
-                value = node.rhs.value if isinstance(node.rhs, Field) and node.rhs.value is not None else node.rhs
-                right = self.expression(value, params)
+                right = self.expression(rhs, params)
             return f"({left} {node.op} {right})"
         if isinstance(node, Function):
             return self.function(node, params)
+        if node is UNSET:
+            raise ValueError("UNSET cannot be used in a SQL expression")
         params.append(node)
         return "?"
 

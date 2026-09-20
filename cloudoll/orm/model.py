@@ -3,6 +3,7 @@ from typing import Any, Optional
 
 from cloudoll.logging import warning
 from cloudoll.orm.field import Field
+from cloudoll.orm.values import UNSET
 
 __all__ = ("models", "Model")
 
@@ -60,9 +61,11 @@ class Model(metaclass=ModelMetaclass):
     __fields__: list
 
     def __init__(self, **kw):
+        object.__setattr__(self, "_original", {})
         for k in self.__fields__:
             f = copy.copy(getattr(type(self), k))
-            f.value = None
+            f.value = UNSET
+            f._record_field = True
             object.__setattr__(self, k, f)
         for k, v in kw.items():
             self[k] = v
@@ -75,12 +78,34 @@ class Model(metaclass=ModelMetaclass):
     def __repr__(self):
         return "<Model: %s>" % self.__class__.__name__
 
-    def to_dict(self):
+    def to_dict(self, *, exclude_unset=False):
         _dict = {}
         for key in self.__fields__:
             f = getattr(self, key)
-            _dict[key] = f.value
+            if f.value is UNSET:
+                if not exclude_unset:
+                    _dict[key] = None
+            else:
+                _dict[key] = f.value
         return _dict
+
+    @property
+    def dirty_fields(self):
+        return frozenset(
+            key for key in self.__fields__
+            if self[key].value is not UNSET
+            and (key not in self._original or self[key].value != self._original[key])
+        )
+
+    def _mark_clean(self, values=None):
+        values = self.to_dict(exclude_unset=True) if values is None else values
+        self._original.update(copy.deepcopy(values))
+        return self
+
+    def _copy_record(self):
+        result = type(self)(**copy.deepcopy(self.to_dict(exclude_unset=True)))
+        result._original = copy.deepcopy(self._original)
+        return result
 
     # class to fun for cls(**)
     def __call__(self, **kw):
@@ -111,15 +136,17 @@ class Model(metaclass=ModelMetaclass):
     def get(self, k, d=None):
         f = getattr(self, k, None)
         if isinstance(f, Field):
-            return d if f.value is None else f.value
+            return d if f.value is None or f.value is UNSET else f.value
         return d if f is None else f
 
     def _get_primary(self):
         pk = self.__primary_key__
         if pk is None:
             return None, None
+        if pk in self._original:
+            return pk, self._original[pk]
         pkf = getattr(self, pk)
-        return pk, pkf.value
+        return pk, None if pkf.value is UNSET else pkf.value
 
     @classmethod
     def use(cls, pool):

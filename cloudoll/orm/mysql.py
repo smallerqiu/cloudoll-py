@@ -1,118 +1,53 @@
-from typing import Any, Optional
-
+"""Native MySQL engine with task-owned transactions."""
+import ssl
 import aiomysql
 
-from cloudoll.logging import error, info
-from cloudoll.orm.base import MeteBase, QueryTypes
-from cloudoll.orm.dialects import dialect_for
+from cloudoll.orm.base import QueryTypes
+from cloudoll.orm.engine import AsyncEngine, cursor_result
 
 
 class AttrDict(dict):
     def __getattr__(self, name):
-        try:
-            return self[name]
-        except KeyError:
-            return None
+        return self.get(name)
 
 
 class AttrDictCursor(aiomysql.DictCursor):
     dict_type = AttrDict
 
 
-class Mysql(MeteBase):
+class Mysql(AsyncEngine):
     def __init__(self):
-        self.pool: Optional[aiomysql.Pool] = None
+        super().__init__()
         self.driver = "mysql"
 
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
-        self.__init__(*args, **kwds)
-        return self
-
-    async def close(self):
-        if self.pool:
-            self.pool.close()
-            await self.pool.wait_closed()
-
-    async def query(
-        self, sql, params=None, query_type: QueryTypes = QueryTypes.ONE, size: int = 10
-    ):
-        try:
-            sql = dialect_for(self.driver).prepare(sql)
-            if not self.pool:
-                raise ValueError("must be create_engine first.")
-            if self.pool._closing or self.pool._closed:
-                raise RuntimeError("Database pool is closed")
-            async with self.pool.acquire() as conn:
-                if conn.echo:
-                    info("sql: %s , %s", sql, params)
-
-                async with conn.cursor() as cursor:
-                    cursor: aiomysql.Cursor = cursor
-                    if (
-                        query_type == QueryTypes.CREATEBATCH
-                        or query_type == QueryTypes.UPDATEBATCH
-                    ):
-                        await cursor.executemany(sql, params)
-                    else:
-                        await cursor.execute(sql, params)
-
-                    await conn.commit()
-
-                    if query_type == QueryTypes.ALL:
-                        return list(await cursor.fetchall())
-                    elif query_type == QueryTypes.ONE:
-                        return await cursor.fetchone()
-                    elif query_type == QueryTypes.MANY:
-                        return list(await cursor.fetchmany(size))
-                    elif query_type == QueryTypes.COUNT:
-                        rows = await cursor.fetchone()
-                        count = 0
-                        if rows is None:
-                            return count
-                        for row in rows:
-                            count = rows[row]
-                        return count
-                    elif query_type == QueryTypes.GROUP_COUNT:
-                        result = await cursor.fetchall()
-                        return 0 if not result else len(result)
-                    elif query_type == QueryTypes.CREATE:
-                        result = cursor.rowcount > 0
-                        id = cursor.lastrowid
-                        return result, id
-                    elif query_type == QueryTypes.CREATEBATCH:
-                        count = cursor.rowcount
-                        id = cursor.lastrowid
-                        return count, id
-                    elif query_type == QueryTypes.UPDATE:
-                        return cursor.rowcount > 0
-                    elif query_type == QueryTypes.UPDATEBATCH:
-                        return cursor.rowcount
-                    elif query_type == QueryTypes.DELETE:
-                        return cursor.rowcount > 0
-
-        except Exception as e:
-            error("[MYSQL] query failed (%s)", type(e).__name__)
-            raise
+    async def _execute(self, connection, sql, params, query_type, size):
+        async with connection.cursor() as cursor:
+            if query_type in {QueryTypes.CREATEBATCH, QueryTypes.UPDATEBATCH}:
+                await cursor.executemany(sql, params)
+            else:
+                await cursor.execute(sql, params)
+            return await cursor_result(cursor, query_type, size)
 
     async def create_engine(self, loop=None, **kw):
-        try:
-            self.pool = await aiomysql.create_pool(
-                host=kw.get("host") or "localhost",
-                port=int(kw.get("port") or 3306),
-                user=kw.get("username"),
-                password=str(kw.get("password") or ""),
-                db=kw.get("db"),
-                echo=kw.get("echo", False),
-                charset=kw.get("charset", "utf8"),
-                autocommit=False,  # kw.get("autocommit", False),
-                maxsize=int(kw.get("maxsize", 10)),
-                minsize=int(kw.get("minsize", 5)),
-                cursorclass=AttrDictCursor,
-                loop=loop,
-            )
-            info(f"Database connection successfully for mysql/{kw.get('db')}.")
-        except Exception:
-            # print(traceback.format_exc())
-            error(f"Database connection failed,the instance : mysql/{kw.get('db')}")
-            raise
+        self.configure(kw)
+        tls = kw.get("ssl")
+        if tls is not None and not isinstance(tls, ssl.SSLContext):
+            raise TypeError("mysql ssl must be an SSLContext")
+        self.pool = await aiomysql.create_pool(
+            host=kw.get("host") or "localhost",
+            port=int(kw.get("port") or 3306),
+            user=kw.get("username"),
+            password=str(kw.get("password") or ""),
+            db=kw.get("db"),
+            echo=False,
+            charset=kw.get("charset", "utf8mb4"),
+            autocommit=False,
+            maxsize=int(kw.get("maxsize", 10)),
+            minsize=int(kw.get("minsize", 5)),
+            connect_timeout=self.connect_timeout,
+            pool_recycle=float(kw.get("pool_recycle", -1)),
+            ssl=tls,
+            cursorclass=AttrDictCursor,
+            loop=loop,
+        )
         return self
