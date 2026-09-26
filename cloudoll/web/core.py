@@ -444,19 +444,25 @@ class Application(object):
         return None
 
     @property
-    def on_startup(self) -> Optional[Signal[web.Application]]:
+    def on_startup(
+        self,
+    ) -> Optional[Signal[Callable[[web.Application], Awaitable[None]]]]:
         if self.app is not None:
             return self.app.on_startup
         return None
 
     @property
-    def on_shutdown(self) -> Optional[Signal[web.Application]]:
+    def on_shutdown(
+        self,
+    ) -> Optional[Signal[Callable[[web.Application], Awaitable[None]]]]:
         if self.app is not None:
             return self.app.on_shutdown
         return None
 
     @property
-    def on_cleanup(self) -> Optional[Signal[web.Application]]:
+    def on_cleanup(
+        self,
+    ) -> Optional[Signal[Callable[[web.Application], Awaitable[None]]]]:
         if self.app is not None:
             return self.app.on_cleanup
         return None

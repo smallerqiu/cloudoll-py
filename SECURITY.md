@@ -15,7 +15,7 @@ reproduction, impact and any mitigation. No response-time SLA is promised.
 
 Security fixes target the latest stable release. Older release branches have no
 guaranteed backports; upgrade or contact the maintainer about a specific issue.
-This policy accompanies Cloudoll 4.0.0; published versions are identified by PyPI
+This policy accompanies Cloudoll 4.1.0; published versions are identified by PyPI
 and repository release tags, not by documentation edits alone.
 CI compatibility with a Python version is not an extension of that runtime's
 upstream security support. Deploy on a runtime still supported by its vendor.

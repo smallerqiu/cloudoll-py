@@ -67,7 +67,7 @@ python -m pip install -e '.[mysql,postgres,cache,dev]'
 python -m mypy
 python -m pytest -q -m 'not integration' -k 'not aws'
 python -m build
-python tests/check_wheel.py dist/cloudoll-4.0.0-py3-none-any.whl
+python tests/check_wheel.py dist/cloudoll-4.1.0-py3-none-any.whl
 ```
 
 真实数据库集成测试需要明确的测试连接：

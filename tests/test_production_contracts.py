@@ -321,6 +321,7 @@ async def test_cancelled_http_observation_restores_request_context():
     owner = SimpleNamespace(observer=events.append, config={})
     request = SimpleNamespace(
         path="/private-value",
+        rel_url=SimpleNamespace(raw_path="/private-value"),
         method="GET",
         match_info=SimpleNamespace(
             route=SimpleNamespace(resource=SimpleNamespace(canonical="/{id}"))

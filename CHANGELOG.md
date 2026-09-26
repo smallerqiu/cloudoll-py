@@ -1,7 +1,16 @@
 # Changelog
 
-## Unreleased
+## 4.1.0
 
+Backward-compatible feature release. Pydantic 2 (`>=2.0,<3`) is now a core
+runtime dependency. Existing handlers and explicit ORM engine bindings remain
+supported. Python 3.9+ remains supported by the CI matrix.
+
+Publication date is recorded by the release tag/PyPI; preparing these files does
+not publish the package.
+
+- Correct lifecycle callback and JWT payload type declarations for strict
+  checking with current dependency annotations.
 - Include HTTP method and actual request path in exception logs; emit 4xx access
   logs at WARNING and 5xx at ERROR so failed requests remain visible above INFO.
 

@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Cloudoll 4.0.0 is an aiohttp-based Python library for routing, middleware,
+Cloudoll 4.1.0 is an aiohttp-based Python library for routing, middleware,
 templates, sessions, JWT, database access and application scaffolding.
 
 ## Install
@@ -10,8 +10,8 @@ templates, sessions, JWT, database access and application scaffolding.
 Python 3.9+ is required. Install only the optional drivers you use:
 
 ```sh
-python -m pip install 'cloudoll==4.0.0'
-python -m pip install 'cloudoll[mysql,postgres,cache]==4.0.0'
+python -m pip install 'cloudoll==4.1.0'
+python -m pip install 'cloudoll[mysql,postgres,cache]==4.1.0'
 ```
 
 The AWS extra requires Python 3.10+. Aurora remains untested; see
@@ -26,7 +26,7 @@ python -m pip install -r requirements.txt
 cloudoll start -n myapp
 ```
 
-The generated project targets 4.0.0 and receives a random JWT secret. Controllers
+The generated project targets 4.1.0 and receives a random JWT secret. Controllers
 and authentication middleware are examples: replace demo credentials and supply
 your own authorization and upload policies before deployment.
 
@@ -111,8 +111,8 @@ python -m ruff check cloudoll tests
 python -m mypy
 python -m pytest -q -m 'not integration' -k 'not aws'
 python -m build
-python tests/check_wheel.py dist/cloudoll-4.0.0-py3-none-any.whl
-python tests/check_release.py dist/cloudoll-4.0.0-py3-none-any.whl
+python tests/check_wheel.py dist/cloudoll-4.1.0-py3-none-any.whl
+python tests/check_release.py dist/cloudoll-4.1.0-py3-none-any.whl
 ```
 
 Native integration tests require explicitly configured disposable databases.

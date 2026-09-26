@@ -1,4 +1,4 @@
-# Cloudoll 4.0.0 example project
+# Cloudoll 4.1.0 example project
 
 This project is a starting point, not a production authorization system. Replace
 demo credentials and implement your application's authentication, permissions
