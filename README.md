@@ -127,3 +127,64 @@ from ordinary CI. Passing CI is not a substitute for workload-specific testing.
 - [Compatibility and release policy](docs/maintenance.md)
 - [Security reporting](SECURITY.md)
 - [MIT license](LICENSE)
+
+## Named ORM datasources
+
+Configure `orm: {default: blog}` with a matching `database.blog` connection.
+Models may set `__datasource__ = "analytics"` to select another named connection.
+Within an active application, `await User.select().where(User.id > 0).all()`
+creates a fresh query using that engine. `User.query()` retains `Query[User]`
+typing. Existing `User.use(engine)` and offline `User.use(None)` are unchanged.
+
+`async with User.transaction():` delegates to the engine's task-owned transaction
+and nested-savepoint implementation. Queries using the same engine participate
+in that transaction; separate datasources are not a distributed transaction.
+Loaded records keep their original engine. Each JOIN executes on its Query's
+engine, not across independently bound model datasources.
+
+Scripts/tests can use `with datasource_context({"blog": engine}, default="blog"):`
+(imported from `cloudoll.orm`). This scopes existing engines without managing
+engine lifetime. Missing contexts/defaults/uninitialized engines fail explicitly.
+See the [configuration and examples](README.zh-CN.md#默认数据源与模型绑定).
+
+## Request validation
+
+Pydantic 2 is a core dependency. Define module-level input models and explicitly
+bind sources with `Body[T]`, `Query[T]`, `Form[T]`, or `Path[T]`. Handlers receive
+validated model instances; the aliases also preserve editor/type-checker support.
+
+```python
+from pydantic import BaseModel, ConfigDict, Field
+from cloudoll.web import Query
+
+class ArticleQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    page: int = Field(default=1, ge=1)
+    size: int = Field(default=20, ge=1, le=100)
+    tags: list[str] = Field(default_factory=list)
+
+@app.get("/articles")
+async def list_articles(query: Query[ArticleQuery]):
+    return query.model_dump()
+```
+
+`?page=2&tags=python&tags=life` produces an integer and a list. Repeated
+Query/Form values are retained for list/set/tuple fields (including string aliases);
+scalar fields use the first value. Comma-separated values and bracket-style nested
+query syntax are not expanded. Use JSON Body for nested objects.
+
+Combine Query and Path with one Body **or** Form, optionally preceded by the raw
+request parameter. Body accepts JSON/`+json`; Form accepts URL-encoded and multipart
+forms. Validation happens before the handler and always returns JSON HTTP 400 with
+`error.status`, `message`, `request_id`, and `details`. Each detail contains `source`,
+`loc` (including nested field/index locations), `code`, and `message`. Raw inputs
+and exception context are omitted; custom validator errors use `Invalid value`.
+Middleware can catch the exported `RequestValidationError` to customize this response.
+Malformed JSON (400) and unsupported media types (415) retain the existing
+`server.json_errors` behavior.
+
+Legacy handlers and streaming `(request, field)` uploads remain supported. Typed
+handlers only parse declared sources. Unknown fields follow model configuration
+(Pydantic defaults to ignoring them); use `extra="forbid"` for strict write inputs.
+Separate create/update models and use `model_dump(exclude_unset=True)` for partial
+updates. Validation does not replace authorization or database constraints.

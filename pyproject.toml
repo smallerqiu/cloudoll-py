@@ -21,6 +21,7 @@ dependencies = [
   "watchfiles",
   "colorlog",
   "aiohttp",
+  "pydantic>=2.0,<3",
   "jinja2",
   "pyjwt",
   "aiohttp_session[secure]",

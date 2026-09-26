@@ -25,8 +25,14 @@ from cloudoll.web.core import (
     routes,
 )
 from cloudoll.web.settings import get_config
+from cloudoll.web.validation import Body, Form, Path, Query, RequestValidationError
 
 __all__: tuple[str, ...] = (
+    "Body",
+    "Query",
+    "Form",
+    "Path",
+    "RequestValidationError",
     "Application",
     "app",
     "WebSocket",

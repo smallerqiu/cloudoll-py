@@ -142,3 +142,56 @@ def test_logging_configuration_preserves_host_handlers_and_is_idempotent():
                 item.close()
         logger.setLevel(previous_level)
         logger.propagate = previous_propagate
+
+
+async def test_failed_requests_log_path_and_severity(tmp_path, caplog):
+    application = Application(root=tmp_path)
+
+    @application.get("/articles/{id}")
+    async def broken(request):
+        raise RuntimeError("database unavailable")
+
+    @application.get("/denied")
+    async def denied():
+        raise web.HTTPForbidden()
+
+    @application.get("/handled")
+    async def handled():
+        return web.Response(status=503)
+
+    application.create(entry_model=None, config={"server": {"json_errors": True}})
+    logger = logging.getLogger("cloudoll")
+    # Capture directly; Cloudoll's explicit logging configuration may disable propagation.
+    logger.addHandler(caplog.handler)
+    previous_level = logger.level
+    logger.setLevel(logging.WARNING)
+    try:
+        async with TestClient(TestServer(application.app)) as client:
+            response = await client.get("/articles/139?token=private-query")
+            assert response.status == 500
+            response = await client.get("/denied")
+            assert response.status == 403
+            response = await client.get("/missing/42")
+            assert response.status == 404
+            response = await client.get("/handled")
+            assert response.status == 503
+        records = [record for record in caplog.records if record.name == "cloudoll"]
+        assert any(
+            record.exc_info and "GET /articles/139" in record.getMessage()
+            for record in records
+        )
+        for path, status, level in [
+            ("/articles/139", 500, logging.ERROR),
+            ("/denied", 403, logging.WARNING),
+            ("/missing/42", 404, logging.WARNING),
+            ("/handled", 503, logging.ERROR),
+        ]:
+            assert any(
+                record.levelno == level
+                and f"GET {path} -> {status}" in record.getMessage()
+                for record in records
+            )
+        assert all("private-query" not in record.getMessage() for record in records)
+    finally:
+        logger.removeHandler(caplog.handler)
+        logger.setLevel(previous_level)

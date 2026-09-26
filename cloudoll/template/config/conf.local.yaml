@@ -18,6 +18,10 @@ server:
 #   redis_0:
 #     url: redis://host:port:/0
 
+# Optional: enable class-level ORM queries after configuring mysql_db above.
+# orm:
+#   default: mysql_db
+
 # session:
 #   max_age: 604800
 #   secret_key: $CLOUDOLL_SESSION_SECRET

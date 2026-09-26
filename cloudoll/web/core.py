@@ -24,7 +24,7 @@ from aiohttp_session import get_session
 from aiosignal import Signal
 from jinja2 import Environment
 
-from cloudoll.logging import exception, info
+from cloudoll.logging import error, exception, info, warning
 from cloudoll.logging import request_id as _request_id
 from cloudoll.orm.model import Model
 from cloudoll.observability import Event, Observer, _observer, emit
@@ -41,6 +41,7 @@ from cloudoll.web.routing import RouteRegistry
 from cloudoll.web.routing import ignore_key as _sa_ignore_hash
 from cloudoll.web.sessions import SessionManager
 from cloudoll.web.types import Handler, HTTPHandler, Middleware
+from cloudoll.web.validation import RequestValidationError
 
 
 class RequestHandler(object):
@@ -103,6 +104,18 @@ def _sa_ignore_middleware() -> Middleware:
         try:
             try:
                 response = await handler(request)
+            except RequestValidationError as exc:
+                response = web.json_response(
+                    {
+                        "error": {
+                            "status": 400,
+                            "message": "Request validation failed",
+                            "request_id": trace_id,
+                            "details": exc.errors,
+                        }
+                    },
+                    status=400,
+                )
             except web.HTTPException as exc:
                 if exc.status < 400 or not json_errors:
                     response = exc
@@ -129,7 +142,11 @@ def _sa_ignore_middleware() -> Middleware:
                 cancelled = True
                 raise
             except Exception:
-                exception("Unhandled request error")
+                exception(
+                    "Unhandled request error: %s %s",
+                    request.method,
+                    request.rel_url.raw_path,
+                )
                 if not json_errors:
                     raise
                 response = web.json_response(
@@ -163,11 +180,12 @@ def _sa_ignore_middleware() -> Middleware:
                     status=status,
                 )
             )
-            info(
-                "%s %s %s %.2fms",
+            log_request = error if status >= 500 else warning if status >= 400 else info
+            log_request(
+                "%s %s -> %s %.2fms",
                 request.method,
+                request.rel_url.raw_path,
                 status,
-                metric_route,
                 elapsed_ms,
             )
             _request_id.reset(trace_token)

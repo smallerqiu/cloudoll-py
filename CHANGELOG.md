@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Include HTTP method and actual request path in exception logs; emit 4xx access
+  logs at WARNING and 5xx at ERROR so failed requests remain visible above INFO.
+
+- Add Pydantic 2 request validation with typed `Body`, `Query`, `Form`, and
+  `Path` bindings, repeated collection parameters and structured HTTP 400 errors.
+  Preserve legacy request and streaming multipart handlers.
+
+- Add application-local named ORM datasources via `orm.default` and model
+  `__datasource__`, independent class-level queries, `Model.query()` and
+  `Model.transaction()`. Reuse existing task-owned engine transactions.
+- Add `datasource_context` for scoped standalone/test engine bindings. Keep
+  explicit `.use(engine)`, offline SQL compilation and bound records compatible.
+
 ## 4.0.0
 
 Release notes for 4.0.0. Publication date is recorded by the release tag/PyPI;

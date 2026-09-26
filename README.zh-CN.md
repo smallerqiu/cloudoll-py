@@ -128,6 +128,106 @@ async def create_user(request):
 
 单参数处理函数通过 `request.params` 获取路径参数、`request.qs` 获取查询参数、`request.body` 获取已解析的 JSON 或表单数据。路由装饰器还包括 `put`、`delete`，类视图可使用 `View` 和 `routes`。
 
+### 控制台与请求错误日志
+
+通过 `cloudoll` CLI 启动时，默认开启控制台和文件日志。直接在 Python 中创建应用时，
+在启动入口显式配置（导入 Cloudoll 本身不会配置日志）：
+
+```python
+import logging
+from cloudoll.logging import configure_logging
+
+configure_logging(level=logging.INFO, console=True, files=True)
+```
+
+`files=False` 可关闭文件输出；`level=logging.WARNING` 只看警告和错误。
+每条请求日志包含请求方法、实际路径、HTTP 状态码、耗时和 request ID。
+2xx/3xx 使用 INFO，4xx 使用 WARNING，5xx 使用 ERROR；未捕获异常同时记录请求方法、
+路径和完整堆栈。路径不包含查询参数。响应头 `X-Request-ID` 可用于关联同一次请求的日志。
+
+文件默认位于 macOS/Linux 的 `~/.cloudoll/logs/`，按日期写入 `YYYY-MM-DD-all.log`
+和 `YYYY-MM-DD-error.log`；可用 `CLOUDOLL_LOG_DIR` 环境变量指定目录。控制台输出使用
+stderr，服务由 systemd 托管时应查看该服务的 journal。`server.json_errors` 只控制
+HTTP 错误响应格式，不是日志开关。
+
+### 声明式参数校验
+
+使用 Pydantic 2 模型声明输入，通过 `Body[T]`（JSON）、`Query[T]`（查询参数）、
+`Form[T]`（表单）和 `Path[T]`（路径参数）指定来源。Pydantic 已作为基础依赖安装。
+模型应定义在模块级，尤其是启用 `from __future__ import annotations` 时。
+这些注解保留模型的静态类型，函数收到的是校验后的模型实例。
+
+```python
+from pydantic import BaseModel, ConfigDict, Field
+from cloudoll.web import Application, Body, Query, Path, Form
+
+app = Application()
+
+class ArticleQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    page: int = Field(default=1, ge=1)
+    size: int = Field(default=20, ge=1, le=100)
+    tags: list[str] = Field(default_factory=list)
+
+class ArticlePath(BaseModel):
+    id: int = Field(gt=0)
+
+class ArticleInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1)
+
+@app.get("/articles")
+async def list_articles(query: Query[ArticleQuery]):
+    return query.model_dump()
+
+@app.post("/articles/{id}")
+async def save_article(request, path: Path[ArticlePath], body: Body[ArticleInput]):
+    return {"id": path.id, "article": body.model_dump()}
+
+@app.post("/article-form")
+async def submit_article(data: Form[ArticleInput]):
+    return data.model_dump()
+```
+
+`GET /articles?page=2&tags=python&tags=生活` 得到整数 `page=2` 和列表
+`tags=["python", "生活"]`。未传字段使用模型默认值；必填字段缺失、类型或范围不符
+均在执行接口函数前返回 HTTP 400。Query/Form 的列表、集合和元组字段保留重复值
+（支持字符串字段别名）；标量字段沿用原接口取第一个值的行为，不自动拆分逗号。
+嵌套对象建议通过 JSON Body 传递，不解析 `filter[name]` 这类查询字符串语法。
+
+校验失败始终返回 JSON，无需启用 `server.json_errors`：
+
+```json
+{
+  "error": {
+    "status": 400,
+    "message": "Request validation failed",
+    "request_id": "...",
+    "details": [
+      {"source": "query", "loc": ["page"], "code": "greater_than_equal", "message": "Input should be greater than or equal to 1"}
+    ]
+  }
+}
+```
+
+`loc` 保留嵌套字段和列表下标，例如 `["items", 0, "title"]`。错误不附带原始输入、
+异常上下文或文档 URL；自定义校验器错误使用通用 `Invalid value` 提示，前端可按
+`code` 提供文案。可通过中间件捕获公开的 `RequestValidationError` 定制响应。
+格式错误的 JSON 返回 400，不支持的 Content-Type 返回 415，这两类解析错误仍遵循
+已有的 `server.json_errors` 设置。
+
+可以组合 Query、Path 与一个 Body 或 Form；Body 和 Form 不能同时使用。Body 接受
+`application/json` 和 `+json` 类型，Form 接受 URL 编码与 multipart 表单。
+可选的原始 request 必须是第一个参数，其后每个参数须声明来源。
+旧的 `handler()`、`handler(request)`、`handler(request, field)` 文件流上传接口保持兼容。
+声明来源的接口只解析所声明的数据；需要流式上传文件时继续使用原来的上传接口。
+
+未知字段策略由模型决定：Pydantic 默认忽略，写接口建议使用上例的
+`ConfigDict(extra="forbid")`。新增与更新定义独立输入模型；局部更新用
+`model_dump(exclude_unset=True)` 区分“没传字段”和“显式传 null”。字段校验不替代
+权限检查、数据库唯一约束等业务规则。
+
 ## 模板与静态文件
 
 模板引擎使用 Jinja2。创建 `templates/index.html`：
@@ -304,6 +404,63 @@ async def list_users(request):
 ```
 
 `Model.use(pool)` 返回绑定到指定连接的查询对象，不会修改其他查询或模型类的数据库绑定。每次独立查询应创建自己的查询对象。
+
+### 默认数据源与模型绑定
+
+`orm.default` 指向 `database` 中的连接名称，既不是驱动类型，也不是实际库名。
+每个数据源独立配置服务器、库名和连接池：
+
+```yaml
+database:
+  blog:
+    url: mysql://username:password@host:3306/db1
+  analytics:
+    url: postgres://username:password@pg2:5432/db3
+orm:
+  default: blog
+```
+
+```python
+class AccessLog(Model):
+    __table__ = "access_logs"
+    __datasource__ = "analytics"
+    id = models.IntegerField(primary_key=True)
+
+# 在路由或已初始化数据库的应用生命周期内：
+users = await User.select().where(User.id > 0).all()
+logs = await AccessLog.where(AccessLog.id > 0).all()
+
+# 每次 Model.query() 返回独立、带 Query[User] 类型的查询构造器。
+query = User.query().select()
+
+# 事务内，同一数据源的隐式查询自动复用事务连接。
+async with User.transaction():
+    await User.where(User.id == 1).update(name="Alice")
+    await User.where(User.id == 2).update(name="Bob")
+```
+
+数据源解析优先级：显式 `.use(engine)` → `datasource_context` 中的映射或当前应用映射。
+在映射内优先使用模型的 `__datasource__`，否则使用默认名称；模型绑定可继承。
+映射中缺少指定名称时直接报错，不会退回其他数据库。
+每次类级查询都创建新的 Query，不在模型类上缓存连接或查询条件。
+已有记录仍使用读取它时绑定的引擎；`.use(None)` 仍可用于离线 SQL 编译。
+
+`User.transaction()` 复用引擎现有事务实现，嵌套事务使用保存点。直接使用
+`async with engine.transaction()` 也能让同一引擎的隐式查询参与事务。
+多个数据源不构成分布式事务，不能保证一起提交或回滚。事务连接不能在子任务间共享。
+不同数据源的模型不能通过一次 JOIN 自动跨实例查询；JOIN 始终在当前 Query 的数据源执行。
+
+独立脚本、测试或没有应用上下文的任务，可绑定已创建的引擎：
+
+```python
+from cloudoll.orm import datasource_context
+
+with datasource_context({"blog": engine}, default="blog"):
+    users = await User.select().all()
+```
+
+此上下文不创建或关闭引擎，退出时恢复上层绑定。没有活动应用/显式上下文、未配置默认值、
+或者数据库尚未初始化时，隐式查询明确报错。现有 `.use(engine)` 用法不需要增加配置。
 
 ### 从数据库生成模型
 

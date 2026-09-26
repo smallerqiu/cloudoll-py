@@ -17,6 +17,8 @@ class Other(Model):
 
 
 async def query_contract(db: DatabaseEngine) -> None:
+    implicit: Query[User] = User.query()
+    wrong_implicit: Query[Other] = User.query()  # type: ignore[assignment]
     query: Query[User] = User.use(db).where("id > 0").order_by("id").limit(20).clone()
     user: Optional[User] = await query.one_model()
     legacy: Optional[Union[User, dict[str, Any]]] = await query.one()

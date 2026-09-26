@@ -21,9 +21,20 @@ def parse_int(value: object) -> Optional[int]:
 
 def validate_config(config: dict[str, Any]) -> None:
     """Validate library-owned fields only; application/plugin keys remain free."""
-    for section in ("server", "database", "session", "jwt"):
+    for section in ("server", "database", "session", "jwt", "orm"):
         if section in config and not isinstance(config[section], dict):
             raise ValueError(f"{section} must be a mapping")
+    orm = config.get("orm", {})
+    if set(orm) - {"default"}:
+        raise ValueError("Unknown orm option; supported options: default")
+    if "default" in orm:
+        default = orm["default"]
+        if not isinstance(default, str) or not default.strip():
+            raise ValueError("orm.default must be a non-empty datasource name")
+        if default not in config.get("database", {}):
+            raise ValueError(
+                f"orm.default references an unknown datasource: {default!r}"
+            )
     server = config.get("server", {})
     for key in ("resource_close_timeout", "resource_shutdown_timeout"):
         if key in server:

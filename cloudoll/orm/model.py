@@ -3,7 +3,8 @@ from __future__ import annotations
 import copy
 from datetime import date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Optional, TypeVar, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, TypeVar, Union, cast
+from contextlib import AbstractAsyncContextManager
 
 from cloudoll.logging import warning
 from cloudoll.orm.field import Field
@@ -13,6 +14,29 @@ if TYPE_CHECKING:
     from cloudoll.orm.protocols import DatabaseEngine
     from cloudoll.orm.query import Query
 M = TypeVar("M", bound="Model")
+
+_QUERY_METHODS = frozenset(
+    {
+        "select",
+        "where",
+        "having",
+        "join",
+        "order_by",
+        "group_by",
+        "limit",
+        "offset",
+        "test",
+        "one",
+        "one_model",
+        "all",
+        "count",
+        "stream",
+        "insert",
+        "insert_batch",
+        "update",
+        "delete",
+    }
+)
 
 __all__ = ("models", "Model")
 
@@ -64,12 +88,21 @@ class ModelMetaclass(type):
     def __repr__(self) -> str:
         return "<Model: %s>" % self.__name__
 
-    # def __getattr__(self, name):
-    #     return self.__fields__[name]
+    def __getattr__(cls, name: str) -> Any:
+        # Class-level operations get a fresh builder. Record-level operations
+        # continue through Model.__getattr__ and retain their bound engine.
+        if name in _QUERY_METHODS:
+
+            def operation(*args: Any, **kwargs: Any) -> Any:
+                return getattr(cls.query(), name)(*args, **kwargs)
+
+            return operation
+        raise AttributeError(name)
 
 
 class Model(metaclass=ModelMetaclass):
     __table__: str
+    __datasource__: ClassVar[Optional[str]] = None
     __primary_key__: Optional[str]
     __fields__: list[str]
     _original: dict[str, Any]
@@ -169,6 +202,24 @@ class Model(metaclass=ModelMetaclass):
 
         return Query(cls, pool)
 
+    @classmethod
+    def query(cls: type[M]) -> Query[M]:
+        """Create an independent query using this model's named datasource."""
+        from cloudoll.orm.datasources import resolve_datasource
+
+        return cls.use(resolve_datasource(cls.__datasource__))
+
+    @classmethod
+    def transaction(cls) -> AbstractAsyncContextManager[Any]:
+        """Use the datasource's existing transaction/savepoint implementation."""
+        from cloudoll.orm.datasources import resolve_datasource
+
+        engine = resolve_datasource(cls.__datasource__)
+        transaction = getattr(engine, "transaction", None)
+        if not callable(transaction):
+            raise TypeError("This datasource does not support transactions")
+        return cast(AbstractAsyncContextManager[Any], transaction())
+
     def bind(self: M, pool: DatabaseEngine) -> M:
         """Bind this record for subsequent update/delete/insert operations."""
         self._bound_pool = pool
@@ -176,26 +227,7 @@ class Model(metaclass=ModelMetaclass):
 
     def __getattr__(self, name: str) -> Any:
         # Compatibility facade: query operations live in Query, not in records.
-        if name in {
-            "select",
-            "where",
-            "having",
-            "join",
-            "order_by",
-            "group_by",
-            "limit",
-            "offset",
-            "test",
-            "one",
-            "one_model",
-            "all",
-            "count",
-            "stream",
-            "insert",
-            "insert_batch",
-            "update",
-            "delete",
-        }:
+        if name in _QUERY_METHODS:
             from cloudoll.orm.query import Query
 
             pool = self.__dict__.get("_bound_pool")

@@ -1,13 +1,14 @@
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+from cloudoll.orm.datasources import datasource_context as datasource_context
 from cloudoll.orm.parse import parse_coon
 from cloudoll.orm.values import UNSET
 
 if TYPE_CHECKING:
     from cloudoll.orm.query import Query as Query
 
-__all__ = ["create_engine", "Query", "UNSET"]
+__all__ = ["create_engine", "Query", "UNSET", "datasource_context"]
 
 
 async def create_engine(**kw: Any) -> Any:
