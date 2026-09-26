@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from aiohttp import web
 
+from cloudoll import __version__
 from cloudoll.clitool import cli_main, watch
 from cloudoll.web import Application, app
 from cloudoll.web.context import active_application
@@ -184,8 +185,9 @@ async def test_background_failure_requests_cli_shutdown(tmp_path):
 @pytest.mark.parametrize("start_method", multiprocessing.get_all_start_methods())
 @pytest.mark.parametrize("inherited", ["context", "default"])
 async def test_real_child_readiness_reload_and_cleanup(
-    tmp_path, monkeypatch, unused_tcp_port, start_method, inherited
+    tmp_path, monkeypatch, unused_tcp_port, start_method, inherited, capfd
 ):
+    monkeypatch.setenv("CLOUDOLL_LOG_DIR", str(tmp_path / "logs"))
     context = multiprocessing.get_context(start_method)
     for name in ("Process", "Pipe", "Event"):
         monkeypatch.setattr(watch, name, getattr(context, name))
@@ -229,11 +231,21 @@ async def test_real_child_readiness_reload_and_cleanup(
         await supervisor.close()
     assert (tmp_path / "cleaned").read_text() == "11"
     assert supervisor._process is None
+    # The persistent forkserver retains the first test's stderr and environment.
+    # Check log destinations in fresh spawn/fork children; all methods still
+    # exercise the real readiness handshake, reload, and shutdown above.
+    if start_method != "forkserver":
+        output = capfd.readouterr().err
+        assert output.count("development server ready on") == 2
+        assert f"http://127.0.0.1:{unused_tcp_port}" in output
+        log_files = list((tmp_path / "logs").glob("*-all.log"))
+        assert log_files and "development server ready on" in log_files[0].read_text()
 
 
 async def test_real_bind_failure_is_not_success(tmp_path, monkeypatch):
     import socket
 
+    monkeypatch.setenv("CLOUDOLL_LOG_DIR", str(tmp_path / "logs"))
     monkeypatch.chdir(tmp_path)
     with socket.socket() as occupied:
         occupied.bind(("127.0.0.1", 0))
@@ -250,8 +262,9 @@ async def test_real_bind_failure_is_not_success(tmp_path, monkeypatch):
 
 
 async def test_real_child_crash_exits_supervisor_with_failure(
-    tmp_path, unused_tcp_port
+    tmp_path, unused_tcp_port, monkeypatch
 ):
+    monkeypatch.setenv("CLOUDOLL_LOG_DIR", str(tmp_path / "logs"))
     (tmp_path / "entry.py").write_text(
         "import asyncio, os\n"
         "async def on_startup(app):\n"
@@ -273,3 +286,39 @@ async def test_real_child_crash_exits_supervisor_with_failure(
     assert result.returncode != 0
     assert "Development server supervision failed" in result.stderr
     assert "Development server exited (code 3)" in result.stderr
+
+
+@pytest.mark.parametrize("fail_startup", [False, True])
+def test_application_run_announces_ready_only_after_startup(
+    tmp_path, fail_startup, unused_tcp_port
+):
+    script = f"""
+import asyncio
+from aiohttp import web
+from cloudoll.logging import configure_logging
+from cloudoll.web import Application
+configure_logging()
+application = Application(root={str(tmp_path)!r}).create(config={{}}, entry_model=None)
+def stop():
+    raise web.GracefulExit()
+async def startup(app):
+    if {fail_startup!r}:
+        raise RuntimeError("startup failed")
+    asyncio.get_running_loop().call_later(0.2, stop)
+application.app.on_startup.append(startup)
+application.run(host="127.0.0.1", port={unused_tcp_port})
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if fail_startup:
+        assert result.returncode != 0
+        assert f"Cloudoll {__version__} ready\n" not in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
+        assert f"Cloudoll {__version__} ready\n" in result.stderr
+        assert f"http://127.0.0.1:{unused_tcp_port}" in result.stderr

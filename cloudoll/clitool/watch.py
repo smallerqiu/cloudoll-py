@@ -12,7 +12,8 @@ from typing import Any, Optional, Union
 from aiohttp import web
 from watchfiles import DefaultFilter, awatch
 
-from cloudoll.logging import info
+from cloudoll import __version__
+from cloudoll.logging import configure_logging, info
 from cloudoll.web import Application
 
 
@@ -113,6 +114,8 @@ def mian_app(
             await runner.cleanup()
 
     with set_tty(tty_path):
+        # spawn starts a fresh interpreter without the parent CLI log handlers.
+        configure_logging(files=True)
         try:
             if root is not None:
                 os.chdir(root)
@@ -156,7 +159,19 @@ async def start_main_app(
     else:
         site = web.TCPSite(runner, host=host, port=port)
     await site.start()
-    info("Development server ready on %s", path or f"http://{host}:{port}")
+    addresses = ", ".join(
+        f"http://[{address[0]}]:{address[1]}"
+        if ":" in address[0]
+        else f"http://{address[0]}:{address[1]}"
+        for address in runner.addresses
+        if isinstance(address, tuple)
+    )
+    info(
+        "Cloudoll %s development server ready on %s (PID %s)",
+        __version__,
+        path or addresses,
+        os.getpid(),
+    )
 
 
 class AppTask(WatchTask):

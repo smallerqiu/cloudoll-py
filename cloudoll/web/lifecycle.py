@@ -12,13 +12,15 @@ if TYPE_CHECKING:
 
 from functools import wraps
 
-from cloudoll.logging import info
+from cloudoll.logging import debug
+from cloudoll.web.resources import startup_stage
 from cloudoll.web.context import active_application
 
 
 class LifecycleManager:
     def __init__(self, owner: Application) -> None:
         self.owner = owner
+        self._missing_entry_notices: set[str] = set()
 
     def load(
         self, entry_model: Optional[str] = None, func_name: Optional[str] = None
@@ -30,7 +32,12 @@ class LifecycleManager:
         except ModuleNotFoundError as exc:
             if exc.name != entry_model:
                 raise
-            info("Entry module %s not found", entry_model)
+            if entry_model not in self._missing_entry_notices:
+                debug(
+                    "Optional entry module %s not found; skipping lifecycle hooks",
+                    entry_model,
+                )
+                self._missing_entry_notices.add(entry_model)
             return
         if func_name:
             if hasattr(entry, func_name):
@@ -90,7 +97,8 @@ class LifecycleManager:
     async def resources(self, app: web.Application) -> AsyncIterator[None]:
         try:
             await self.owner._init_database(app)
-            await self.owner._init_session(app)
+            async with startup_stage("session"):
+                await self.owner._init_session(app)
             yield
         finally:
             await self.owner._close_database(app)

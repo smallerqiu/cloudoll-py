@@ -136,9 +136,9 @@ async def test_session_keys_are_private_and_configurable(monkeypatch):
     for config in ({}, {}, {"session": {"secret_key": "s" * 48, "secure": True}}):
         application = core.Application()
         application.config = config
-        with patch.object(sessions, "setup") as setup:
+        with patch.object(sessions, "session_middleware") as middleware:
             await application._init_session(web.Application())
-            stores.append(setup.call_args.args[1])
+            stores.append(middleware.call_args.args[0])
     encrypted = stores[0]._fernet.encrypt(b"private")
     with pytest.raises(InvalidToken):
         stores[1]._fernet.decrypt(encrypted)
@@ -159,7 +159,7 @@ async def test_redis_session_structured_config():
     with (
         patch("redis.asyncio.from_url", new=AsyncMock()) as connect,
         patch.object(redis_storage, "RedisStorage"),
-        patch.object(sessions, "setup"),
+        patch.object(sessions, "session_middleware"),
     ):
         await application._init_session(web.Application())
     assert connect.call_args.args[0] == "redis://:a%40b@localhost:6379/2"

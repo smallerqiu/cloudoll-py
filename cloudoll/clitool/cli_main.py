@@ -9,6 +9,7 @@ from typing import Any
 
 from aiohttp import web
 
+from cloudoll import __version__
 from cloudoll.clitool.m2d import create_models, create_tables
 from cloudoll.clitool.process import ProcessManager
 from cloudoll.clitool.spinner import spinner_running
@@ -22,7 +23,14 @@ from cloudoll.web.settings import get_config
 
 def run_app(**config_kwargs: Any) -> None:
     config = Object(config_kwargs)
-    info("current mode: %s", config.mode)
+    info(
+        "Starting Cloudoll %s | mode=%s env=%s root=%s PID=%s",
+        __version__,
+        config.mode,
+        config.environment,
+        Path.cwd(),
+        os.getpid(),
+    )
     app_config = get_config(config.environment)
     # print(environment, host, port, mode, path, entry)
     # return
@@ -71,7 +79,9 @@ def run_app(**config_kwargs: Any) -> None:
             shutdown_timeout=0.1,
         )
         if task.failure is not None:
-            raise RuntimeError("Development server supervision failed") from task.failure
+            raise RuntimeError(
+                "Development server supervision failed"
+            ) from task.failure
 
 
 async def run_gen(**config_kwargs: Any) -> None:

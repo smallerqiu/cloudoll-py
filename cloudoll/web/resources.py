@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import (
+    AsyncIterator,
     Callable,
     Coroutine,
 )
@@ -15,10 +16,39 @@ if TYPE_CHECKING:
 
 import asyncio
 import inspect
+import time
+from contextlib import asynccontextmanager
 
+from cloudoll.logging import error, info, warning
 from cloudoll.orm import create_engine
 from cloudoll.orm.engine import positive_timeout
 from cloudoll.utils.async_tools import bounded_wait
+
+
+@asynccontextmanager
+async def startup_stage(name: str) -> AsyncIterator[None]:
+    """Report startup progress without exposing connection settings or errors."""
+    started = time.monotonic()
+    info("Initializing %s", name)
+    try:
+        yield
+    except asyncio.CancelledError:
+        warning(
+            "Initialization cancelled: %s (%.2fms)",
+            name,
+            (time.monotonic() - started) * 1000,
+        )
+        raise
+    except BaseException as exc:
+        error(
+            "Initialization failed: %s (%.2fms, %s)",
+            name,
+            (time.monotonic() - started) * 1000,
+            type(exc).__name__,
+        )
+        raise
+    else:
+        info("Initialized %s (%.2fms)", name, (time.monotonic() - started) * 1000)
 
 
 class ResourceManager:
@@ -35,8 +65,14 @@ class ResourceManager:
 
     async def databases(self, app: web.Application) -> None:
         configs = self.owner.config.get("database") or {}
+
+        async def initialize(name: str, config: dict[str, Any]) -> Any:
+            async with startup_stage(f"database {name!r}"):
+                return await self.factory(**config)
+
         tasks = [
-            asyncio.create_task(self.factory(**config)) for config in configs.values()
+            asyncio.create_task(initialize(name, config))
+            for name, config in configs.items()
         ]
         try:
             engines = await asyncio.gather(*tasks, return_exceptions=True)

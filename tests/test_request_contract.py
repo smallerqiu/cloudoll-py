@@ -195,3 +195,102 @@ async def test_failed_requests_log_path_and_severity(tmp_path, caplog):
     finally:
         logger.removeHandler(caplog.handler)
         logger.setLevel(previous_level)
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "json",
+        "error",
+        "text",
+        "http",
+        "validation",
+        "unexpected",
+        "replacement-json",
+        "replacement-error",
+    ],
+)
+async def test_session_saved_on_final_rendered_response(tmp_path, kind):
+    from aiohttp import CookieJar
+    from cloudoll.web import RequestValidationError, render, render_error, render_json
+
+    application = Application(root=tmp_path)
+
+    @application.middleware
+    async def replace_errors(request, handler):
+        try:
+            return await handler(request)
+        except web.HTTPException:
+            if kind == "replacement-json":
+                return render_json({"message": "replaced"}, status=401)
+            if kind == "replacement-error":
+                return render_error("replaced", status=401)
+            raise
+
+    @application.get("/change")
+    async def change(request):
+        request.session["count"] = request.session.get("count", 0) + 1
+        if kind == "json":
+            return render_json({"ok": True})
+        if kind == "error":
+            return render_error("invalid", status=400)
+        if kind == "text":
+            return render(text="OK")
+        if kind == "validation":
+            raise RequestValidationError([])
+        if kind == "unexpected":
+            raise RuntimeError("internal error")
+        raise web.HTTPUnauthorized()
+
+    @application.get("/read")
+    async def read(request):
+        return {"count": request.session.get("count", 0)}
+
+    application.create(entry_model=None, config={"server": {"json_errors": True}})
+    async with TestClient(
+        TestServer(application.app), cookie_jar=CookieJar(unsafe=True)
+    ) as client:
+        for expected in (1, 2):
+            response = await client.get("/change")
+            assert response.status == {
+                "json": 200,
+                "text": 200,
+                "error": 400,
+                "validation": 400,
+                "unexpected": 500,
+            }.get(kind, 401)
+            assert len(response.headers.getall("Set-Cookie")) == 1
+            assert response.headers["X-Request-ID"]
+            response = await client.get("/read")
+            assert (await response.json())["count"] == expected
+
+
+async def test_http_json_conversion_preserves_cookies_and_repeated_headers(tmp_path):
+    application = Application(root=tmp_path)
+
+    @application.get("/deny")
+    async def deny():
+        exc = web.HTTPUnauthorized(headers={"Retry-After": "60"})
+        exc.headers.add("WWW-Authenticate", 'Bearer realm="api"')
+        exc.headers.add("WWW-Authenticate", 'Basic realm="admin"')
+        exc.set_cookie(
+            "first", "one", httponly=True, secure=True, samesite="Strict", path="/api"
+        )
+        exc.del_cookie("old", path="/")
+        raise exc
+
+    application.create(entry_model=None, config={"server": {"json_errors": True}})
+    async with TestClient(TestServer(application.app)) as client:
+        response = await client.get("/deny")
+        assert response.status == 401
+        assert response.headers["Retry-After"] == "60"
+        assert response.headers.getall("WWW-Authenticate") == [
+            'Bearer realm="api"',
+            'Basic realm="admin"',
+        ]
+        assert response.cookies["first"].value == "one"
+        assert response.cookies["first"]["httponly"]
+        assert response.cookies["first"]["secure"]
+        assert response.cookies["first"]["samesite"] == "Strict"
+        assert response.cookies["first"]["path"] == "/api"
+        assert response.cookies["old"]["max-age"] == "0"

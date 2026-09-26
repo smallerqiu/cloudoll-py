@@ -15,7 +15,7 @@ import os
 import secrets
 from urllib import parse
 
-from aiohttp_session import AbstractStorage, cookie_storage, setup
+from aiohttp_session import AbstractStorage, cookie_storage, session_middleware
 
 from cloudoll.logging import info, warning
 from cloudoll.web.configuration import parse_int
@@ -73,7 +73,6 @@ class SessionManager:
                 httponly=httponly,
                 secure=secure,
             )
-            setup(apps, storage)
             info("starting a redis session.")
         elif mcache_conf:
             from aiohttp_session import memcached_storage
@@ -92,7 +91,6 @@ class SessionManager:
                 httponly=httponly,
                 secure=secure,
             )
-            setup(apps, storage)
             info("starting a memcached session.")
         else:
             configured_secret = sess.get("secret_key") or os.getenv(
@@ -116,5 +114,8 @@ class SessionManager:
                 httponly=httponly,
                 secure=secure,
             )
-            setup(apps, storage)
             info("starting local cookie.")
+
+        # Save session changes onto the final response, after Cloudoll and user
+        # error middleware have rendered/replaced it. Register before freezing.
+        apps.middlewares.insert(0, session_middleware(storage))

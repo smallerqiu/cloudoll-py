@@ -150,6 +150,14 @@ configure_logging(level=logging.INFO, console=True, files=True)
 stderr，服务由 systemd 托管时应查看该服务的 journal。`server.json_errors` 只控制
 HTTP 错误响应格式，不是日志开关。
 
+
+启动阶段会分别记录 `Initializing database '名称'`、`Initialized database '名称' (耗时ms)`，
+以及 Session 的开始与完成时间。数据库连接仍并行初始化，各项耗时不可直接相加。
+如果停在某项 Initializing，可据此定位尚未完成的资源；失败或取消会分别记录
+Initialization failed / cancelled，并继续传播异常及清理已创建资源。
+日志只标识配置中的连接名称，不打印连接字符串、密码或完整配置。
+可选生命周期入口缺失只在 DEBUG 下提示一次；静态文件的反向代理建议也降为 DEBUG。
+
 ### 声明式参数校验
 
 使用 Pydantic 2 模型声明输入，通过 `Body[T]`（JSON）、`Query[T]`（查询参数）、
@@ -373,6 +381,7 @@ db = await create_engine(
 - 未配置会话密钥时，会使用应用实例内的随机密钥，重启后旧会话失效。
 - 通过 HTTPS 提供服务时，将 `session.secure` 设置为 `true`。本地 HTTP 调试可保持 `false`。
 - `request.session` 可以读写会话数据；`request.app.jwt_encode(payload)` 和 `request.app.jwt_decode(token)` 使用应用中的 JWT 配置。
+- Session 中间件在错误处理完成后将会话保存到最终响应；返回 `render_json`、`render_error` 或由业务中间件替换错误响应时，会话修改仍会保存。渲染函数每次创建新响应，手动设置在其他响应上的 Cookie 仍需显式复制；框架的 `json_errors` 转换会保留 HTTP 异常上的 Cookie 和可重复响应头。
 - 会话也支持 Redis 或 Memcached。配置 Redis 时，可使用 `session.redis.url`，或在 `session.redis` 下设置 `host`、`port`、`password` 和 `db`。
 
 生成随机密钥：

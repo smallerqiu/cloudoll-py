@@ -10,6 +10,7 @@ HTTPHandler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
 
 class Middleware(Protocol):
+    # aiohttp passes the request positionally, but binds handler by keyword.
     def __call__(
-        self, request: web.Request, handler: HTTPHandler
+        self, request: web.Request, /, handler: HTTPHandler
     ) -> Awaitable[web.StreamResponse]: ...

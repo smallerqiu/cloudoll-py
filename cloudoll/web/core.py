@@ -11,10 +11,10 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 
 from aiohttp import hdrs, web
-from aiohttp.typedefs import LooseHeaders
+from aiohttp.typedefs import LooseHeaders, Middleware as AiohttpMiddleware
 from aiohttp.web import Response as Response
 from aiohttp.web_app import CleanupContext
 from aiohttp.web_request import Request
@@ -23,8 +23,10 @@ from aiohttp.web_ws import WebSocketResponse as WebSocketResponse
 from aiohttp_session import get_session
 from aiosignal import Signal
 from jinja2 import Environment
+from multidict import CIMultiDict
 
-from cloudoll.logging import error, exception, info, warning
+from cloudoll import __version__
+from cloudoll.logging import debug, error, exception, info, warning
 from cloudoll.logging import request_id as _request_id
 from cloudoll.orm.model import Model
 from cloudoll.observability import Event, Observer, _observer, emit
@@ -122,11 +124,11 @@ def _sa_ignore_middleware() -> Middleware:
                     exc.headers["X-Request-ID"] = trace_id
                     raise
                 else:
-                    headers = {
-                        key: value
+                    headers = CIMultiDict(
+                        (key, value)
                         for key, value in exc.headers.items()
                         if key.lower() not in {"content-type", "content-length"}
-                    }
+                    )
                     response = web.json_response(
                         {
                             "error": {
@@ -138,6 +140,8 @@ def _sa_ignore_middleware() -> Middleware:
                         status=exc.status,
                         headers=headers,
                     )
+                    # Explicit exception cookies are separate from its headers.
+                    response.cookies.update(exc.cookies)
             except asyncio.CancelledError:
                 cancelled = True
                 raise
@@ -276,7 +280,9 @@ class Application(object):
         if conf_server is not None:
             client_max_size = conf_server.get("client_max_size", client_max_size)
         self.app = web.Application(
-            middlewares=self._middleware,
+            # aiohttp's stubs require the name "request", although runtime
+            # dispatch passes it positionally. Bridge that annotation boundary.
+            middlewares=cast(Iterable[AiohttpMiddleware], self._middleware),
             client_max_size=_parse_int(client_max_size) or 0,
         )
 
@@ -309,7 +315,9 @@ class Application(object):
                 self.app.router.add_static(
                     **conf_st, path=self.configuration.path("static")
                 )
-                info("Suggest using nginx or others instead.")
+                debug(
+                    "Static files enabled; consider a reverse proxy for production assets"
+                )
         templates_dir = self.configuration.path("templates")
         if templates_dir.exists():
             from jinja2 import Environment, FileSystemLoader
@@ -345,11 +353,10 @@ class Application(object):
         if self.app is None:
             raise ValueError("Please create app first.like app.create()")
 
-        async def log(_: web.Application) -> None:
-            # make sure this tip is printed after the server starts
-            info(f"Server running on http://{conf.host}:{conf.port}")
+        def log_ready(message: str) -> None:
+            # aiohttp invokes this only after its listening sites have started.
+            info("Cloudoll %s ready\n%s", __version__, message)
 
-        self.app.on_startup.append(log)
         web.run_app(
             self.app,
             loop=self._loop,
@@ -357,7 +364,7 @@ class Application(object):
             port=conf["port"],
             path=conf["path"],
             access_log=None,
-            print=None,
+            print=log_ready,
         )
 
     def add_router(
@@ -440,29 +447,25 @@ class Application(object):
     @property
     def middlewares(self) -> Optional[MutableSequence[Middleware]]:
         if self.app is not None:
-            return self.app.middlewares
+            return cast(MutableSequence[Middleware], self.app.middlewares)
         return None
 
+    # aiohttp/aiosignal releases parameterize Signal by either the application
+    # or the callback type. Keep their generic boundary version-independent.
     @property
-    def on_startup(
-        self,
-    ) -> Optional[Signal[Callable[[web.Application], Awaitable[None]]]]:
+    def on_startup(self) -> Optional[Signal[Any]]:
         if self.app is not None:
             return self.app.on_startup
         return None
 
     @property
-    def on_shutdown(
-        self,
-    ) -> Optional[Signal[Callable[[web.Application], Awaitable[None]]]]:
+    def on_shutdown(self) -> Optional[Signal[Any]]:
         if self.app is not None:
             return self.app.on_shutdown
         return None
 
     @property
-    def on_cleanup(
-        self,
-    ) -> Optional[Signal[Callable[[web.Application], Awaitable[None]]]]:
+    def on_cleanup(self) -> Optional[Signal[Any]]:
         if self.app is not None:
             return self.app.on_cleanup
         return None

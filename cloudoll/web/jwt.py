@@ -3,7 +3,7 @@ __author__ = "Qiu / smallerqiu@gmail.com"
 import datetime
 import math
 from collections.abc import Mapping, Sequence
-from typing import Any, Optional, Union, cast
+from typing import Any, Optional, Union
 
 import jwt
 
@@ -56,7 +56,7 @@ def decode(
             required.append("iss")
         if audience is not None:
             required.append("aud")
-        payload = jwt.decode(
+        payload: dict[str, Any] = jwt.decode(
             token,
             key,
             algorithms=["HS256"],
@@ -65,7 +65,7 @@ def decode(
             leeway=leeway,
             options={"require": required},
         )
-        return cast(dict[str, Any], payload)
+        return payload
     except jwt.InvalidTokenError:
         return None
 
