@@ -55,7 +55,7 @@ def main() -> None:
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
     )
     outputs[docs_root / "public/llms.txt"] = "\n".join(links) + "\n"
-    outputs[docs_root / "public/llms-full.txt"] = "\n".join(full) + "\n"
+    outputs[docs_root / "public/llms-full.txt"] = "\n".join(full).rstrip() + "\n"
     stale = set((ROOT / "cloudoll/ai/docs").glob("*.md")) - set(outputs)
     if stale:
         parser.error(

@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.2.1
+
+- Correct the AI initialization regression test to compare the original bytes
+  rather than assume LF newlines on Windows. Keep preservation and idempotence
+  assertions enabled on every platform.
+- Normalize the generated full documentation's trailing newline.
+- Include all 4.2.0 features. The 4.2.0 tag was blocked by Windows CI and was
+  not published to PyPI; 4.2.1 is the replacement release.
+
 ## 4.2.0
 
 Backward-compatible AI-assisted development release. Python 3.9+ remains supported.

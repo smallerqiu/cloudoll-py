@@ -39,9 +39,10 @@ def test_query_commands():
 def test_init_preserves_user_instructions_and_is_idempotent(tmp_path):
     agents = tmp_path / "AGENTS.md"
     agents.write_text("# My project\nUse our test command.\n", encoding="utf-8")
+    original = agents.read_bytes()
     initialize_project(tmp_path)
     first = agents.read_bytes()
-    assert first.startswith(b"# My project\nUse our test command.\n")
+    assert first.startswith(original)
     initialize_project(tmp_path)
     assert agents.read_bytes() == first
     skill = tmp_path / ".agents/skills/cloudoll/SKILL.md"

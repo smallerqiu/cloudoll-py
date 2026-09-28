@@ -1,10 +1,10 @@
 {
-  "version": "4.2.0",
+  "version": "4.2.1",
   "documents": {
     "ai": {
       "source": "src/views/ai.md",
       "url": "https://cloudoll.chuchur.com/ai",
-      "sha256": "ba34fea956ab9101cf6fe33647fb94cb16b206f511d087c4c7159412c9bffb0b"
+      "sha256": "752878a272bc9004b8fe83fc1ba2f26300d016a9dac1ab9565bc3c5938a304d7"
     },
     "app-start": {
       "source": "src/views/app-start.md",
@@ -14,7 +14,7 @@
     "changelog": {
       "source": "src/views/changelog.md",
       "url": "https://cloudoll.chuchur.com/changelog",
-      "sha256": "32df95d193599eb89d396e65d4ce45dbdd6184db4b176bff211a6e775a8f2481"
+      "sha256": "c55d20ec3a246d1337a53962aa8602fba717f22fe7dd02c14df67b791366f3fc"
     },
     "config": {
       "source": "src/views/config.md",
@@ -84,7 +84,7 @@
     "start": {
       "source": "src/views/start.md",
       "url": "https://cloudoll.chuchur.com/",
-      "sha256": "b3dd6c92d3834bac73cc420b5ac8b35ebf3bb800bab13565a661063db74c8e4a"
+      "sha256": "162438f32bd4eec4efec6151c0eea52f5741aa02decf5bbcb06965695eae9fa1"
     },
     "structure": {
       "source": "src/views/structure.md",

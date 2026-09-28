@@ -8,7 +8,7 @@ icon: structure
 
 使用 AI 编写 Cloudoll 项目时，应先让它阅读当前安装版本的文档和项目约定，再设计实现。不要仅凭其它 Python 框架的使用经验推测 Cloudoll API。
 
-> 以下 AI 命令从 Cloudoll 4.2.0 开始提供，使用前请运行 `cloudoll ai --help` 确认所安装版本是否支持。旧版本可先阅读对应版本的 README、源码和文档，不必为了获取指引直接升级业务依赖。
+> 以下 AI 命令从 Cloudoll 4.2.1 开始提供，使用前请运行 `cloudoll ai --help` 确认所安装版本是否支持。旧版本可先阅读对应版本的 README、源码和文档，不必为了获取指引直接升级业务依赖。
 
 ## 新项目与已有项目
 
