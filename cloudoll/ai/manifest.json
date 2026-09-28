@@ -19,7 +19,7 @@
     "config": {
       "source": "src/views/config.md",
       "url": "https://cloudoll.chuchur.com/config",
-      "sha256": "fc35e97acb4ead84d00f56fab2a2714d3414dea4730979ac9eaa5a930582ad87"
+      "sha256": "54fca249346fcf733333cb4967297e91f6beeda567ff69e6c11195c2a21f54d4"
     },
     "cookie-and-session": {
       "source": "src/views/cookie-and-session.md",

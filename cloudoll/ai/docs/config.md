@@ -16,7 +16,19 @@ cloudoll start -n myapp -env prod -m production
 
 `-env prod` 选择文件，`-m production` 选择运行模式，两者不是同一个开关。通过 `--host` / `--port` 可覆盖监听地址；未传入时使用配置。入口参数 `-e app` 是模块名，不是 `app.py`。
 
-配置必须是 YAML 映射；加载时使用安全 YAML 解析和严格环境变量展开。缺少环境变量会报错。Cloudoll 没有自动加载项目 `.env` 文件的逻辑，应由 shell、容器或进程管理器注入变量。
+配置必须是 YAML 映射；加载时使用安全 YAML 解析，并通过 EnvYAML 严格展开环境变量。默认情况下，缺少引用的环境变量会报错。
+
+### `.env` 文件
+
+EnvYAML 会自动读取当前工作目录下的 `.env`。从项目根目录启动时，可将配置中引用的变量放在根目录的 `.env` 中，也可以由 shell、容器或进程管理器注入。
+
+- 可通过进程环境变量 `ENV_FILE` 指定其他文件；从不同目录启动时，建议使用绝对路径。
+- 默认 `.env` 路径相对于当前工作目录，不是 YAML 所在目录；`get_config(..., root=...)` 只指定 YAML 配置的根目录，不改变 `.env` 的查找位置。
+- 当前 EnvYAML 实现中，文件中的变量会覆盖同名进程环境变量，再用于 YAML 占位符展开。生产环境应避免残留本地 `.env` 覆盖部署配置。
+- 文件变量仅进入 EnvYAML 配置，不会写入 `os.environ`；直接使用 `os.getenv()` 或 `os.environ` 的业务代码不能因此读到这些变量。
+- `-env prod` 选择 `config/conf.prod.yaml`，不会自动切换为 `.env.prod`；需要时通过 `ENV_FILE` 指定。
+
+不要提交包含密码或密钥的 `.env`；可提交仅包含变量名和占位值的 `.env.example`。
 
 显式指定的配置文件不存在会抛 FileNotFoundError，不再返回空配置继续启动。核心配置节、端口/请求大小、布尔开关、资源关闭期限和 JWT 策略会在应用创建时校验，on_create 修改后再次校验。业务自定义键仍可使用；数据库驱动参数由相应引擎校验。
 
