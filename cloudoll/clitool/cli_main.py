@@ -145,6 +145,9 @@ def create_project(project_name: str) -> None:
         text = config_path.read_text(encoding="utf-8")
         text = text.replace("$CLOUDOLL_JWT_SECRET", secrets.token_urlsafe(48))
         config_path.write_text(text, encoding="utf-8")
+        from cloudoll.ai.commands import initialize_project
+
+        initialize_project(project_dir)
     finally:
         stop["stop"] = True
         t.join()

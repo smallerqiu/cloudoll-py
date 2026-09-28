@@ -15,6 +15,8 @@ def main():
         installed = root / "installed"
         with zipfile.ZipFile(wheel) as archive:
             assert "cloudoll/py.typed" in archive.namelist()
+            for asset in ("AGENTS.md", "manifest.json", "docs/structure.md", "skills/cloudoll/SKILL.md"):
+                assert "cloudoll/ai/" + asset in archive.namelist(), asset
             for required in (
                 "config/conf.local.yaml",
                 "controllers/home/index.py",
@@ -59,6 +61,12 @@ from aiohttp.test_utils import TestClient, TestServer
 
 assert Path(cloudoll.__file__).resolve().is_relative_to(Path("installed").resolve()), cloudoll.__file__
 create_project("sample")
+assert Path("sample/AGENTS.md").is_file()
+assert Path("sample/.agents/skills/cloudoll/SKILL.md").is_file()
+from cloudoll.ai.commands import ai, read_document
+from click.testing import CliRunner
+assert "controllers" in read_document("structure")
+assert CliRunner().invoke(ai, ["read", "database"]).exit_code == 0
 assert (Path("sample") / "requirements.txt").read_text().strip() == "cloudoll==" + cloudoll.__version__
 os.chdir("sample")
 

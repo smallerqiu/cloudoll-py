@@ -20,6 +20,9 @@ eggs/
 .eggs/
 lib/
 scripts/
+!/scripts/
+/scripts/*
+!/scripts/sync_ai_docs.py
 lib64/
 parts/
 sdist/

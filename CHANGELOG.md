@@ -1,5 +1,19 @@
 # Changelog
 
+## 4.2.0
+
+Backward-compatible AI-assisted development release. Python 3.9+ remains supported.
+
+- Add offline `cloudoll ai list`, `read`, and `search` commands for bundled official
+  documentation, with source URLs, version metadata and content integrity checks.
+- Add `cloudoll ai init` for existing projects. New scaffolds automatically include
+  an AGENTS.md entry and a project-local Cloudoll skill covering documented project
+  structure, validation, ORM, resource lifecycle, security and verification.
+- Preserve existing project instructions and refuse to overwrite customized skills
+  or write through symbolic links. Initialization is repeatable.
+- Add documentation synchronization tooling and website LLM discovery assets.
+  Test both instruction initialization and AI resources in the built wheel.
+
 ## 4.1.0
 
 Backward-compatible feature release. Pydantic 2 (`>=2.0,<3`) is now a core

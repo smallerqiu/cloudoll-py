@@ -102,6 +102,7 @@ cloudoll = "cloudoll.cli:cli"
 
 [tool.setuptools.package-data]
 "cloudoll" = ["py.typed"]
+"cloudoll.ai" = ["AGENTS.md", "manifest.json", "docs/*.md", "skills/cloudoll/SKILL.md"]
 "cloudoll.template" = [
   "README.md",
   "requirements.txt",

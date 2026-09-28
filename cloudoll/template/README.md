@@ -1,4 +1,4 @@
-# Cloudoll 4.1.0 example project
+# Cloudoll 4.2.0 example project
 
 This project is a starting point, not a production authorization system. Replace
 demo credentials and implement your application's authentication, permissions
@@ -6,6 +6,11 @@ and upload policy. Install requirements.txt, configure independent secrets and
 read the [deployment documentation](https://cloudoll.chuchur.com/deployment).
 
 # Starting dev server
+
+Before asking an AI assistant to implement features, have it read `AGENTS.md`
+and `.agents/skills/cloudoll/SKILL.md`. Use the installed environment's
+`python -m cloudoll.cli ai read structure` and `ai read database` to consult
+the official documentation offline. Run `ai list` for all topics.
 
 ## with console
 ```sh

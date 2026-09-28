@@ -1,4 +1,6 @@
 recursive-include tests *.py
 include README.zh-CN.md
+include AI.md AGENTS.md
+include scripts/sync_ai_docs.py
 include CHANGELOG.md SECURITY.md
 recursive-include docs *.md

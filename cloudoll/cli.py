@@ -6,6 +6,7 @@ from typing import Any
 import click
 
 from cloudoll import __version__
+from cloudoll.ai.commands import ai
 from cloudoll.clitool.cli_main import create_project, run_app, run_gen
 from cloudoll.clitool.process import ProcessManager
 from cloudoll.logging import configure_logging, error
@@ -154,6 +155,9 @@ def list() -> None:
 @click.argument("project-name", type=click.Path(dir_okay=True), required=True)
 def create(project_name: str) -> None:
     create_project(project_name)
+
+
+cli.add_command(ai)
 
 
 if __name__ == "__main__":
