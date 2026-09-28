@@ -6,9 +6,26 @@ icon: logs
 
 # 更新日志
 
-按版本倒序记录 Cloudoll 的主要变化。当前使用方法请以本站 4.2.1 文档为准，历史功能不代表当前仍保留相同 API。
+按版本倒序记录 Cloudoll 的主要变化。当前使用方法请以本站 4.3.0 文档为准，历史功能不代表当前仍保留相同 API。
 
 历史版本日期为对应源码提交日期。各版本源码可通过表格中的链接查看。
+
+## 4.3.0
+
+### ORM 查询与写入
+
+- JOIN 新增显式 LEFT/INNER/RIGHT 类型，默认保持 LEFT；增加查询级 `distinct()`、保留聚合与别名列的 `one_dict()`、不消费查询的 `exists()`。
+- 新增参数化 IN、标量、EXISTS/NOT EXISTS 子查询，创建时快照 SQL 与参数，并校验数据源和方言。
+- 新增 `Model.alias()` 表别名和自连接、非递归 CTE、UNION/UNION ALL；区分分支分页与合并结果分页，保留正确计数语义。
+- 新增表达式原子更新和 `for_update()` 行锁，支持 NOWAIT、SKIP LOCKED；事务由调用方管理，不自动重试。
+- 新增单条原子 `upsert()`，显式指定更新列；PostgreSQL 支持冲突目标，MySQL 明确拒绝不能实现的冲突目标选项。
+- 导出 `Relation`、`Subquery` 类型；明确拒绝别名、CTE、UNION 和 JOIN 查询的直接写入，避免静默忽略查询源。
+
+### 文档与验证
+
+- 补齐 GROUP BY、HAVING、聚合、返回类型和默认数据源示例；普通应用 CRUD 优先实体 API，不必重复 `.use(db)`。
+- 同步 AI 指引与随包文档，说明行锁、唯一约束、版本适用范围和高级查询限制。
+- 增加 MySQL 8.4 / PostgreSQL 16 真实数据库测试，覆盖并发 upsert、回滚、锁竞争、CTE 和 UNION。Aurora 仍未经过真实环境验证。
 
 ## 4.2.1
 

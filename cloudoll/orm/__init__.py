@@ -7,8 +7,17 @@ from cloudoll.orm.values import UNSET
 
 if TYPE_CHECKING:
     from cloudoll.orm.query import Query as Query
+    from cloudoll.orm.relation import Relation as Relation
+    from cloudoll.orm.subquery import Subquery as Subquery
 
-__all__ = ["create_engine", "Query", "UNSET", "datasource_context"]
+__all__ = [
+    "create_engine",
+    "Query",
+    "Relation",
+    "Subquery",
+    "UNSET",
+    "datasource_context",
+]
 
 
 async def create_engine(**kw: Any) -> Any:
@@ -72,4 +81,12 @@ def __getattr__(name: str) -> Any:
         from .query import Query
 
         return Query
+    if name == "Relation":
+        from .relation import Relation
+
+        return Relation
+    if name == "Subquery":
+        from .subquery import Subquery
+
+        return Subquery
     raise AttributeError(name)

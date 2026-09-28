@@ -13,6 +13,7 @@ from cloudoll.orm.values import UNSET
 if TYPE_CHECKING:
     from cloudoll.orm.protocols import DatabaseEngine
     from cloudoll.orm.query import Query
+    from cloudoll.orm.relation import Relation
 M = TypeVar("M", bound="Model")
 
 _QUERY_METHODS = frozenset(
@@ -21,6 +22,18 @@ _QUERY_METHODS = frozenset(
         "where",
         "having",
         "join",
+        "distinct",
+        "for_update",
+        "one_dict",
+        "exists",
+        "subquery",
+        "exists_expr",
+        "where_exists",
+        "from_",
+        "cte",
+        "union",
+        "union_all",
+        "upsert",
         "order_by",
         "group_by",
         "limit",
@@ -195,6 +208,13 @@ class Model(metaclass=ModelMetaclass):
             return pk, self._original[pk]
         pkf = getattr(self, pk)
         return pk, None if pkf.value is UNSET else pkf.value
+
+    @classmethod
+    def alias(cls: type[M], name: str) -> Relation[M]:
+        """Create a read-only table reference; fields are available under .c."""
+        from cloudoll.orm.relation import Relation
+
+        return Relation(cls, name, tuple(cls.__fields__))
 
     @classmethod
     def use(cls: type[M], pool: Optional[DatabaseEngine]) -> Query[M]:

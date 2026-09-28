@@ -9,7 +9,7 @@ path: /
 
 Cloudoll 是基于 aiohttp 的异步 Python Web 库，提供路由、模板、Session、ORM 和 CLI。
 
-> 本文档按 Cloudoll 4.2.1 源码更新，实际发布状态以 PyPI 为准。从 3.x 升级前，请先阅读[升级说明](/migration)，确认配置和 API 的兼容性变化。
+> 本文档按 Cloudoll 4.3.0 源码更新，实际发布状态以 PyPI 为准。从 3.x 升级前，请先阅读[升级说明](/migration)，确认配置和 API 的兼容性变化。
 
 ## 环境与安装
 
@@ -18,8 +18,8 @@ Cloudoll 是基于 aiohttp 的异步 Python Web 库，提供路由、模板、Se
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install 'cloudoll==4.2.1'
-python -m pip install 'cloudoll[mysql,postgres,cache]==4.2.1'
+python -m pip install 'cloudoll==4.3.0'
+python -m pip install 'cloudoll[mysql,postgres,cache]==4.3.0'
 ```
 
 Windows PowerShell 激活命令为 `.venv\Scripts\Activate.ps1`。只使用 Web 功能时不需要安装数据库 extras。

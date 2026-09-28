@@ -49,6 +49,8 @@ python -m cloudoll.cli ai search transaction
 .agents/skills/cloudoll/SKILL.md，再通过 cloudoll ai read 查阅相关文档。
 新项目遵循自动发现的 controllers/middlewares、YAML 配置、框架管理的
 数据库生命周期、类型化参数校验和 ORM。若需要偏离默认方案，先说明理由。
+普通 CRUD、联表、筛选、计数和分页用实体 API；配置 orm.default 后，
+应用代码默认省略 .use(db)。原始 SQL 须先确认并说明当前 ORM 的具体能力缺口。
 完成后说明查阅的主题、测试结果和未验证的部分。
 ```
 

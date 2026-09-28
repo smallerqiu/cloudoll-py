@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from cloudoll.orm.dialects import MySQLDialect
 
@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 import copy
 
 from cloudoll.orm.field import ExpList, Expression, Field, Function
+from cloudoll.orm.subquery import Subquery
+from cloudoll.orm.relation import Column, Relation
 from cloudoll.orm.values import UNSET
 
 
@@ -24,10 +26,33 @@ class CompiledQuery:
 
 
 class SQLCompiler:
-    def __init__(self, dialect: MySQLDialect) -> None:
+    def __init__(self, dialect: MySQLDialect, source_id: Optional[int] = None) -> None:
         self.dialect = dialect
+        self.source_id = source_id
 
     def expression(self, node: Any, params: list[Any]) -> str:
+        if isinstance(node, Column):
+            return (
+                self.dialect.identifier(node.table)
+                + "."
+                + self.dialect.identifier(node.name)
+            )
+        if isinstance(node, Subquery):
+            if node.postgres != self.dialect.is_postgres:
+                raise ValueError("Subqueries must use the same SQL dialect")
+            if (
+                node.source_id is not None
+                and self.source_id is not None
+                and node.source_id != self.source_id
+            ):
+                raise ValueError("Subqueries must use the same datasource")
+            if node.mode not in {"scalar", "exists", "not_exists"}:
+                raise ValueError("Unsupported subquery mode")
+            params.extend(copy.deepcopy(node.parameters))
+            prefix = {"scalar": "", "exists": "EXISTS ", "not_exists": "NOT EXISTS "}[
+                node.mode
+            ]
+            return prefix + "(" + node.text + ")"
         if isinstance(node, Field):
             table = node.full_name.rsplit(".", 1)[0].strip("`")
             return (
@@ -118,19 +143,69 @@ class SQLCompiler:
             return f"DATE_FORMAT({column}, {self.expression(node.rpt, params)})"
         raise NotImplementedError(f"Unsupported SQL function: {op}")
 
+    def _source(self, source: Any, params: list[Any]) -> str:
+        if not isinstance(source, Relation):
+            return self.dialect.identifier(source)
+        if source.kind == "table":
+            return (
+                self.dialect.identifier(source.model.__table__)
+                + " AS "
+                + self.dialect.identifier(source.name)
+            )
+        if source.kind == "cte":
+            return self.dialect.identifier(source.name)
+        if source.snapshot is None:
+            raise ValueError("Derived sources require a query snapshot")
+        return (
+            self.expression(source.snapshot, params)
+            + " AS "
+            + self.dialect.identifier(source.name)
+        )
+
     def select(self, model: type[Model], state: QueryState) -> CompiledQuery:
         params: list[Any] = []
+        ctes = []
+        seen: set[str] = set()
+        sources = ([state.source] if state.source is not None else []) + [
+            join[0] for join in state.joins or []
+        ]
+        for source in sources:
+            if not isinstance(source, Relation) or source.kind != "cte":
+                continue
+            if source.name in seen:
+                raise ValueError("Duplicate CTE name; use distinct query source names")
+            seen.add(source.name)
+            if source.snapshot is None:
+                raise ValueError("CTEs require a query snapshot")
+            ctes.append(
+                self.dialect.identifier(source.name)
+                + " AS "
+                + self.expression(source.snapshot, params)
+            )
+        if state.lock and any(
+            isinstance(source, Relation) and source.kind != "table"
+            for source in sources
+        ):
+            raise ValueError("Locking CTE/UNION query sources is not supported")
         columns = (
             ",".join(self.expression(col, params) for col in state.columns or []) or "*"
         )
-        sql = f"SELECT {columns} FROM {self.dialect.identifier(model.__table__)}"
-        for table, condition in state.joins or []:
+        source_sql = self._source(
+            state.source if state.source is not None else model.__table__, params
+        )
+        sql = (
+            f"SELECT {'DISTINCT ' if state.distinct else ''}{columns} FROM {source_sql}"
+        )
+        for table, condition, kind in state.joins or []:
+            table_sql = self._source(table, params)
             condition_sql = (
                 condition
                 if isinstance(condition, str)
                 else self.expression(condition, params)
             )
-            sql += f" LEFT JOIN {self.dialect.identifier(table)} ON {condition_sql}"
+            if kind not in {"LEFT", "INNER", "RIGHT"}:
+                raise ValueError("Unsupported join kind")
+            sql += f" {kind} JOIN {table_sql} ON {condition_sql}"
         for prefix, value in (
             ("WHERE", state.where),
             ("GROUP BY", state.group_by),
@@ -155,11 +230,22 @@ class SQLCompiler:
             sql += " LIMIT 18446744073709551615"
         if state.offset is not None:
             sql += f" OFFSET {state.offset}"
+        if state.lock:
+            if state.lock not in {
+                "FOR UPDATE",
+                "FOR UPDATE NOWAIT",
+                "FOR UPDATE SKIP LOCKED",
+            }:
+                raise ValueError("Unsupported lock mode")
+            sql += " " + state.lock
+        if ctes:
+            sql = "WITH " + ",".join(ctes) + " " + sql
         return CompiledQuery(self.dialect.normalize(sql), params)
 
     def count(self, model: type[Model], state: QueryState) -> CompiledQuery:
         inner = copy.copy(state)
         inner.limit = inner.offset = inner.order_by = None
+        inner.lock = None
 
         # Retain selected aliases for HAVING; ordinary count needs no projections.
         def distinct(node: Any) -> bool:
@@ -167,7 +253,9 @@ class SQLCompiler:
                 return node.op == "DISTINCT" or distinct(node.col)
             return isinstance(node, Expression) and distinct(node.lhs)
 
-        has_distinct = any(distinct(col) for col in inner.columns or [])
+        has_distinct = inner.distinct or any(
+            distinct(col) for col in inner.columns or []
+        )
         if not has_distinct and (inner.having is None or not inner.columns):
             inner.columns = inner.group_by or [Expression(1, "AS", "cloudoll_row")]
         query = self.select(model, inner)
@@ -205,6 +293,59 @@ class SQLCompiler:
         )
         return " WHERE " + text
 
+    def upsert(
+        self,
+        model: type[Model],
+        keys: list[str],
+        values: list[Any],
+        update_fields: list[str],
+        conflict_fields: Optional[list[str]],
+    ) -> CompiledQuery:
+        def validate(fields: list[str], label: str) -> None:
+            if (
+                not isinstance(fields, list)
+                or not fields
+                or any(not isinstance(key, str) or key not in keys for key in fields)
+                or len(set(fields)) != len(fields)
+            ):
+                raise ValueError(
+                    f"{label} must be a non-empty list of unique inserted fields"
+                )
+
+        validate(update_fields, "update_fields")
+        if model.__primary_key__ in update_fields:
+            raise ValueError("upsert cannot update the primary key")
+        if not self.dialect.is_postgres and conflict_fields is not None:
+            raise ValueError(
+                "MySQL cannot select conflict_fields; any unique key can conflict"
+            )
+        compiled = self.insert(model, keys, values, returning=False)
+        if self.dialect.is_postgres:
+            target = (
+                conflict_fields
+                if conflict_fields is not None
+                else ([model.__primary_key__] if model.__primary_key__ else [])
+            )
+            validate(target, "conflict_fields")
+            if set(target) & set(update_fields):
+                raise ValueError("upsert cannot update conflict target fields")
+            compiled_sql = (
+                compiled.sql
+                + " ON CONFLICT ("
+                + ",".join(self.dialect.identifier(key) for key in target)
+                + ") DO UPDATE SET "
+            )
+        else:
+            compiled_sql = compiled.sql + " ON DUPLICATE KEY UPDATE "
+        incoming = dict(zip(keys, values))
+        # Bind incoming values again: avoids MySQL's deprecated VALUES(column).
+        compiled_sql += ",".join(
+            self.dialect.identifier(key) + "=?" for key in update_fields
+        )
+        return CompiledQuery(
+            compiled_sql, compiled.params + [incoming[key] for key in update_fields]
+        )
+
     def update(
         self,
         model: type[Model],
@@ -214,8 +355,11 @@ class SQLCompiler:
     ) -> CompiledQuery:
         if not keys:
             raise ValueError("Update requires at least one value")
-        params = list(values)
-        assignments = ",".join(self.dialect.identifier(key) + "=?" for key in keys)
+        params: list[Any] = []
+        assignments = ",".join(
+            self.dialect.identifier(key) + "=" + self.expression(value, params)
+            for key, value in zip(keys, values)
+        )
         sql = (
             "UPDATE " + self.dialect.identifier(model.__table__) + " SET " + assignments
         )

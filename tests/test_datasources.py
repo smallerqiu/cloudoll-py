@@ -29,6 +29,34 @@ class ArchivedAudit(Audit):
     pass
 
 
+class ArticleProfile(Model):
+    id = models.IntegerField(primary_key=True)
+    article_id = models.IntegerField()
+    nickname = models.VarCharField()
+
+
+async def test_implicit_join_filter_count_alias_and_pagination():
+    engine = database()
+    engine.count = AsyncMock(return_value=3)
+    engine.all.return_value = [{"id": 7, "nickname": "editor"}]
+    with datasource_context({"main": engine}, default="main"):
+        query = (
+            Article.join(ArticleProfile, Article.id == ArticleProfile.article_id)
+            .select(Article.id, ArticleProfile.nickname.As("nickname"))
+            .where(Article.title.like("%Cloudoll%"))
+        )
+        assert await query.count() == 3
+        rows = await query.clone().order_by(Article.id.asc()).limit(2).offset(1).all()
+        assert rows == [{"id": 7, "nickname": "editor"}]
+    count_sql, count_params = engine.count.call_args.args
+    page_sql, page_params = engine.all.call_args.args
+    assert "JOIN" in page_sql and "nickname" in page_sql
+    assert "ORDER BY" in page_sql and "LIMIT" in page_sql
+    assert "LIMIT" not in count_sql and "ORDER BY" not in count_sql
+    assert "%Cloudoll%" in count_params and "%Cloudoll%" in page_params
+    assert "%Cloudoll%" not in page_sql
+
+
 def database():
     return SimpleNamespace(
         driver="mysql",

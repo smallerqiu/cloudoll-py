@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from cloudoll.orm import create_engine
+from cloudoll.orm import create_engine, datasource_context
 from cloudoll.orm.base import QueryTypes
 from cloudoll.orm.dialects import dialect_for
 from cloudoll.orm.engine import TransactionError
@@ -14,6 +14,288 @@ from cloudoll.orm.model import Model, models
 from cloudoll.orm.parse import parse_coon
 
 pytestmark = pytest.mark.integration
+
+
+async def test_alias_cte_union_and_upsert(database):
+    if database.driver.startswith("aws"):
+        pytest.skip("Advanced query sources are verified on native engines")
+
+    class Item(Model):
+        __table__ = "cloudoll_sources_" + uuid4().hex
+        id = models.IntegerField(primary_key=True)
+        parent_id = models.IntegerField()
+        amount = models.IntegerField()
+        code = models.VarCharField()
+
+    table = dialect_for(database.driver).identifier(Item.__table__)
+    await database.query(
+        f"CREATE TABLE {table} (id INTEGER PRIMARY KEY, parent_id INTEGER, amount INTEGER, code VARCHAR(40) UNIQUE)",
+        query_type=QueryTypes.UPDATE,
+    )
+    try:
+        with datasource_context({"main": database}, default="main"):
+            await Item.insert_batch(
+                [
+                    {"id": 1, "parent_id": None, "amount": 10, "code": "one"},
+                    {"id": 2, "parent_id": 1, "amount": 20, "code": "two"},
+                    {"id": 3, "parent_id": 1, "amount": 30, "code": "three"},
+                ]
+            )
+            parent = Item.alias("parent")
+            child = Item.alias("child")
+            rows = await (
+                child.query()
+                .join(parent, child.c.parent_id == parent.c.id)
+                .select(child.c.id, parent.c.amount.As("parent_amount"))
+                .order_by(child.c.id.asc())
+                .all()
+            )
+            assert rows == [
+                {"id": 1, "parent_amount": None},
+                {"id": 2, "parent_amount": 10},
+                {"id": 3, "parent_amount": 10},
+            ]
+            assert (await child.query().where(child.c.id == 2).one())["amount"] == 20
+            related = parent.query().where(parent.c.id == child.c.parent_id)
+            assert await child.query().where_exists(related).count() == 2
+            totals = (
+                Item.select(Item.parent_id, Item.amount.sum().As("total"))
+                .where(Item.parent_id.not_null())
+                .group_by(Item.parent_id)
+                .having(Item.amount.sum() > 25)
+                .cte("totals")
+            )
+            query = totals.query().select(
+                totals.c.parent_id, (totals.c.total + 1).As("total")
+            )
+            assert await query.count() == 1
+            assert await query.all() == [{"parent_id": 1, "total": 51}]
+            rows = await (
+                Item.join(totals, Item.id == totals.c.parent_id, kind="inner")
+                .select(Item.code, totals.c.total)
+                .all()
+            )
+            assert rows == [{"code": "one", "total": 50}]
+            next_cte = totals.query().where(totals.c.total > 40).cte("next_totals")
+            assert await next_cte.query().count() == 1
+            first = (
+                Item.select(Item.id, Item.amount)
+                .where(Item.id <= 2)
+                .order_by(Item.id.asc())
+                .limit(2)
+            )
+            second = Item.select(Item.id, Item.amount).where(Item.id >= 2)
+            union = first.union(second)
+            assert await union.count() == 3
+            assert await union.clone().order_by(Item.id.asc()).limit(1).offset(
+                1
+            ).all() == [{"id": 2, "amount": 20}]
+            assert await first.union_all(second).count() == 4
+            assert await first.union_all(second).distinct().count() == 3
+            renamed = (
+                Item.select(Item.id.As("item_id"))
+                .where(Item.id == 1)
+                .union(Item.select(Item.id.As("other_id")).where(Item.id == 2))
+            )
+            assert await renamed.where(renamed.c.item_id > 1).all() == [{"item_id": 2}]
+            assert await union.where(Item.amount > 15).count() == 2
+            combined = first.union(second).cte("combined")
+            assert await combined.query().where(combined.c.id > 1).count() == 2
+            # Both branches containing WITH and branch-local paging remain valid.
+            assert await next_cte.query().union_all(next_cte.query()).count() == 2
+            assert await Item.upsert(
+                {"id": 4, "amount": 40, "code": "four"}, update_fields=["amount"]
+            )
+            assert await Item.upsert(
+                {"id": 4, "amount": 45, "code": "ignored"}, update_fields=["amount"]
+            )
+            row = await Item.where(Item.id == 4).one_dict()
+            assert row["amount"] == 45 and row["code"] == "four"
+            target = (
+                {"conflict_fields": ["code"]} if database.driver == "postgres" else {}
+            )
+            await Item.upsert(
+                {"id": 5, "amount": 50, "code": "four"},
+                update_fields=["amount"],
+                **target,
+            )
+            assert not await Item.where(Item.id == 5).exists()
+            assert (await Item.where(Item.id == 4).one_dict())["amount"] == 50
+            await asyncio.gather(
+                *(
+                    Item.upsert(
+                        {"id": 6, "amount": amount, "code": "six"},
+                        update_fields=["amount"],
+                    )
+                    for amount in (60, 61)
+                )
+            )
+            assert await Item.where(Item.id == 6).count() == 1
+            assert (await Item.where(Item.id == 6).one_dict())["amount"] in (60, 61)
+            with pytest.raises(ValueError, match="rollback"):
+                async with Item.transaction():
+                    await Item.upsert({"id": 4, "amount": 99}, update_fields=["amount"])
+                    raise ValueError("rollback")
+            assert (await Item.where(Item.id == 4).one_dict())["amount"] == 50
+    finally:
+        await database.query("DROP TABLE " + table, query_type=QueryTypes.UPDATE)
+
+
+async def test_entity_join_subquery_atomic_update_and_locks(database):
+    if database.driver.startswith("aws"):
+        pytest.skip("New query capabilities are verified on native engines")
+
+    class Parent(Model):
+        __table__ = "cloudoll_parent_" + uuid4().hex
+        id = models.IntegerField(primary_key=True)
+        balance = models.IntegerField()
+
+    class Child(Model):
+        __table__ = "cloudoll_child_" + uuid4().hex
+        id = models.IntegerField(primary_key=True)
+        parent_id = models.IntegerField()
+        amount = models.IntegerField()
+
+    dialect = dialect_for(database.driver)
+    parent, child = (
+        dialect.identifier(Parent.__table__),
+        dialect.identifier(Child.__table__),
+    )
+    await database.query(
+        f"CREATE TABLE {parent} (id INTEGER PRIMARY KEY, balance INTEGER)",
+        query_type=QueryTypes.UPDATE,
+    )
+    try:
+        await database.query(
+            f"CREATE TABLE {child} (id INTEGER PRIMARY KEY, parent_id INTEGER, amount INTEGER)",
+            query_type=QueryTypes.UPDATE,
+        )
+        try:
+            with datasource_context({"main": database}, default="main"):
+                await Parent.insert_batch(
+                    [{"id": 1, "balance": 100}, {"id": 2, "balance": 200}]
+                )
+                await Child.insert_batch(
+                    [
+                        {"id": 1, "parent_id": 1, "amount": 10},
+                        {"id": 2, "parent_id": 1, "amount": 20},
+                    ]
+                )
+                assert (
+                    len(
+                        await Parent.join(Child, Parent.id == Child.parent_id)
+                        .select(Parent.id, Child.amount)
+                        .all()
+                    )
+                    == 3
+                )
+                assert (
+                    len(
+                        await Parent.join(
+                            Child, Parent.id == Child.parent_id, kind="inner"
+                        )
+                        .select(Parent.id, Child.amount)
+                        .all()
+                    )
+                    == 2
+                )
+                assert (
+                    len(
+                        await Child.join(
+                            Parent, Child.parent_id == Parent.id, kind="right"
+                        )
+                        .select(Parent.id, Child.amount)
+                        .all()
+                    )
+                    == 3
+                )
+                distinct = (
+                    Parent.join(Child, Parent.id == Child.parent_id, kind="inner")
+                    .select(Parent.id)
+                    .distinct()
+                )
+                assert await distinct.count() == 1
+                assert await distinct.all() == [{"id": 1}]
+                grouped = (
+                    Child.select(Child.parent_id, Child.amount.sum().As("total"))
+                    .group_by(Child.parent_id)
+                    .having(Child.amount.sum() > 15)
+                )
+                assert await grouped.count() == 1
+                assert (await grouped.one_dict())["total"] == 30
+                inner = Child.select(Child.parent_id).where(Child.amount > 15)
+                assert await Parent.where(Parent.id.In(inner.subquery())).select(
+                    Parent.id
+                ).all() == [{"id": 1}]
+                related = Child.where(Child.parent_id == Parent.id)
+                assert await Parent.where_exists(related).select(Parent.id).all() == [
+                    {"id": 1}
+                ]
+                assert await Parent.where_exists(related, negated=True).select(
+                    Parent.id
+                ).all() == [{"id": 2}]
+                assert (
+                    await Parent.select(
+                        Child.select(Child.amount.sum()).subquery().As("total")
+                    ).one_dict()
+                )["total"] == 30
+                assert await Parent.where(Parent.id == 2).exists()
+                assert not await Parent.where(Parent.id == 99).exists()
+                await Parent.where((Parent.id == 1) & (Parent.balance >= 10)).update(
+                    balance=Parent.balance - 10
+                )
+                assert (
+                    await Parent.where(Parent.id == 1).one_model()
+                ).balance.value == 90
+
+                ready = asyncio.Event()
+
+                # Spawn before entering the transaction: the worker must not inherit its ownership.
+                async def contender():
+                    await ready.wait()
+                    async with Parent.transaction():
+                        rows = (
+                            await Parent.order_by(Parent.id.asc())
+                            .for_update(skip_locked=True)
+                            .all()
+                        )
+                        assert [row["id"] for row in rows] == [2]
+                    with pytest.raises(Exception) as failure:
+                        async with Parent.transaction():
+                            await (
+                                Parent.where(Parent.id == 1)
+                                .for_update(nowait=True)
+                                .one_dict()
+                            )
+                    assert (
+                        getattr(failure.value, "sqlstate", None) == "55P03"
+                        or getattr(failure.value, "pgcode", None) == "55P03"
+                        or failure.value.args[0] == 3572
+                    )
+
+                worker = asyncio.create_task(contender())
+                try:
+                    async with Parent.transaction():
+                        assert (
+                            await Parent.where(Parent.id == 1).for_update().one_dict()
+                        )["id"] == 1
+                        ready.set()
+                        await asyncio.wait_for(worker, timeout=10)
+                finally:
+                    if not worker.done():
+                        worker.cancel()
+                        await asyncio.gather(worker, return_exceptions=True)
+                with pytest.raises(ValueError):
+                    async with Parent.transaction():
+                        await Parent.where(Parent.id == 1).update(
+                            balance=Parent.balance + 5
+                        )
+                        raise ValueError("rollback")
+                assert (await Parent.where(Parent.id == 1).one_dict())["balance"] == 90
+        finally:
+            await database.query("DROP TABLE " + child, query_type=QueryTypes.UPDATE)
+    finally:
+        await database.query("DROP TABLE " + parent, query_type=QueryTypes.UPDATE)
 
 
 @pytest.fixture(params=["mysql", "postgres", "aws-mysql", "aws-postgres"])

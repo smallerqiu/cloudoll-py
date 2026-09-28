@@ -1,5 +1,32 @@
 # Changelog
 
+## 4.3.0
+
+### ORM queries and writes
+
+- Add explicit LEFT/INNER/RIGHT JOIN kinds, query-level DISTINCT, `one_dict()`
+  for projected/aggregate rows, and non-consuming `exists()` checks.
+- Add parameterized scalar/IN and EXISTS/NOT EXISTS subqueries with snapshot
+  semantics and datasource/dialect compatibility checks.
+- Add read-only table aliases for self-joins, non-recursive CTEs, and
+  UNION/UNION ALL with branch-local and outer pagination semantics.
+- Add atomic expression-valued updates and transaction-owned `for_update()`
+  row locks, including mutually exclusive NOWAIT and SKIP LOCKED options.
+- Add single-statement `upsert()` with explicit update fields; PostgreSQL
+  supports conflict targets, while MySQL explicitly rejects that option.
+- Export `Relation` and `Subquery` types. Reject writes against aliases,
+  CTE/UNION sources and joined queries rather than silently ignoring sources.
+
+### Documentation and verification
+
+- Expand grouping/HAVING, aggregates, default datasource usage and query
+  result contracts. Normal application CRUD defaults to entity APIs without
+  unnecessary `.use(db)` or handwritten SQL.
+- Update bundled AI guidance and version-matched examples, including locking,
+  unique constraints, snapshots and unsupported advanced combinations.
+- Add MySQL 8.4/PostgreSQL 16 integration coverage for query sources, upserts,
+  concurrency, rollback and row-lock contention. Aurora remains unverified.
+
 ## 4.2.1
 
 - Correct the AI initialization regression test to compare the original bytes
