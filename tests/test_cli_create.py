@@ -2,6 +2,7 @@
 creation has to look like a failure: nothing half-written left behind, and a
 non-zero exit code for the script that called it."""
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -71,7 +72,6 @@ def test_the_bundled_template_creates_a_project_without_artifacts(
         "my shop",
         "shop;rm -rf",
         "shop$(whoami)",
-        "shop\\name",
     ],
 )
 def test_names_that_do_not_survive_a_shell_are_refused(tmp_path, monkeypatch, name):
@@ -79,6 +79,20 @@ def test_names_that_do_not_survive_a_shell_are_refused(tmp_path, monkeypatch, na
     with pytest.raises(ValueError, match="letters, digits"):
         create_project(name)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_a_backslash_separates_directories_only_on_windows(tmp_path, monkeypatch):
+    # POSIX reads `shop\name` as one odd filename and refuses it; on Windows the
+    # backslash is the directory separator, and both halves are plain names, so
+    # the request means the same thing as `shop/name`.
+    monkeypatch.chdir(tmp_path)
+    if os.sep == "\\":
+        create_project("shop\\name")
+        assert (tmp_path / "shop" / "name" / "config").is_dir()
+    else:
+        with pytest.raises(ValueError, match="letters, digits"):
+            create_project("shop\\name")
+        assert list(tmp_path.iterdir()) == []
 
 
 def test_a_project_in_another_directory_is_still_allowed(tmp_path, monkeypatch):

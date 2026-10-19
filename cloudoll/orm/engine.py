@@ -209,6 +209,16 @@ class AsyncEngine(SavepointMixin, MeteBase):
         if inspect.isawaitable(result):
             await result
 
+    async def _return_leased_connection(self, acquisition: asyncio.Future[Any]) -> None:
+        """Return a connection the pool granted after this waiter gave up.
+
+        An acquire timeout or a cancellation can land in the same loop step that
+        completed `pool.acquire()`. Nothing else holds that lease, so without
+        this the pool loses the connection for the lifetime of the process.
+        """
+        if acquisition.done() and not acquisition.cancelled():
+            await self._release(acquisition.result())
+
     async def _rollback(self, connection: Any) -> None:
         if connection.closed:
             return
@@ -245,10 +255,7 @@ class AsyncEngine(SavepointMixin, MeteBase):
         try:
             connection = await asyncio.wait_for(acquisition, self.acquire_timeout)
         except BaseException:
-            # Cancellation can land after the pool already handed a connection
-            # over; without this the lease never returns to the pool.
-            if acquisition.done() and not acquisition.cancelled():
-                await self._release(acquisition.result())
+            await self._return_leased_connection(acquisition)
             raise
         state = TransactionState(connection, asyncio.current_task())
         token = self._transaction.set(state)
@@ -382,8 +389,7 @@ class AsyncEngine(SavepointMixin, MeteBase):
         try:
             connection = await asyncio.wait_for(acquisition, self.acquire_timeout)
         except BaseException:
-            if acquisition.done() and not acquisition.cancelled():
-                await self._release(acquisition.result())
+            await self._return_leased_connection(acquisition)
             raise
         state = TransactionState(connection, asyncio.current_task(), streaming=True)
         token = self._transaction.set(state)

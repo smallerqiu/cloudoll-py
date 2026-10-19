@@ -1,6 +1,7 @@
 import asyncio
 import io
 import multiprocessing
+import os
 import subprocess
 import sys
 import threading
@@ -48,16 +49,26 @@ def test_tty_open_failure_does_not_catch_body_error(monkeypatch):
 def test_watch_filter_always_skips_logs_and_project_dirs():
     from watchfiles import Change
 
+    def watched(*parts: str) -> str:
+        # watchfiles reports a change with the platform separator and splits the
+        # path on it, so the filter is only ever seen with such paths.
+        return os.sep.join(parts)
+
     chosen = watch.CloudollFilter(("build", "dist"))
-    for path in ("logs/access.log", "build/x.py", "dist/app.js", ".venv/x.py"):
+    for path in (
+        watched("logs", "access.log"),
+        watched("build", "x.py"),
+        watched("dist", "app.js"),
+        watched(".venv", "x.py"),
+    ):
         assert not chosen(Change.modified, path), path
-    assert chosen(Change.modified, "controllers/home/index.py")
+    assert chosen(Change.modified, watched("controllers", "home", "index.py"))
     # The project list must not replace watchfiles' own defaults.
-    assert not chosen(Change.modified, "__pycache__/model.pyc")
-    assert not chosen(Change.modified, ".git/config")
+    assert not chosen(Change.modified, watched("__pycache__", "model.pyc"))
+    assert not chosen(Change.modified, watched(".git", "config"))
     default = watch.CloudollFilter()
-    assert not default(Change.modified, "logs/access.log")
-    assert default(Change.modified, "dist/app.js")
+    assert not default(Change.modified, watched("logs", "access.log"))
+    assert default(Change.modified, watched("dist", "app.js"))
 
 
 def test_development_server_uses_merged_host(monkeypatch):
@@ -435,7 +446,13 @@ async def test_development_start_survives_a_busy_neighbouring_port(
         await asyncio.sleep(0.5)
         assert process.poll() is None
         process.terminate()
-        assert await asyncio.to_thread(process.wait, 15) == 0
+        exit_code = await asyncio.to_thread(process.wait, 15)
+        if os.name == "posix":
+            # SIGTERM reaches the supervisor's own shutdown path, so stopping
+            # cleanly is part of the contract there. Windows terminates the
+            # process outright and reports the loader's status, not an exit code
+            # the application chose.
+            assert exit_code == 0
         child = process.stderr.read()
     finally:
         if process.poll() is None:
