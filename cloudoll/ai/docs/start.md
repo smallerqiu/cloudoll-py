@@ -9,7 +9,7 @@ path: /
 
 Cloudoll 是基于 aiohttp 的异步 Python Web 库，提供路由、模板、Session、ORM 和 CLI。
 
-> 本文档按 Cloudoll 4.3.0 源码更新，实际发布状态以 PyPI 为准。从 3.x 升级前，请先阅读[升级说明](/migration)，确认配置和 API 的兼容性变化。
+> 本文档按 Cloudoll 4.4.0 源码更新，实际发布状态以 PyPI 为准。从 3.x 升级前，请先阅读[升级说明](/migration)，确认配置和 API 的兼容性变化。
 
 ## 环境与安装
 
@@ -18,8 +18,8 @@ Cloudoll 是基于 aiohttp 的异步 Python Web 库，提供路由、模板、Se
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install 'cloudoll==4.3.0'
-python -m pip install 'cloudoll[mysql,postgres,cache]==4.3.0'
+python -m pip install 'cloudoll==4.4.0'
+python -m pip install 'cloudoll[mysql,postgres,cache]==4.4.0'
 ```
 
 Windows PowerShell 激活命令为 `.venv\Scripts\Activate.ps1`。只使用 Web 功能时不需要安装数据库 extras。
@@ -38,7 +38,9 @@ cd myapp
 cloudoll start -n myapp
 ```
 
-默认读取 `config/conf.local.yaml`，默认端口 9001。在生成的 `controllers/home/index.py` 中替换已有首页处理器（不要重复注册同一路由）：
+项目名的最后一段只能由字母、数字、下划线、点、短横线组成（不能带空格和 shell 元字符，也不能是 `.` 或 `..`）；它同时用作提示的 `-n` 服务名和 pid 文件名。名字不合法、目标目录已存在或复制中途出错都会报错并以退出码 2 结束，中途出错时刚建好的目录会被回收，不会留下半个项目。
+
+默认读取 `config/conf.local.yaml`，默认端口 9001。配置保留 `$CLOUDOLL_JWT_SECRET`、`$CLOUDOLL_SESSION_SECRET` 两个占位符，脚手架另在项目根目录把两个互不相同的随机密钥写入 `.env`（已被 `.gitignore` 忽略），新项目开箱就带有稳定的 Session 密钥；生产环境改用环境变量注入，不要提交 `.env`。`.env` 按当前工作目录读取，请在项目根目录启动。未设置 Session 密钥时框架退回进程本地随机密钥并告警，重启或多 worker 之间旧会话都会失效。在生成的 `controllers/home/index.py` 中替换已有首页处理器（不要重复注册同一路由）：
 
 ```python
 from cloudoll.web import get
@@ -54,7 +56,7 @@ curl http://127.0.0.1:9001/
 
 响应包含 `name`、默认的 `message: "OK"`、`code: 200` 和动态生成的毫秒级 `timestamp`。返回字符串、列表等也会包装在 `data` 中；如果需要原样 JSON，返回 `aiohttp.web.json_response(...)`。纯文本使用 `render(text="Hello")`。
 
-开发模式会监听 Python 文件变化并重启工作进程，另使用业务端口加一的辅助端口；它不是生产进程守护工具。配置文件修改后请重启。
+开发模式会监听 Python 文件变化并重启工作进程；只有工作进程监听业务端口，监督进程不开辅助端口，业务端口加一被其他程序占用也不影响启动。它不是生产进程守护工具。配置文件修改后请重启。
 
 ## 手动创建最小应用
 

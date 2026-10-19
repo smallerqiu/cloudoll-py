@@ -1,5 +1,95 @@
 # Changelog
 
+简体中文见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
+
+## 4.4.0
+
+Defect-fix release; backward compatible. Python 3.9+ remains supported.
+
+### Database
+
+- `for_update()` row locks now require your own transaction. Outside one, the lock
+  was released by the commit that `for_update()` issued itself and protected
+  nothing; such a call now raises instead of silently doing nothing.
+- A transaction cancelled or timed out while waiting for a connection gives that
+  connection back to the pool, so long-running services stop losing connections.
+- Model fields are hashable again: columns can go into sets and serve as dict
+  keys (deduplicating columns, excluding groups of fields).
+- `SUM(DISTINCT column)` and similar aggregate deduplication now happens inside
+  the aggregate, so values are deduplicated before being combined, and a literal
+  inside an aggregate is no longer bound twice.
+- URL query parameters in an AWS datasource string are no longer handed to the
+  driver as unknown connection options.
+
+### Web and templates
+
+- A response that has already started streaming keeps its body when an error
+  occurs; the JSON error handler no longer rewrites it. Streaming and SSE
+  endpoints stay intact.
+- Page responses no longer repeat `charset` in `Content-Type`.
+- `session` options (`key`, `max_age`, `httponly`, `secure`, `domain`, `path`,
+  `samesite`) apply to encrypted cookie, Redis and Memcached storage alike.
+- `render_view()` keywords are `Response` options only, and the template context
+  is the positional mapping. A stray keyword now raises `TypeError` instead of
+  being silently merged into the context.
+- Development servers bind to 127.0.0.1 by default and no longer occupy
+  `port + 1`.
+- `server.ignore_dirs` is honoured for directories such as `logs`, so writing logs
+  no longer triggers a reload.
+- The scaffolded authorization middleware now matches its documentation: it is an
+  async decorator, lets static paths through, and lets downstream failures reach
+  the error layer instead of being flattened into a 500 that echoes the exception
+  text.
+
+### Command line and new projects
+
+- `cloudoll create` no longer copies `__pycache__` and `.pyc` files into the new
+  project.
+- The last component of a project name must be letters, digits, underscore, dot
+  or dash; names with spaces or shell characters are refused, as is an existing
+  target directory.
+- A failed creation exits with a non-zero status and removes the half-written
+  project instead of leaving it behind.
+- New projects write independent JWT and session keys to `.env`, which
+  `.gitignore` keeps out of version control. Local starts no longer warn about a
+  random process-local session key, and logins survive a restart or an added
+  worker.
+
+### Mail and utilities
+
+- Building a `cloudoll.mail.smtp.Client` no longer reaches the network, and one
+  client stays usable across sends and server idle timeouts: each `send()` opens
+  its own connection, carries one copy of the body, and closes the connection even
+  when the send fails.
+- Missing credentials and an empty recipient address now raise a readable error
+  before anything is sent.
+- `cloudoll.utils` - reversible encryption, keyed digests, random strings and the
+  distributed ID generator - is now official API with a
+  [utilities](https://cloudoll.chuchur.com/utils) page and regression tests. None
+  of them is a password hash; store user passwords with bcrypt or argon2.
+- New [mail](https://cloudoll.chuchur.com/mail) page documents sending limits
+  (SMTPS 465 only, no STARTTLS, no retry or queue). The dead POP3 draft under
+  `cloudoll/mail` is gone - Cloudoll does not receive mail.
+
+### Upgrade notes
+
+- `for_update()` outside a transaction and unexpected `render_view()` keywords now
+  raise rather than misbehaving quietly; audit those two call shapes before
+  upgrading.
+- `cloudoll create` rejects names it used to accept, such as `my shop`, because
+  they reached a shell unsafely.
+- Projects created before this release keep an old `config/conf.local.yaml`
+  without a session key; add `session.secret_key` (or set
+  `CLOUDOLL_SESSION_SECRET`) so sessions survive restarts and multiple workers.
+- Existing `.env` files need the new `CLOUDOLL_SESSION_SECRET` entry; `.env` has
+  always been ignored by the project's `.gitignore`.
+
+### Documentation
+
+- JWT middleware examples use `web.RequestKey` instead of a plain string key, so
+  aiohttp stops warning about it.
+- The quick start and session pages describe how a new project injects its keys.
+
 ## 4.3.0
 
 ### ORM queries and writes
@@ -56,9 +146,6 @@ Backward-compatible feature release. Pydantic 2 (`>=2.0,<3`) is now a core
 runtime dependency. Existing handlers and explicit ORM engine bindings remain
 supported. Python 3.9+ remains supported by the CI matrix.
 
-Publication date is recorded by the release tag/PyPI; preparing these files does
-not publish the package.
-
 - Correct lifecycle callback and JWT payload type declarations for strict
   checking with current dependency annotations.
 - Include HTTP method and actual request path in exception logs; emit 4xx access
@@ -76,8 +163,8 @@ not publish the package.
 
 ## 4.0.0
 
-Release notes for 4.0.0. Publication date is recorded by the release tag/PyPI;
-preparing these files does not publish the package.
+This release contains breaking changes to configuration, security, ORM and the
+application lifecycle. Read the migration guide before upgrading.
 
 ### Breaking changes and migration
 

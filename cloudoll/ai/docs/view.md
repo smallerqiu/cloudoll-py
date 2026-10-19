@@ -60,4 +60,6 @@ server:
 
 生产环境可通过反向代理或 CDN 提供静态资源。不要将私有上传文件、配置和密钥放进公开静态目录。
 
-`render_view("404.html", {"message": "未找到"}, status=404)` 可设置错误页状态。更多错误处理见[中间件](/middleware)。
+`render_view("404.html", {"message": "未找到"}, status=404)` 可设置错误页状态。页面响应头默认是 `Content-Type: text/html; charset=utf-8`；显式传入 `content_type` 时以传入值为准，只保留一份 charset。
+
+模板上下文只能用位置参数传一个字典，关键字参数一律是 `Response` 的选项（`status`、`reason`、`headers`、`content_type`、`charset`）；`body`、`text` 由模板本身产生，传入会立刻抛 `TypeError` 并说明上下文要用位置参数。因此 `render_view("list.html", name="cloudoll")` 不是 Jinja 的写法，应写成 `render_view("list.html", {"name": "cloudoll"})`。更多错误处理见[中间件](/middleware)。

@@ -23,6 +23,8 @@ Aurora is explicitly excluded from runtime tests. PyPy has no CI verification.
 ## Release checklist
 
 1. Review migrations, changelog and template/core responsibility boundaries.
+   `CHANGELOG.md` and `CHANGELOG.zh-CN.md` are maintained in the same commit;
+   releasing turns each `Unreleased`/`未发布` heading into the version heading.
 2. Set `cloudoll.__version__` to the intended release, build in a clean checkout,
    and verify the release tag equals `v` plus the packaged version. Unreleased
    changelog entries alone never determine the published version.

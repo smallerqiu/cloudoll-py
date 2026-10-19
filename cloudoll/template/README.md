@@ -1,9 +1,19 @@
-# Cloudoll 4.3.0 example project
+# Cloudoll 4.4.0 example project
 
 This project is a starting point, not a production authorization system. Replace
 demo credentials and implement your application's authentication, permissions
 and upload policy. Install requirements.txt, configure independent secrets and
 read the [deployment documentation](https://cloudoll.chuchur.com/deployment).
+
+## Secrets
+
+`config/conf.local.yaml` references `$CLOUDOLL_JWT_SECRET` and
+`$CLOUDOLL_SESSION_SECRET`; the generated `.env` in the project root holds both
+local values, and `.gitignore` keeps it untracked. Copy `.env.example` for the
+variable names only. In production, inject the variables from the shell,
+container or process manager (`Environment=` in systemd, `ENV=` in supervisor)
+and do not ship a `.env` file: variables read from a local `.env` override
+same-named process variables.
 
 # Starting dev server
 

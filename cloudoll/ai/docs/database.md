@@ -6,7 +6,7 @@ icon: database
 
 # 数据库与 ORM
 
-本页介绍 Cloudoll 4.3.0 的原生 MySQL/PostgreSQL 接口，包括保存点、流式查询与 SQL 日志。从 3.x 升级请先阅读[升级说明](/migration)。
+本页介绍 Cloudoll 4.4.0 的原生 MySQL/PostgreSQL 接口，包括保存点、流式查询与 SQL 日志。从 3.x 升级请先阅读[升级说明](/migration)。
 
 ## 应用代码默认使用实体
 
@@ -26,7 +26,7 @@ Python API 的准确拼写是 `order_by` 和大写 `As`，不是 `orderby` / `as
 ## 安装与连接
 
 ```sh
-python -m pip install 'cloudoll[mysql,postgres]==4.3.0'
+python -m pip install 'cloudoll[mysql,postgres]==4.4.0'
 ```
 
 Web 应用在 [database 配置](/config)中声明连接，由框架建立、关闭，通过 `request.app.db.别名` 获取。不要每个请求创建一个池，也不要在请求结束时关闭共享池。
@@ -251,7 +251,8 @@ present = await User.where(User.email == "alice@example.test").exists()
 ```
 
 `join(..., kind="left" | "inner" | "right")` 默认仍是 LEFT JOIN，保持兼容。
-`distinct()` 对整行投影去重；字段 `User.id.distinct().count()` 生成 COUNT(DISTINCT ...)。
+`distinct()` 对整行投影去重；字段 `User.id.distinct().count()` 生成 COUNT(DISTINCT ...)，
+聚合后的 `User.amount.sum().distinct()` 同样生成 SUM(DISTINCT ...)，去重的是聚合输入值而不是聚合结果行。
 `one_dict()` 返回字典或 None，不把别名/聚合列装进实体；原有 one/one_model 返回规则不变。
 `exists()` 返回布尔值，保留筛选、分组和 offset，最多读取一行且不消费原查询；它不保证并发唯一性。
 `count()` 忽略分页、排序和行锁，保留去重、分组与 HAVING。
@@ -411,7 +412,8 @@ async with Inventory.transaction():
 
 `for_update(nowait=True)` 遇到锁竞争立即报错；
 `for_update(skip_locked=True)` 跳过已锁行，适合任务领取，不适合完整性报表。两选项互斥。
-调用方必须显式管理事务；不会自动开启事务或重试。锁查询不能使用只读 stream()。
+调用方必须显式管理事务；事务外执行锁查询直接抛 TransactionError，不会自开事务后立刻提交，也不会自动重试。
+锁查询不能使用只读 stream()。
 聚合、DISTINCT、外联表的锁定限制由数据库决定，示例只锁普通实体行。
 新增能力在原生 MySQL 8.4 / PostgreSQL 16 验证，不将该结果等同于 Aurora 验证。
 

@@ -2,11 +2,11 @@
 
 [English](README.md) | 简体中文
 
-生产配置、资源关闭期限、JWT 验证、JSON 日志与监控接入见 [生产运行契约](docs/production.md)；版本兼容及发布检查见 [维护政策](docs/maintenance.md)，安全问题报告见 [SECURITY.md](SECURITY.md)。
+生产配置、资源关闭期限、JWT 验证、JSON 日志与监控接入见 [生产运行契约](docs/production.md)；版本兼容及发布检查见 [维护政策](docs/maintenance.md)；各版本变化见 [更新日志](CHANGELOG.zh-CN.md)，安全问题报告见 [SECURITY.md](SECURITY.md)。
 
 Cloudoll 是一个基于 aiohttp 的 Python Web 开发库，提供路由自动注册、中间件、模板渲染、会话管理、JWT、数据库访问及命令行脚手架，帮助快速构建 Web 应用和微服务。
 
-本文适用于 Cloudoll 4.3.0。从 3.x 升级前请阅读下方迁移说明。
+本文适用于 Cloudoll 4.4.0。从 3.x 升级前请阅读下方迁移说明。
 
 ## AI 辅助开发
 
@@ -25,10 +25,10 @@ Cloudoll 是一个基于 aiohttp 的 Python Web 开发库，提供路由自动�
 
 ## 安装
 
-安装 4.3.0：
+安装 4.4.0：
 
 ```sh
-python -m pip install 'cloudoll==4.3.0'
+python -m pip install 'cloudoll==4.4.0'
 ```
 
 在当前仓库目录安装源码：
@@ -41,16 +41,16 @@ python -m pip install -e .
 
 ```sh
 # MySQL
-python -m pip install 'cloudoll[mysql]==4.3.0'
+python -m pip install 'cloudoll[mysql]==4.4.0'
 
 # PostgreSQL
-python -m pip install 'cloudoll[postgres]==4.3.0'
+python -m pip install 'cloudoll[postgres]==4.4.0'
 
 # AWS 数据库驱动
-python -m pip install 'cloudoll[aws]==4.3.0'
+python -m pip install 'cloudoll[aws]==4.4.0'
 
 # Redis / Memcached 会话或 Redis 数据库
-python -m pip install 'cloudoll[cache]==4.3.0'
+python -m pip install 'cloudoll[cache]==4.4.0'
 ```
 
 源码开发时可用 `python -m pip install -e '.[mysql,postgres,cache,dev]'` 安装。
@@ -89,7 +89,7 @@ myapp/
 └── templates/
 ```
 
-脚手架中的鉴权中间件和登录接口用于演示。正式使用前，应替换示例账号、密码和业务鉴权逻辑。新建项目会获得独立的 JWT 密钥。
+脚手架中的鉴权中间件和登录接口用于演示。正式使用前，应替换示例账号、密码和业务鉴权逻辑。新建项目会在 `.env` 里获得相互独立的 JWT 与 Session 密钥。
 
 ### 手动创建应用
 
@@ -546,8 +546,8 @@ cloudoll restart -n myapp
 python -m pip install -e '.[mysql,postgres,cache,dev]'
 python -m pytest -q -m 'not integration' -k 'not aws'
 python -m build
-python tests/check_wheel.py dist/cloudoll-4.3.0-py3-none-any.whl
-python tests/check_release.py dist/cloudoll-4.3.0-py3-none-any.whl
+python tests/check_wheel.py dist/cloudoll-4.4.0-py3-none-any.whl
+python tests/check_release.py dist/cloudoll-4.4.0-py3-none-any.whl
 ```
 
 最后一条命令用于验证构建出的 wheel，版本号变化后请调整文件名。测试使用模拟数据库连接及本机 HTTP 服务；真实数据库连接和 AWS 故障切换需要单独的集成环境。

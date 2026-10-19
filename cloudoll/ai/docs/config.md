@@ -14,7 +14,7 @@ CLI 默认读取项目根目录的 `config/conf.local.yaml`。选择生产配置
 cloudoll start -n myapp -env prod -m production
 ```
 
-`-env prod` 选择文件，`-m production` 选择运行模式，两者不是同一个开关。通过 `--host` / `--port` 可覆盖监听地址；未传入时使用配置。入口参数 `-e app` 是模块名，不是 `app.py`。
+`-env prod` 选择文件，`-m production` 选择运行模式，两者不是同一个开关。通过 `--host` / `--port` 可覆盖监听地址；未传入时使用配置。配置也缺省时，监听地址为本机回环 `127.0.0.1`、端口 `9001`；需要对外提供服务时显式写入 `server.host: 0.0.0.0` 或使用 `--host 0.0.0.0`。开发模式只有工作进程监听业务端口，监督进程不占用其他端口。入口参数 `-e app` 是模块名，不是 `app.py`。
 
 配置必须是 YAML 映射；加载时使用安全 YAML 解析，并通过 EnvYAML 严格展开环境变量。默认情况下，缺少引用的环境变量会报错。
 

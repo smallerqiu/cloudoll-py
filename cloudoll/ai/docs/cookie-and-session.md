@@ -78,9 +78,14 @@ session:
   max_age: 86400
   httponly: true
   secure: false
+  domain: .example.com
+  path: /
+  samesite: Lax
 ```
 
-也可只在进程环境设置 CLOUDOLL_SESSION_SECRET。未配置时生成应用进程本地随机密钥，重启会使旧 Session 失效，多进程间也不能共享；生产必须使用一致的随机密钥。更换密钥会使原 Cookie 失效。
+`domain`、`path`、`samesite` 属于 Session Cookie 本身，Cookie、Redis、Memcached 三种存储都读取同一份配置；Redis 存储下不要把这三个键写进 `redis` 子配置。`samesite` 只接受 `Strict`、`Lax`、`None`；`None` 表示不下发该属性，使用浏览器默认策略。`path` 决定浏览器在哪些路径回传 Session Cookie，改成子路径后原路径下的请求将不再带会话。HTTPS 生产环境使用 `secure: true`，此时 `samesite: None` 还要求浏览器允许跨站发送，仅在确有跨站回调时使用。
+
+`cloudoll create` 生成的项目已在 `config/conf.local.yaml` 写好 `session.secret_key: $CLOUDOLL_SESSION_SECRET`，并把随机密钥连同 JWT 密钥一起写入项目根目录的 `.env`，开箱即用、重启不掉线；`.env` 已被 `.gitignore` 忽略，生产环境改用环境变量注入同名变量。也可只在进程环境设置 CLOUDOLL_SESSION_SECRET。两处都没有时框架生成应用进程本地随机密钥并记录一次告警，重启会使旧 Session 失效，多进程间也不能共享；生产必须使用一致的随机密钥。更换密钥会使原 Cookie 失效。
 
 Cookie 容量有限，不要保存大对象、密码或完整业务数据。客户端加密 Cookie 模式无法仅靠退出操作撤销其他地方留存的旧 Cookie；需要集中撤销时使用服务端存储及业务级会话控制。
 

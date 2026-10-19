@@ -1,5 +1,5 @@
 {
-  "version": "4.3.0",
+  "version": "4.4.0",
   "documents": {
     "ai": {
       "source": "src/views/ai.md",
@@ -14,22 +14,22 @@
     "changelog": {
       "source": "src/views/changelog.md",
       "url": "https://cloudoll.chuchur.com/changelog",
-      "sha256": "8231f060f194c398a03d9489e1d4490509c579e72eee5e2c38bfecf4066e3205"
+      "sha256": "54ac62d5384e70db5911d882df93e5a3b8fef5d7983363cb342c4a0d905d2fc8"
     },
     "config": {
       "source": "src/views/config.md",
       "url": "https://cloudoll.chuchur.com/config",
-      "sha256": "54fca249346fcf733333cb4967297e91f6beeda567ff69e6c11195c2a21f54d4"
+      "sha256": "2e4f7c9dfbca9e71e179512e67ae188f608fdf4b84bdcb64a424fccfeb7603d0"
     },
     "cookie-and-session": {
       "source": "src/views/cookie-and-session.md",
       "url": "https://cloudoll.chuchur.com/session-cookie",
-      "sha256": "925541dd1084cd85c0534d9d677ef47d36cb4cfcc48fb18451cbf3be17b6114f"
+      "sha256": "cde3b0dfa8ea7d5fe60a5b5d9991950f35285c3813fbffb7535cc71d2649181a"
     },
     "database": {
       "source": "src/views/database.md",
       "url": "https://cloudoll.chuchur.com/database",
-      "sha256": "02bb709d17ce16bf3374e5c8999b24e6485273ecd81670ce8143da4bd17359c3"
+      "sha256": "aed56825418dd4f2aa1f587cee45f0a429905aef03428b4f2e6b5900ee8e9f39"
     },
     "deployment": {
       "source": "src/views/deployment.md",
@@ -59,12 +59,17 @@
     "jwt": {
       "source": "src/views/jwt.md",
       "url": "https://cloudoll.chuchur.com/jwt",
-      "sha256": "4885707ad38b0bc0837280ac73fafe938fa519e6368b62050ff4d54bc17886a1"
+      "sha256": "064cf676d691c9fc483f36e208c1e8bad297c7f7820e95be1499d969aa39686e"
     },
     "logs": {
       "source": "src/views/logs.md",
       "url": "https://cloudoll.chuchur.com/logs",
       "sha256": "c77341b6b6cfecffed238d142715312adf323b7b34e19942c2eb685de093ebc8"
+    },
+    "mail": {
+      "source": "src/views/mail.md",
+      "url": "https://cloudoll.chuchur.com/mail",
+      "sha256": "ac86bae1052165ceb125f8fb5efe5528b8186dbf0b8c09dc66d8082a842c4b3a"
     },
     "middleware": {
       "source": "src/views/middleware.md",
@@ -84,12 +89,17 @@
     "start": {
       "source": "src/views/start.md",
       "url": "https://cloudoll.chuchur.com/",
-      "sha256": "d3e3cf149ce952230b7b3057dce3aaa97405ebc21b489f7c0e2b80ee0dc4d89b"
+      "sha256": "d9c42da379ce7913f8c058f2fdede3251dd4ae61473fce1af1cb023abea04f27"
     },
     "structure": {
       "source": "src/views/structure.md",
       "url": "https://cloudoll.chuchur.com/structure",
       "sha256": "2b6714de924c28925c3e14c6eca4c0ffbad706aea40efd4fe731c8db7fc4ceb6"
+    },
+    "utils": {
+      "source": "src/views/utils.md",
+      "url": "https://cloudoll.chuchur.com/utils",
+      "sha256": "ae32b5636a6be0590f12caf72ebc5832aa62b6ce89973cb93f12b6840c16e19b"
     },
     "validation": {
       "source": "src/views/validation.md",
@@ -99,7 +109,7 @@
     "view": {
       "source": "src/views/view.md",
       "url": "https://cloudoll.chuchur.com/view",
-      "sha256": "73e0a004ba26390496cb12676d5e1fcfa4e4696e40664dad3808e31017b4ec49"
+      "sha256": "85a40f500a727c14d18d720496684d4117cb7896dcdd8a83f1248c419e2155f8"
     },
     "websockets": {
       "source": "src/views/websockets.md",

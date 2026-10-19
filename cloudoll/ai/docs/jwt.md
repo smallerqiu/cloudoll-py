@@ -42,7 +42,14 @@ def issue_token(request, authenticated_user_id: int) -> str:
 
 ```python
 # middlewares/auth.py
+from aiohttp import web
+
 from cloudoll.web import middleware, render_error
+
+# 请求上下文里的键用 web.RequestKey 声明：写字符串会触发 NotAppKeyWarning，
+# 键名也只在各文件里重复拼写，改名时编译器帮不上忙。
+USER: web.RequestKey[dict] = web.RequestKey("user")
+
 
 @middleware
 async def auth(request, handler):
@@ -60,11 +67,11 @@ async def auth(request, handler):
                 response = render_error("token 无效或已过期", status=401)
                 response.headers["WWW-Authenticate"] = "Bearer"
                 return response
-            request["user"] = user
+            request[USER] = user
     return await handler(request)
 ```
 
-业务路由用 `request["user"]` 读取已验证 payload；仍需检查账号状态、资源归属和权限。未认证通常返回 401；身份有效但无权限通常返回 403。
+业务路由用 `request[USER]` 读取已验证 payload；仍需检查账号状态、资源归属和权限。中间件没有写入时（路径不在 `/api/` 下、或该路由被 `sa_ignore` 放行）`request[USER]` 抛 `KeyError`，需要容忍未登录时读 `request.get(USER)`，未设置返回 None。未认证通常返回 401；身份有效但无权限通常返回 403。
 
 `@post("/api/login", sa_ignore=True)` 可由该中间件识别为免 token 路由，但登录接口仍必须验证凭证。签名错误、过期、缺失所需声明等无效凭证返回 None；缺少 key、非法 leeway 等配置错误会抛异常，不应统一当作用户登录失败。库不会自动发送认证 HTTP 响应。
 
