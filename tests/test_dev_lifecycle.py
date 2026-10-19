@@ -414,13 +414,38 @@ async def test_development_start_survives_a_busy_neighbouring_port(
         f"cli_main.get_config = lambda _: {{'server': {{'host': '127.0.0.1', 'port': {business_port}}}}}\n"
         "cli_main.run_app(mode='development', environment='local', entry=None, name='test')\n"
     )
+    # Capture to a file, not a pipe: the supervisor starts a server child that
+    # inherits the write end, and Windows stops only the supervisor, so a pipe
+    # would never reach EOF and reading it would hang the suite.
+    error_log = tmp_path / "supervisor.err"
+    sink = error_log.open("w", encoding="utf-8")
     process = subprocess.Popen(
         [sys.executable, "-c", script],
         cwd=tmp_path,
-        stderr=subprocess.PIPE,
+        stderr=sink,
         text=True,
     )
     child = None
+
+    def stop_supervisor() -> int:
+        if os.name == "nt":
+            # Windows has no shutdown signal for the supervisor's own cleanup
+            # path, and killing it alone leaves the server child running with
+            # the port held.
+            import psutil
+
+            try:
+                spawned = psutil.Process(process.pid).children(recursive=True)
+            except psutil.Error:
+                spawned = []
+            for grandchild in spawned:
+                try:
+                    grandchild.kill()
+                except psutil.Error:
+                    pass
+        process.terminate()
+        return process.wait(15)
+
     try:
 
         async def wait_until_ready() -> None:
@@ -433,7 +458,7 @@ async def test_development_start_survives_a_busy_neighbouring_port(
                 except OSError:
                     if process.poll() is not None:
                         raise AssertionError(
-                            f"supervisor exited early: {process.stderr.read()}"
+                            f"supervisor exited early: {error_log.read_text()}"
                         )
                 else:
                     writer.close()
@@ -445,20 +470,20 @@ async def test_development_start_survives_a_busy_neighbouring_port(
         await asyncio.wait_for(wait_until_ready(), 25)
         await asyncio.sleep(0.5)
         assert process.poll() is None
-        process.terminate()
-        exit_code = await asyncio.to_thread(process.wait, 15)
+        exit_code = await asyncio.to_thread(stop_supervisor)
         if os.name == "posix":
             # SIGTERM reaches the supervisor's own shutdown path, so stopping
             # cleanly is part of the contract there. Windows terminates the
             # process outright and reports the loader's status, not an exit code
             # the application chose.
             assert exit_code == 0
-        child = process.stderr.read()
+        child = error_log.read_text()
     finally:
         if process.poll() is None:
             process.kill()
             process.wait(5)
         neighbour.close()
+        sink.close()
     assert "Address already in use" not in child
     assert "Traceback" not in child
 
