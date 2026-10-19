@@ -61,6 +61,18 @@ def validate_config(config: dict[str, Any]) -> None:
             config["session"][key], bool
         ):
             raise ValueError(f"session.{key} must be a boolean")
+    session = config.get("session", {})
+    for key in ("key", "domain", "path"):
+        if key in session and (not isinstance(session[key], str) or not session[key]):
+            raise ValueError(f"session.{key} must be a non-empty string")
+    if "samesite" in session:
+        same_site = session["samesite"]
+        if not isinstance(same_site, str) or same_site.lower() not in {
+            "strict",
+            "lax",
+            "none",
+        }:
+            raise ValueError("session.samesite must be Strict, Lax or None")
     jwt_config = config.get("jwt", {})
     validate_policy(
         **{

@@ -121,9 +121,12 @@ class AwsEngine(SavepointMixin, MeteBase):
             raise TypeError("on_connect must be a synchronous callable")
         # Wrapper-level parameters and driver TLS/authentication options remain
         # extensible without silently dropping newly introduced AWS parameters.
+        # "query" is the raw URL query string; its parsed pairs already arrived
+        # with the rest of the options, and the connector rejects the residue.
         local = {
             "type",
             "url",
+            "query",
             "db",
             "username",
             "maxsize",

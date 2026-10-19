@@ -241,7 +241,15 @@ class AsyncEngine(SavepointMixin, MeteBase):
             return
         if self.pool is None:
             raise RuntimeError("Create the database engine first")
-        connection = await asyncio.wait_for(self.pool.acquire(), self.acquire_timeout)
+        acquisition = asyncio.ensure_future(self.pool.acquire())
+        try:
+            connection = await asyncio.wait_for(acquisition, self.acquire_timeout)
+        except BaseException:
+            # Cancellation can land after the pool already handed a connection
+            # over; without this the lease never returns to the pool.
+            if acquisition.done() and not acquisition.cancelled():
+                await self._release(acquisition.result())
+            raise
         state = TransactionState(connection, asyncio.current_task())
         token = self._transaction.set(state)
         try:

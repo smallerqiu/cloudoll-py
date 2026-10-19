@@ -22,9 +22,17 @@ server:
 # orm:
 #   default: mysql_db
 
-# session:
+# Session cookie is encrypted with this key. `cloudoll create` writes a random
+# value to .env; production injects the same variable name. Without a stable key
+# every restart and every worker invalidates existing sessions.
+session:
+  secret_key: $CLOUDOLL_SESSION_SECRET
+# Cookie lifetime in seconds and cookie scoping are optional:
 #   max_age: 604800
-#   secret_key: $CLOUDOLL_SESSION_SECRET
+#   domain: example.com
+#   path: /
+#   samesite: Lax
+# Server-side storage replaces the encrypted cookie:
 #   redis: redis://host:port/0
 #   memcached:
 #     host: 192.168.1.100

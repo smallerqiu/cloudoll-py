@@ -154,7 +154,13 @@ def list() -> None:
 @cli.command()
 @click.argument("project-name", type=click.Path(dir_okay=True), required=True)
 def create(project_name: str) -> None:
-    create_project(project_name)
+    """Create a new project from the Cloudoll template."""
+    try:
+        create_project(project_name)
+    except Exception as e:
+        error("Error: %s", e)
+        click.echo("input `cloudoll --help` for more helps.")
+        sys.exit(2)
 
 
 cli.add_command(ai)

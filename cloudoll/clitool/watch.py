@@ -19,8 +19,10 @@ from cloudoll.web import Application
 
 class CloudollFilter(DefaultFilter):
     def __init__(self, ignore_dirs: tuple[str, ...] = ()) -> None:
-        self.ignore_dirs = tuple(self.ignore_dirs) + ("logs",) + ignore_dirs
-        super().__init__()
+        # `logs` never belongs in a reload loop. The union goes through the
+        # documented keyword instead of assigning the attribute first, so the
+        # result cannot depend on when the base class reads `ignore_dirs`.
+        super().__init__(ignore_dirs=tuple(self.ignore_dirs) + ("logs",) + ignore_dirs)
 
 
 class WatchTask:
@@ -172,6 +174,39 @@ async def start_main_app(
         path or addresses,
         os.getpid(),
     )
+
+
+def run_supervisor(application: web.Application) -> None:
+    """Hold the watcher's application lifecycle open; it serves no requests.
+
+    The supervisor used to be handed to web.run_app, which needs a site and so
+    made the parent bind business port + 1: a socket that answered nothing, a
+    port taken from whatever else the developer was running, and a start failure
+    whenever that neighbour already held it. Running the runner with no site
+    keeps the same startup/cleanup boundaries and signal handling.
+    """
+
+    async def hold() -> None:
+        runner = web.AppRunner(
+            application,
+            handle_signals=True,
+            access_log=None,
+            shutdown_timeout=0.1,
+        )
+        await runner.setup()
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        finally:
+            await runner.cleanup()
+
+    try:
+        asyncio.run(hold())
+    except (web.GracefulExit, KeyboardInterrupt):
+        # Ctrl+C and a supervisor failure both leave through here; asyncio.run
+        # has already cancelled the hold task, so cleanup_ctx ran its teardown.
+        # The caller reads AppTask.failure to tell a clean stop from a crash.
+        return
 
 
 class AppTask(WatchTask):

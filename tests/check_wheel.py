@@ -18,6 +18,7 @@ def main():
             for asset in ("AGENTS.md", "manifest.json", "docs/structure.md", "skills/cloudoll/SKILL.md"):
                 assert "cloudoll/ai/" + asset in archive.namelist(), asset
             for required in (
+                ".gitignore",
                 "config/conf.local.yaml",
                 "controllers/home/index.py",
                 "controllers/api/index.py",
@@ -68,6 +69,10 @@ from click.testing import CliRunner
 assert "controllers" in read_document("structure")
 assert CliRunner().invoke(ai, ["read", "database"]).exit_code == 0
 assert (Path("sample") / "requirements.txt").read_text().strip() == "cloudoll==" + cloudoll.__version__
+# The packaged .gitignore reaches the project, and the JWT key stays in .env.
+assert (Path("sample") / ".gitignore").is_file()
+assert (Path("sample") / ".env").read_text().startswith("CLOUDOLL_JWT_SECRET=")
+assert "$CLOUDOLL_JWT_SECRET" in (Path("sample") / "config/conf.local.yaml").read_text()
 os.chdir("sample")
 
 async def verify():

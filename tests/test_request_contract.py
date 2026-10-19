@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import subprocess
@@ -8,7 +9,7 @@ from aiohttp import FormData, web
 from aiohttp.test_utils import TestClient, TestServer
 
 from cloudoll.logging import configure_logging, request_id
-from cloudoll.web import Application
+from cloudoll.web import Application, WebStream
 from cloudoll.web.request_data import HandlerAdapter
 
 
@@ -66,6 +67,156 @@ async def test_request_parsing_errors_and_trace_ids(tmp_path):
         assert response.status == 302 and response.headers["Location"] == "/body"
         response = await client.put("/body")
         assert response.status == 405 and "POST" in response.headers["Allow"]
+
+
+async def test_json_errors_never_replaces_a_response_already_on_the_wire(tmp_path):
+    application = Application(root=tmp_path)
+
+    @application.get("/stream")
+    async def stream(*, request):
+        out = await WebStream(request)
+        await out.write(b"partial")
+        raise RuntimeError("failed after the headers went out")
+
+    application.create(entry_model=None, config={"server": {"json_errors": True}})
+    runner = web.AppRunner(application.app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    try:
+        host, port = runner.addresses[0]
+        reader, writer = await asyncio.open_connection(host, port)
+        writer.write(b"GET /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n")
+        await writer.drain()
+        raw = await asyncio.wait_for(reader.read(-1), 5)
+        writer.close()
+    finally:
+        await runner.cleanup()
+    # One status line only: the stream keeps its own headers and the partial body,
+    # and the connection is torn down instead of receiving a second response.
+    assert raw.count(b"HTTP/1.") == 1
+    assert raw.startswith(b"HTTP/1.1 200")
+    assert b"partial" in raw
+    assert b'"error"' not in raw
+
+
+async def test_template_response_has_one_content_type(tmp_path):
+    from cloudoll.web import render_view
+
+    templates = tmp_path / "templates"
+    templates.mkdir()
+    (templates / "page.html").write_text("<p>你好 {{ name }}</p>", encoding="utf-8")
+
+    application = Application(root=tmp_path)
+
+    @application.get("/page")
+    async def page(*, request):
+        return render_view("page.html", {"name": request.qs.get("name", "访客")})
+
+    @application.get("/gone")
+    async def gone():
+        return render_view("page.html", {"name": "缺失"}, status=404)
+
+    @application.get("/xml")
+    async def xml():
+        return render_view(
+            "page.html", {"name": "类型"}, content_type="application/xml"
+        )
+
+    @application.get("/framed")
+    async def framed():
+        return render_view("page.html", {"name": "响应头"}, headers={"X-Frame": "page"})
+
+    application.create(entry_model=None, config={})
+    async with TestClient(TestServer(application.app)) as client:
+        response = await client.get("/page?name=小明")
+        assert response.status == 200
+        # One type and one charset; "text/html;charset=utf-8; charset=utf-8"
+        # made clients treat the page as unknown encoding.
+        assert response.headers["Content-Type"] == "text/html; charset=utf-8"
+        assert "你好 小明" in await response.text()
+        response = await client.get("/gone")
+        assert response.status == 404
+        assert response.headers["Content-Type"] == "text/html; charset=utf-8"
+        response = await client.get("/xml")
+        assert response.headers["Content-Type"] == "application/xml"
+        response = await client.get("/framed")
+        assert response.headers["X-Frame"] == "page"
+        assert response.headers["Content-Type"] == "text/html; charset=utf-8"
+
+
+def test_render_view_keywords_are_response_options():
+    from cloudoll.web import render_view
+
+    # "render_view('page.html', name='x')" reads like Jinja's own render(name=...)
+    # but used to fail inside aiohttp with "Response.__init__() got an unexpected
+    # keyword argument 'name'".
+    with pytest.raises(TypeError, match="pass the template context positionally") as (
+        caught
+    ):
+        render_view("page.html", name="x")
+    assert "Unexpected: name" in str(caught.value)
+    # body and text belong to the rendered template, not to the caller.
+    for reserved in ("body", "text"):
+        with pytest.raises(TypeError, match=rf"Unexpected: {reserved}"):
+            render_view("page.html", {"name": "x"}, **{reserved: "other"})
+
+
+async def test_session_cookie_honours_configured_attributes(tmp_path):
+    application = Application(root=tmp_path)
+
+    @application.get("/visit")
+    async def visit(request):
+        request.session["seen"] = True
+        return {"ok": True}
+
+    application.create(
+        entry_model=None,
+        config={
+            "session": {
+                "key": "APP_SESSION",
+                "secret_key": "s" * 48,
+                "domain": "example.test",
+                "path": "/app",
+                "samesite": "Strict",
+                "max_age": 600,
+            }
+        },
+    )
+    async with TestClient(TestServer(application.app)) as client:
+        response = await client.get("/visit")
+        assert response.status == 200
+    cookie = response.cookies["APP_SESSION"]
+    assert cookie["path"] == "/app"
+    assert cookie["domain"] == "example.test"
+    assert cookie["samesite"] == "Strict"
+    assert cookie["max-age"] == "600"
+    assert cookie["httponly"]
+
+
+async def test_session_cookie_defaults_stay_untouched(tmp_path):
+    application = Application(root=tmp_path)
+
+    @application.get("/visit")
+    async def visit(request):
+        request.session["seen"] = True
+        return {"ok": True}
+
+    application.create(entry_model=None, config={"session": {"secret_key": "s" * 48}})
+    async with TestClient(TestServer(application.app)) as client:
+        response = await client.get("/visit")
+    cookie = response.cookies["CLOUDOLL_SESSION"]
+    assert cookie["path"] == "/"
+    assert not cookie["domain"]
+    assert not cookie["samesite"]
+
+
+def test_invalid_session_cookie_config_is_rejected(tmp_path):
+    application = Application(root=tmp_path)
+    with pytest.raises(ValueError, match="session.samesite"):
+        application.create(entry_model=None, config={"session": {"samesite": "Always"}})
+    with pytest.raises(ValueError, match="session.path"):
+        application.create(entry_model=None, config={"session": {"path": ""}})
 
 
 async def test_legacy_errors_and_multipart_handler(tmp_path):

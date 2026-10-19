@@ -3,6 +3,7 @@ from __future__ import annotations
 __author__ = "Qiu / smallerqiu@gmail.com"
 
 import asyncio
+import inspect
 import json
 import time
 import uuid
@@ -103,10 +104,20 @@ def _sa_ignore_middleware() -> Middleware:
         json_errors = (
             getattr(request.app, "cloudoll_application").config.get("server") or {}
         ).get("json_errors", False)
+
+        def already_sent() -> bool:
+            # Same rule aiohttp applies to its own error page: once any byte of
+            # this response reached the transport, returning another response
+            # would write a second status line onto the same connection.
+            writer = getattr(request, "writer", None)
+            return writer is not None and writer.output_size > 0
+
         try:
             try:
                 response = await handler(request)
             except RequestValidationError as exc:
+                if already_sent():
+                    raise
                 response = web.json_response(
                     {
                         "error": {
@@ -119,7 +130,7 @@ def _sa_ignore_middleware() -> Middleware:
                     status=400,
                 )
             except web.HTTPException as exc:
-                if exc.status < 400 or not json_errors:
+                if exc.status < 400 or not json_errors or already_sent():
                     response = exc
                     exc.headers["X-Request-ID"] = trace_id
                     raise
@@ -151,7 +162,7 @@ def _sa_ignore_middleware() -> Middleware:
                     request.method,
                     request.rel_url.raw_path,
                 )
-                if not json_errors:
+                if not json_errors or already_sent():
                     raise
                 response = web.json_response(
                     {
@@ -344,10 +355,10 @@ class Application(object):
     def run(self, **kw: Any) -> None:
         """
         run app
-        :params prot default  9001
-        :params host default 127.0.0.1
+        :params port default 9001
+        :params host default 127.0.0.1; pass 0.0.0.0 to accept external traffic
         """
-        defaults = {"host": "0.0.0.0", "port": 9001, "path": None}
+        defaults = {"host": "127.0.0.1", "port": 9001, "path": None}
         conf = self.config.get("server", {})
         conf = chainMap(defaults, conf, kw)
         if self.app is None:
@@ -615,15 +626,40 @@ def render(**kw: Any) -> Response:
     return Response(**kw)
 
 
+# Keyword arguments of render_view() configure the Response; the template
+# context is positional, because Jinja's own render() is called with *args.
+# Reading the names off Response keeps the list honest as aiohttp changes.
+# body and text stay out: render_view() writes the body from the template.
+_RESPONSE_OPTIONS = frozenset(
+    name
+    for name, argument in inspect.signature(Response).parameters.items()
+    if argument.kind is inspect.Parameter.KEYWORD_ONLY
+) - {"body", "text"}
+
+
 def render_view(template: str, *args: Any, **kw: Any) -> Response:
-    body = None
+    unexpected = set(kw) - _RESPONSE_OPTIONS
+    if unexpected:
+        raise TypeError(
+            "render_view() keyword arguments are Response options ("
+            + ", ".join(sorted(_RESPONSE_OPTIONS))
+            + "); pass the template context positionally. Unexpected: "
+            + ", ".join(sorted(unexpected))
+        )
     current = _active_app.get() or app.current()
     if current.template_env is None:
         raise RuntimeError("No template directory configured")
     body = current.template_env.get_template(template).render(*args)
-    view = render(body=body, **kw)
-    view.content_type = "text/html;charset=utf-8"
-    return view
+    kw.setdefault("content_type", "text/html")
+    if kw["content_type"].startswith("text/"):
+        # aiohttp only attaches a charset to the type it picks itself, so a page
+        # served as plain "text/html" leaves the browser guessing the encoding.
+        # Type and charset are passed separately because Response rejects a
+        # charset inside content_type, and assigning the combined string to
+        # content_type afterwards produces "text/html;charset=utf-8;
+        # charset=utf-8".
+        kw.setdefault("charset", "utf-8")
+    return render(body=body, **kw)
 
 
 def redirect(urlpath: str) -> web.HTTPFound:

@@ -1,39 +1,3 @@
-__author__ = "Qiu"
-
-"""
-MAIL = {
-    "smtp_server": "smtp.qq.com",
-    "account": "123456789@qq.com",
-    "account_name": "qiu",
-    "password": "abcdefg",
-    "prot": 465,  # 587
-    "debug_level": 1,
-}
-
-m = smtp.Mail(**MAIL)
-# 标题
-m.subject = "test title"
-# 正文
-m.content = "long long ago..."
-
-# 嵌入html 和 html 调用附件
-m.addfile("/home/qiu/img/a.jpg") # cid 0
-m.addfile("/home/qiu/img/b.jpg") # cid 1
-m.addhtml("<html><body><h1>Hello</h1>" + '<p><img src="cid:0"><img src="cid:1"></p>' + "</body></html>")
-
-# 多个收件人
-m.add_to_addr("李彦宏", "liyanhong@baidu.com")
-m.add_to_addr("Jack ma", "jackma@alibaba.com")
-
-# 附件
-m.addfile(filepathA)
-m.addfile(filepathB)
-
-# 发送
-m.send()
-
-"""
-
 import mimetypes
 import os
 import smtplib
@@ -59,29 +23,45 @@ class Client(object):
         self._content: Optional[str] = None
         self._subject: Optional[str] = None
         smtp_server = config.get("smtp_server")
-        debug_level = config.get("debug_level", 0)
-        port = config.get("port", 465)
+        if not smtp_server:
+            raise ValueError("smtp_server config is required")
+        self._smtp_server = smtp_server
+        self._port = config.get("port", 465)
+        self._debug_level = config.get("debug_level", 0)
         self._account = config.get("account", "")
         self._account_name = config.get("account_name", "")
         self._password = config.get("password", "")
-        if not smtp_server:
-            raise ValueError("smtp_server config is required")
-        self._server = smtplib.SMTP_SSL(smtp_server, port)
-        # self._server.starttls()  # 调用starttls()方法加密
-        self._server.set_debuglevel(debug_level)  # 打印出和SMTP服务器交互的所有信息
         self._msg = MIMEMultipart()
         self._to_addr: list[dict[str, str]] = []
         self._mime_type = "plain"  # 'html'
         self._file_index = 0
 
-    def _login(self) -> None:
+    def _connect(self) -> smtplib.SMTP:
+        """Open a submission connection for one message.
+
+        The socket used to be created by __init__, so building a client already
+        reached the network, and the connection it left behind was closed whenever
+        the server timed the idle session out - every send() after that failed on
+        a dead socket.
+        """
+        server = smtplib.SMTP_SSL(self._smtp_server, self._port)
+        # server.starttls()  # 调用starttls()方法加密
+        server.set_debuglevel(self._debug_level)  # 打印出和SMTP服务器交互的所有信息
+        return server
+
+    def _login(self) -> smtplib.SMTP:
         try:
             account = self._account
             password = self._password
-            if account is None or password is None:
+            # A missing credential reads back as an empty string, not None, because
+            # that is the config default; the old `is None` test never fired and the
+            # server answered with an authentication error instead of this one.
+            if not account or not password:
                 raise KeyError("请设置账号密码")
+            server = self._connect()
             info("登录中...")
-            self._server.login(account, password)
+            server.login(account, password)
+            return server
         except Exception as e:
             error(e)
             raise
@@ -90,10 +70,15 @@ class Client(object):
         """
         发送邮件
         """
+        server: Optional[smtplib.SMTP] = None
         try:
-            self._login()
-            # msg = MIMEText(self._content or "", "plain", "uft-8")
-            msg = self._msg
+            server = self._login()
+            # Envelope headers and the body describe the message being sent, not the
+            # attachments, so send() serialises a snapshot of them. Writing them onto
+            # the stored message attached another copy of the body on every resend.
+            msg = MIMEMultipart()
+            for part in self._msg.get_payload():
+                msg.attach(part)
             msg["From"] = _format_addr("%s <%s>" % (self._account_name, self._account))
             to = []
             for t in self._to_addr:
@@ -106,13 +91,14 @@ class Client(object):
             # 邮件正文
             msg.attach(MIMEText(self._content or "", self._mime_type, "utf-8"))
             to_addr = list(map(lambda x: x["addr"], self._to_addr))
-            self._server.sendmail(self._account, to_addr, msg.as_string())
-            self._server.quit()
+            server.sendmail(self._account, to_addr, msg.as_string())
+            server.quit()
         except Exception as er:
             error(er)
             raise
         finally:
-            self._server.close()
+            if server is not None:
+                server.close()
 
     def add_to_addr(self, nick: str, addr: str) -> None:
         """
@@ -120,7 +106,7 @@ class Client(object):
         :params nick 收件人昵称
         :params addr 收件人地址
         """
-        if addr is None:
+        if not addr:
             raise KeyError("请输入邮箱地址")
         obj = {"name": nick, "addr": addr}
         self._to_addr.append(obj)

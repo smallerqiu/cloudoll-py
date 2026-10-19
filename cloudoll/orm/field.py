@@ -111,6 +111,9 @@ class FieldBase:
 
     __eq__ = _op(OP.EQ)  # type: ignore[assignment]  # SQL equality produces an expression, not bool.
     __ne__ = _op(OP.NE)  # type: ignore[assignment]  # SQL inequality produces an expression.
+    # Comparing never returns a bool, so keep identity hashing instead of the
+    # implicit "unhashable" rule; sets and dicts can key on columns and expressions.
+    __hash__ = object.__hash__
 
     __lt__ = _op(OP.LT)  # <
     __le__ = _op(OP.LTE)  # <=

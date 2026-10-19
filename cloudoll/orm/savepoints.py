@@ -12,6 +12,10 @@ class SavepointMixin:
     def _state(self) -> Any:
         raise NotImplementedError
 
+    def in_transaction(self) -> bool:
+        """Whether the calling task already owns a usable transaction here."""
+        return self._state() is not None
+
     async def _savepoint_control(self, state: Any, command: str) -> None:
         raise NotImplementedError
 

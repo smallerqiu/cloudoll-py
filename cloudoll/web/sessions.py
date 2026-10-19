@@ -33,8 +33,19 @@ class SessionManager:
 
         max_age = sess.get("max_age")
         httponly = sess.get("httponly", True)
-        cookie_name = sess.get("key", "CLOUDOLL_SESSION")
         secure = sess.get("secure", False)
+        # The cookie attributes belong to the session layer for every storage:
+        # a Redis-backed session still hands the browser an identifier cookie, and
+        # without domain/path/samesite an operator cannot scope or harden it.
+        cookie_options = {
+            "cookie_name": sess.get("key", "CLOUDOLL_SESSION"),
+            "max_age": parse_int(max_age),
+            "httponly": httponly,
+            "secure": secure,
+            "domain": sess.get("domain"),
+            "path": sess.get("path", "/"),
+            "samesite": sess.get("samesite"),
+        }
 
         # redis
         redis_conf = sess.get("redis")
@@ -66,13 +77,7 @@ class SessionManager:
             redis_factory: Callable[..., Awaitable[Any]] = aioredis.from_url
             redis = await redis_factory(redis_url, **qs)
             setattr(apps, "redis", redis)
-            storage = redis_storage.RedisStorage(
-                redis,
-                cookie_name=cookie_name,
-                max_age=parse_int(max_age),
-                httponly=httponly,
-                secure=secure,
-            )
+            storage = redis_storage.RedisStorage(redis, **cookie_options)
             info("starting a redis session.")
         elif mcache_conf:
             from aiohttp_session import memcached_storage
@@ -84,13 +89,7 @@ class SessionManager:
 
             mc = aiomcache.Client(host, port)
             setattr(apps, "memcached", mc)
-            storage = memcached_storage.MemcachedStorage(
-                mc,
-                cookie_name=cookie_name,
-                max_age=parse_int(max_age),
-                httponly=httponly,
-                secure=secure,
-            )
+            storage = memcached_storage.MemcachedStorage(mc, **cookie_options)
             info("starting a memcached session.")
         else:
             configured_secret = sess.get("secret_key") or os.getenv(
@@ -108,11 +107,7 @@ class SessionManager:
                 secret_key = self.secret
 
             storage = cookie_storage.EncryptedCookieStorage(
-                secret_key,
-                cookie_name=cookie_name,
-                max_age=parse_int(max_age),
-                httponly=httponly,
-                secure=secure,
+                secret_key, **cookie_options
             )
             info("starting local cookie.")
 

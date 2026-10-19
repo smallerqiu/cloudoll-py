@@ -110,6 +110,28 @@ async def test_aws_parameters_and_thread_execution(module):
     await db.close()
 
 
+@pytest.mark.parametrize(
+    "module,driver,database_key",
+    [("awsmysql", "aws-mysql", "database"), ("awspostgres", "aws-postgres", "dbname")],
+)
+async def test_aws_url_options_reach_the_connector_without_residue(
+    module, driver, database_key
+):
+    pytest.importorskip("cloudoll.orm." + module)
+    from cloudoll.orm import create_engine
+
+    db = await create_engine(
+        url=f"{driver}://user:secret@db:3306/app?connect_timeout=7"
+    )
+    # The raw query string must not survive into the connect arguments: the
+    # connector rejects unknown keys, and its pairs are already applied above.
+    assert "query" not in db._params
+    assert db._params[database_key] == "app"
+    assert db._params["connect_timeout"] == 7
+    assert db._params["user"] == "user" and db._params["password"] == "secret"
+    await db.close()
+
+
 def test_aws_url_scheme():
     cfg, _ = parse_coon("aws-postgres://user:secret@localhost:5432/db")
     assert cfg["type"] == "aws-postgres"
@@ -249,17 +271,34 @@ async def test_cli_all_generates_and_closes_database():
     db.close.assert_awaited_once()
 
 
-def test_scaffold_contains_assets_and_unique_secrets(tmp_path):
+def test_scaffold_keeps_the_secret_injectable(tmp_path):
     from cloudoll.clitool.cli_main import create_project
 
     create_project(str(tmp_path / "first"))
     create_project(str(tmp_path / "second"))
-    assert (tmp_path / "first/controllers/home/index.py").is_file()
-    assert (tmp_path / "first/static/img/cat.avif").is_file()
-    first = (tmp_path / "first/config/conf.local.yaml").read_text()
-    second = (tmp_path / "second/config/conf.local.yaml").read_text()
-    assert first != second
-    assert "$CLOUDOLL_JWT_SECRET" not in first
+    first, second = tmp_path / "first", tmp_path / "second"
+    assert (first / "controllers/home/index.py").is_file()
+    assert (first / "static/img/cat.avif").is_file()
+    # Nothing secret goes into a tracked file: the config keeps its placeholder,
+    # so two projects created in a row are byte-identical.
+    config = (first / "config/conf.local.yaml").read_text()
+    assert config == (second / "config/conf.local.yaml").read_text()
+    assert "$CLOUDOLL_JWT_SECRET" in config
+    assert "$CLOUDOLL_SESSION_SECRET" in config
+    local = (first / ".env").read_text()
+    assert local != (second / ".env").read_text()
+    secrets_in_env = dict(
+        (line.split("=", 1) for line in local.splitlines() if line.strip())
+    )
+    assert set(secrets_in_env) == {"CLOUDOLL_JWT_SECRET", "CLOUDOLL_SESSION_SECRET"}
+    # Two different keys: one leaked secret must not be the key for the other.
+    assert len({value.strip() for value in secrets_in_env.values()}) == 2
+    for value in secrets_in_env.values():
+        assert len(value.strip()) >= 40
+    example = (first / ".env.example").read_text()
+    assert "CLOUDOLL_JWT_SECRET=" in example
+    assert "CLOUDOLL_SESSION_SECRET=" in example
+    assert ".env" in (first / ".gitignore").read_text().splitlines()
 
 
 @pytest.mark.parametrize("module", ["postgres", "awspostgres"])

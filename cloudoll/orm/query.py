@@ -13,6 +13,7 @@ from typing import Any, Generic, Optional, TypeVar, Union, cast
 
 from cloudoll.orm.compiler import SQLCompiler
 from cloudoll.orm.dialects import dialect_for
+from cloudoll.orm.engine import TransactionError
 from cloudoll.orm.field import Expression, Field, FieldBase
 from cloudoll.orm.relation import Column, Columns, Relation
 from cloudoll.orm.model import Model
@@ -273,6 +274,21 @@ class Query(Generic[M]):
         )
         return self
 
+    def _require_lock_transaction(self) -> None:
+        # A row lock held only by a transaction this query opened itself is
+        # released by the implicit COMMIT, so it protects nothing.
+        if not self.state.lock:
+            return
+        pool = self._require_pool()
+        in_transaction = getattr(pool, "in_transaction", None)
+        if in_transaction is None:
+            return
+        if not in_transaction():
+            raise TransactionError(
+                "for_update() requires the caller's transaction; use "
+                "async with <engine>.transaction()"
+            )
+
     def where(self, *exp: Any) -> Query[M]:
         if self.state.where is not None:
             exp = (self.state.where,) + exp
@@ -391,6 +407,7 @@ class Query(Generic[M]):
         return self._sql(), self.params
 
     async def one(self) -> Optional[Union[M, Row]]:
+        self._require_lock_transaction()
         self.limit(1)
         sql = self._sql()
         sql = self._exchange_sql(sql)
@@ -410,6 +427,7 @@ class Query(Generic[M]):
             self._reset()
 
     async def all(self) -> list[Row]:
+        self._require_lock_transaction()
         sql = self._sql()
         sql = self._exchange_sql(sql)
         args = self.params
@@ -426,6 +444,7 @@ class Query(Generic[M]):
 
     async def one_dict(self) -> Optional[Row]:
         """Return projections/aggregates as a mapping, without model hydration."""
+        self._require_lock_transaction()
         self.limit(1)
         try:
             compiled = self.compiler.select(self.model, self.state)

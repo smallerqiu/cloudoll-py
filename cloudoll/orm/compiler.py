@@ -25,6 +25,9 @@ class CompiledQuery:
     params: list[Any]
 
 
+AGGREGATE_OPS = frozenset({"COUNT", "SUM", "AVG", "MAX", "MIN"})
+
+
 class SQLCompiler:
     def __init__(self, dialect: MySQLDialect, source_id: Optional[int] = None) -> None:
         self.dialect = dialect
@@ -91,9 +94,19 @@ class SQLCompiler:
         return "?"
 
     def function(self, node: Function, params: list[Any]) -> str:
-        column = self.expression(node.col, params)
         op = node.op
-        if op in {"COUNT", "SUM", "AVG", "MAX", "MIN"}:
+        if (
+            op == "DISTINCT"
+            and isinstance(node.col, Function)
+            and node.col.op in AGGREGATE_OPS
+        ):
+            # Aggregate .distinct() removes duplicate input values, so DISTINCT
+            # belongs inside the aggregate; a leading one would only deduplicate
+            # the single aggregate row. Match before compiling the wrapper, or a
+            # literal inside the aggregate would bind twice.
+            return f"{node.col.op}(DISTINCT {self.expression(node.col.col, params)})"
+        column = self.expression(node.col, params)
+        if op in AGGREGATE_OPS:
             return f"{op}({column})"
         if op.endswith("_WHEN"):
             args = node.rpt

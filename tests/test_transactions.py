@@ -199,6 +199,53 @@ async def test_begin_timeout_discards_connection():
     db.pool.release.assert_called_once_with(conn)
 
 
+async def test_cancelled_acquire_returns_the_leased_connection():
+    db, conn = engine()
+    acquired = asyncio.get_running_loop().create_future()
+    db.pool.acquire = MagicMock(return_value=acquired)
+
+    async def open_transaction():
+        async with db.transaction():
+            pytest.fail("must not enter transaction")
+
+    task = asyncio.create_task(open_transaction())
+    await asyncio.sleep(0)
+    # The pool finishes the lease in the same step that cancels the waiter.
+    acquired.set_result(conn)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    db.pool.release.assert_called_once_with(conn)
+
+
+@pytest.mark.parametrize("option", [{}, {"nowait": True}, {"skip_locked": True}])
+async def test_row_locks_need_the_callers_transaction(option):
+    db, conn = engine()
+
+    def locked():
+        return Item.use(db).where(Item.id == 1).for_update(**option)
+
+    with pytest.raises(TransactionError, match="transaction"):
+        await locked().all()
+    with pytest.raises(TransactionError, match="transaction"):
+        await locked().one()
+    with pytest.raises(TransactionError, match="transaction"):
+        await locked().one_dict()
+    db._execute.assert_not_awaited()
+    db.pool.acquire.assert_not_awaited()
+
+    async with db.transaction():
+        await locked().all()
+    assert "FOR UPDATE" in db._execute.call_args.args[1]
+    assert db._execute.call_args.args[0] is conn
+
+
+async def test_unlocked_reads_still_open_their_own_transaction():
+    db, conn = engine()
+    await Item.use(db).where(Item.id == 1).all()
+    assert [call.args[1] for call in db._control.await_args_list] == ["BEGIN", "COMMIT"]
+
+
 async def test_url_keywords_override_options_and_tls_is_forwarded():
     import ssl
 

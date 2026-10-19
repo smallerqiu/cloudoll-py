@@ -106,6 +106,7 @@ cloudoll = "cloudoll.cli:cli"
 "cloudoll.template" = [
   "README.md",
   "requirements.txt",
+  ".gitignore",
   "config/*.yaml",
   "controllers/**/*.py",
   "middlewares/*.py",

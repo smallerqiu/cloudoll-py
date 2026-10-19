@@ -57,6 +57,29 @@ async def test_join_group_having_distinct_and_count(driver):
         assert "SELECT DISTINCT" in db.count.call_args.args[0]
 
 
+@pytest.mark.parametrize("driver", ["mysql", "postgres"])
+async def test_aggregate_distinct_stays_inside_the_aggregate(driver):
+    db = engine(driver)
+    quote = "`" if driver == "mysql" else '"'
+    balance = f"{quote}Account{quote}.{quote}balance{quote}"
+    select = Account.use(db).select
+    assert (
+        f"SUM(DISTINCT {balance})" in select(Account.balance.sum().distinct()).test()[0]
+    )
+    assert (
+        f"COUNT(DISTINCT {balance})"
+        in select(Account.balance.count().distinct()).test()[0]
+    )
+    # The field-first spelling keeps working, and a plain field still dedupes rows.
+    assert (
+        f"COUNT(DISTINCT {balance})"
+        in select(Account.balance.distinct().count()).test()[0]
+    )
+    assert select(Account.name.distinct()).test()[0].startswith("SELECT DISTINCT ")
+    sql, params = select((Account.balance + 2).sum().distinct()).test()
+    assert sql.count("?") == 1 and params == [2]
+
+
 async def test_atomic_updates_and_values_stay_bound():
     db = engine()
     await (

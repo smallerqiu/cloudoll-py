@@ -45,21 +45,114 @@ def test_tty_open_failure_does_not_catch_body_error(monkeypatch):
     assert caught.value is error
 
 
-def test_auxiliary_server_uses_merged_host(monkeypatch):
+def test_watch_filter_always_skips_logs_and_project_dirs():
+    from watchfiles import Change
+
+    chosen = watch.CloudollFilter(("build", "dist"))
+    for path in ("logs/access.log", "build/x.py", "dist/app.js", ".venv/x.py"):
+        assert not chosen(Change.modified, path), path
+    assert chosen(Change.modified, "controllers/home/index.py")
+    # The project list must not replace watchfiles' own defaults.
+    assert not chosen(Change.modified, "__pycache__/model.pyc")
+    assert not chosen(Change.modified, ".git/config")
+    default = watch.CloudollFilter()
+    assert not default(Change.modified, "logs/access.log")
+    assert default(Change.modified, "dist/app.js")
+
+
+def test_development_server_uses_merged_host(monkeypatch):
     monkeypatch.setattr(
         cli_main,
         "get_config",
         lambda _: {"server": {"host": "127.0.0.1", "port": 9001}},
     )
+    seen = []
+
+    def fake_task(path, config, entry, env):
+        seen.append(config)
+        return SimpleNamespace(cleanup_ctx=Mock(), failure=None)
+
+    monkeypatch.setattr(cli_main, "AppTask", fake_task)
+    supervisor = Mock()
+    monkeypatch.setattr(cli_main, "run_supervisor", supervisor)
+    cli_main.run_app(mode="development", environment="local", entry=None)
+    # The worker process owns the only socket, and it binds the merged config.
+    assert seen[0]["server"] == {"host": "127.0.0.1", "port": 9001, "path": None}
+    assert not list(supervisor.call_args.args[0].router.routes())
+
+
+def test_cli_host_overrides_the_development_config(monkeypatch):
+    monkeypatch.setattr(
+        cli_main, "get_config", lambda _: {"server": {"host": "10.0.0.1", "port": 8000}}
+    )
+    seen = []
     monkeypatch.setattr(
         cli_main,
         "AppTask",
-        Mock(return_value=SimpleNamespace(cleanup_ctx=Mock(), failure=None)),
+        lambda path, config, entry, env: (
+            seen.append(config) or SimpleNamespace(cleanup_ctx=Mock(), failure=None)
+        ),
     )
-    run = Mock()
-    monkeypatch.setattr(cli_main.web, "run_app", run)
+    monkeypatch.setattr(cli_main, "run_supervisor", Mock())
+    cli_main.run_app(
+        mode="development", environment="local", entry=None, host="0.0.0.0", port=9100
+    )
+    assert seen[0]["server"]["host"] == "0.0.0.0"
+    assert seen[0]["server"]["port"] == 9100
+
+
+def test_development_defaults_to_the_local_interface(monkeypatch):
+    monkeypatch.setattr(cli_main, "get_config", lambda _: {})
+    seen = []
+    monkeypatch.setattr(
+        cli_main,
+        "AppTask",
+        lambda path, config, entry, env: (
+            seen.append(config) or SimpleNamespace(cleanup_ctx=Mock(), failure=None)
+        ),
+    )
+    monkeypatch.setattr(cli_main, "run_supervisor", Mock())
     cli_main.run_app(mode="development", environment="local", entry=None)
+    # An unspecified listen address must not expose the app to the network.
+    assert seen[0]["server"]["host"] == "127.0.0.1"
+    assert seen[0]["server"]["port"] == 9001
+
+
+def test_library_run_defaults_to_the_local_interface(tmp_path, monkeypatch):
+    application = Application(root=tmp_path)
+    application.create(entry_model=None, config={})
+    run = Mock()
+    monkeypatch.setattr(application, "app", Mock())
+    monkeypatch.setattr(cli_main.web, "run_app", run)
+    application.run()
     assert run.call_args.kwargs["host"] == "127.0.0.1"
+    assert run.call_args.kwargs["port"] == 9001
+
+
+def test_supervisor_runs_without_a_listening_socket(monkeypatch):
+    def refuse(*args, **kw):
+        raise AssertionError("the supervisor must not bind a port")
+
+    monkeypatch.setattr(watch.web, "TCPSite", refuse)
+    monkeypatch.setattr(watch.web, "UnixSite", refuse)
+    monkeypatch.setattr(watch.web, "SockSite", refuse)
+    stages = []
+
+    async def lifecycle(application):
+        stages.append("started")
+
+        def failure() -> None:
+            # This is how AppTask._completed ends supervision.
+            raise web.GracefulExit()
+
+        asyncio.get_running_loop().call_soon(failure)
+        yield
+        stages.append("stopped")
+
+    supervisor_app = web.Application()
+    supervisor_app.cleanup_ctx.append(lifecycle)
+    watch.run_supervisor(supervisor_app)
+    assert stages == ["started", "stopped"]
 
 
 def task(tmp_path):
@@ -286,6 +379,71 @@ async def test_real_child_crash_exits_supervisor_with_failure(
     assert result.returncode != 0
     assert "Development server supervision failed" in result.stderr
     assert "Development server exited (code 3)" in result.stderr
+
+
+async def test_development_start_survives_a_busy_neighbouring_port(
+    tmp_path, monkeypatch
+):
+    import socket
+
+    monkeypatch.setenv("CLOUDOLL_LOG_DIR", str(tmp_path / "logs"))
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        business_port = probe.getsockname()[1]
+    neighbour = socket.socket()
+    try:
+        # The supervisor used to bind business port + 1 for itself, so any service
+        # already there stopped `cloudoll start` before the app could be reached.
+        neighbour.bind(("127.0.0.1", business_port + 1))
+    except OSError:
+        pytest.skip(f"port {business_port + 1} belongs to another service")
+    neighbour.listen()
+    script = (
+        "from cloudoll.clitool import cli_main\n"
+        f"cli_main.get_config = lambda _: {{'server': {{'host': '127.0.0.1', 'port': {business_port}}}}}\n"
+        "cli_main.run_app(mode='development', environment='local', entry=None, name='test')\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", script],
+        cwd=tmp_path,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    child = None
+    try:
+
+        async def wait_until_ready() -> None:
+            deadline = asyncio.get_running_loop().time() + 20
+            while True:
+                try:
+                    _, writer = await asyncio.wait_for(
+                        asyncio.open_connection("127.0.0.1", business_port), 1
+                    )
+                except OSError:
+                    if process.poll() is not None:
+                        raise AssertionError(
+                            f"supervisor exited early: {process.stderr.read()}"
+                        )
+                else:
+                    writer.close()
+                    return
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise AssertionError("development server never became ready")
+                await asyncio.sleep(0.1)
+
+        await asyncio.wait_for(wait_until_ready(), 25)
+        await asyncio.sleep(0.5)
+        assert process.poll() is None
+        process.terminate()
+        assert await asyncio.to_thread(process.wait, 15) == 0
+        child = process.stderr.read()
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(5)
+        neighbour.close()
+    assert "Address already in use" not in child
+    assert "Traceback" not in child
 
 
 @pytest.mark.parametrize("fail_startup", [False, True])
