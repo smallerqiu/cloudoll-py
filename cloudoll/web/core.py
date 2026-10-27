@@ -5,7 +5,6 @@ __author__ = "Qiu / smallerqiu@gmail.com"
 import asyncio
 import inspect
 import json
-import ssl
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Coroutine, Iterable, MutableSequence
@@ -34,7 +33,11 @@ from cloudoll.orm.model import Model
 from cloudoll.observability import Event, Observer, _observer, emit
 from cloudoll.utils.common import Object, chainMap
 from cloudoll.web import jwt
-from cloudoll.web.configuration import Configuration, validate_config
+from cloudoll.web.configuration import (
+    Configuration,
+    build_ssl_context,
+    validate_config,
+)
 from cloudoll.web.configuration import parse_int as _parse_int
 from cloudoll.web.context import ApplicationProxy
 from cloudoll.web.context import active_application as _active_app
@@ -369,10 +372,7 @@ class Application(object):
             # aiohttp invokes this only after its listening sites have started.
             info("Cloudoll %s ready\n%s", __version__, message)
 
-        ssl_context = conf.get("ssl_context")
-        if ssl_context is None and conf.get("ssl_certfile"):
-            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            ssl_context.load_cert_chain(conf["ssl_certfile"], conf["ssl_keyfile"])
+        ssl_context = build_ssl_context(conf, self.configuration.root)
         web.run_app(
             self.app,
             loop=self._loop,

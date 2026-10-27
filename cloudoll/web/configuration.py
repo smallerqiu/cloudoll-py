@@ -37,13 +37,19 @@ def validate_config(config: dict[str, Any]) -> None:
                 f"orm.default references an unknown datasource: {default!r}"
             )
     server = config.get("server", {})
+    for key in ("ssl_certfile", "ssl_keyfile"):
+        if key in server:
+            value = server[key]
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"server.{key} must be a non-empty path")
     certfile, keyfile = server.get("ssl_certfile"), server.get("ssl_keyfile")
     if (certfile is None) != (keyfile is None):
-        raise ValueError("server.ssl_certfile and server.ssl_keyfile must be set together")
-    for key in ("ssl_certfile", "ssl_keyfile"):
-        if key in server and (not isinstance(server[key], str) or not server[key].strip()):
-            raise ValueError(f"server.{key} must be a non-empty path")
-    if "ssl_context" in server and not isinstance(server["ssl_context"], ssl.SSLContext):
+        raise ValueError(
+            "server.ssl_certfile and server.ssl_keyfile must be set together"
+        )
+    if "ssl_context" in server and not isinstance(
+        server["ssl_context"], ssl.SSLContext
+    ):
         raise ValueError("server.ssl_context must be an ssl.SSLContext")
     if "ssl_context" in server and (certfile is not None or keyfile is not None):
         raise ValueError("Use either server.ssl_context or certificate/key paths")
@@ -102,9 +108,65 @@ def validate_config(config: dict[str, Any]) -> None:
             raise ValueError("jwt.exp must be a positive integer")
 
 
+def resolve_root(root: Optional[Union[str, Path]] = None) -> Path:
+    return Path(root or Path.cwd()).resolve()
+
+
+def build_ssl_context(
+    server: dict[str, Any], root: Optional[Union[str, Path]] = None
+) -> Optional[ssl.SSLContext]:
+    """Turn the server TLS options into a context, or None for plain HTTP.
+
+    Relative certificate paths follow the application root, the same rule as
+    `Configuration.path()`: a service started from a different working
+    directory must still find the files the developer configured.
+    """
+    base = resolve_root(root)
+    supplied = server.get("ssl_context")
+    if supplied is not None:
+        if not isinstance(supplied, ssl.SSLContext):
+            raise ValueError("server.ssl_context must be an ssl.SSLContext")
+        if (
+            server.get("ssl_certfile") is not None
+            or server.get("ssl_keyfile") is not None
+        ):
+            raise ValueError("Use either server.ssl_context or certificate/key paths")
+        return supplied
+    certfile, keyfile = server.get("ssl_certfile"), server.get("ssl_keyfile")
+    if certfile is None and keyfile is None:
+        return None
+    if certfile is None or keyfile is None:
+        raise ValueError(
+            "server.ssl_certfile and server.ssl_keyfile must be set together"
+        )
+
+    def located(value: Any, key: str) -> Path:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"server.{key} must be a non-empty path")
+        path = Path(value).expanduser()
+        resolved = path if path.is_absolute() else base / path
+        if not resolved.is_file():
+            raise ValueError(f"server.{key} names a missing file: {resolved}")
+        return resolved
+
+    cert_path = located(certfile, "ssl_certfile")
+    key_path = located(keyfile, "ssl_keyfile")
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    try:
+        context.load_cert_chain(str(cert_path), str(key_path))
+    except (ssl.SSLError, OSError) as exc:
+        # The files exist, so the usual cause is a key that does not match the
+        # certificate or a format OpenSSL cannot read; name both paths.
+        raise ValueError(
+            f"server.ssl_certfile {cert_path!s} and server.ssl_keyfile "
+            f"{key_path!s} could not be loaded: {exc}"
+        ) from exc
+    return context
+
+
 class Configuration:
     def __init__(self, root: Optional[Union[str, Path]] = None) -> None:
-        self.root = Path(root or Path.cwd()).resolve()
+        self.root = resolve_root(root)
 
     def load(
         self, env: Optional[str], values: Optional[dict[str, Any]] = None

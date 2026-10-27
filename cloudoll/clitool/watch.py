@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import os
+import ssl
 import sys
 from collections.abc import AsyncIterator, Iterator
 from multiprocessing import Event, Pipe, Process
@@ -15,6 +16,7 @@ from watchfiles import DefaultFilter, awatch
 from cloudoll import __version__
 from cloudoll.logging import configure_logging, info
 from cloudoll.web import Application
+from cloudoll.web.configuration import build_ssl_context
 
 
 class CloudollFilter(DefaultFilter):
@@ -101,12 +103,14 @@ def mian_app(
 
     async def serve() -> None:
         runner = await create_main_app(config, entry, env, root=root)
+        server = config.get("server", {})
         try:
             await start_main_app(
                 runner,
-                config["server"]["host"],
-                config["server"]["port"],
-                config["server"].get("path"),
+                server["host"],
+                server["port"],
+                server.get("path"),
+                build_ssl_context(server, root),
             )
             if ready is not None:
                 ready.send((True, ""))
@@ -152,19 +156,26 @@ async def create_main_app(
 
 
 async def start_main_app(
-    runner: web.AppRunner, host: str, port: int, path: Optional[str] = None
+    runner: web.AppRunner,
+    host: str,
+    port: int,
+    path: Optional[str] = None,
+    ssl_context: Optional[ssl.SSLContext] = None,
 ) -> None:
     await runner.setup()
     site: web.BaseSite
     if path is not None:
-        site = web.UnixSite(runner, path)
+        site = web.UnixSite(runner, path, ssl_context=ssl_context)
     else:
-        site = web.TCPSite(runner, host=host, port=port)
+        site = web.TCPSite(runner, host=host, port=port, ssl_context=ssl_context)
     await site.start()
+    # The reload child serves the same TLS configuration as `Application.run()`,
+    # so the printed address must carry the scheme it actually listens with.
+    scheme = "https" if ssl_context is not None else "http"
     addresses = ", ".join(
-        f"http://[{address[0]}]:{address[1]}"
+        f"{scheme}://[{address[0]}]:{address[1]}"
         if ":" in address[0]
-        else f"http://{address[0]}:{address[1]}"
+        else f"{scheme}://{address[0]}:{address[1]}"
         for address in runner.addresses
         if isinstance(address, tuple)
     )
