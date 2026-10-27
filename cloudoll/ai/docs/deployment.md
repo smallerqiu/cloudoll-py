@@ -6,6 +6,20 @@ icon: deployment
 
 # 应用部署
 
+## 直接启用 HTTPS
+
+Cloudoll 可直接使用 PEM 证书和私钥：
+
+```yaml
+server:
+  host: 0.0.0.0
+  port: 443
+  ssl_certfile: /etc/ssl/cloudoll/fullchain.pem
+  ssl_keyfile: /etc/ssl/cloudoll/privkey.pem
+```
+
+`Application.run()` 会创建 TLS server context 并加载证书。也可在 Python 中通过 `server.ssl_context` 传入自定义 `ssl.SSLContext`，但不能与证书路径同时设置。证书续期后需重启进程以加载新证书。反向代理部署仍可由代理终止 TLS。
+
 ## 生产启动与 CLI 边界
 
 在应用根目录创建虚拟环境、安装经过验证并锁定版本的 requirements.txt：

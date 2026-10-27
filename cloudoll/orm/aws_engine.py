@@ -312,7 +312,9 @@ class AwsEngine(SavepointMixin, MeteBase):
             raise
 
     @asynccontextmanager
-    async def transaction(self) -> AsyncIterator[AwsEngine]:
+    async def transaction(self, *, mode: Optional[str] = None) -> AsyncIterator[AwsEngine]:
+        if mode is not None:
+            raise ValueError("Transaction mode is only supported by SQLite")
         if self._state() is not None:
             async with self.savepoint():
                 yield self

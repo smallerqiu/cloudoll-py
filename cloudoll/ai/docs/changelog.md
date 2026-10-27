@@ -6,9 +6,15 @@ icon: logs
 
 # 更新日志
 
-按版本倒序记录 Cloudoll 的主要变化。当前使用方法请以本站 4.4.0 文档为准，历史功能不代表当前仍保留相同 API。
+按版本倒序记录 Cloudoll 的主要变化。当前使用方法请以本站 4.5.0 文档为准，历史功能不代表当前仍保留相同 API。
 
 历史版本日期为对应源码提交日期。各版本源码可通过表格中的链接查看。
+
+## 4.5.0
+
+- `Application.run()` 支持通过证书路径或自定义 `ssl.SSLContext` 启用 HTTPS。
+- ORM 新增基于 `aiosqlite` 的 SQLite 引擎、事务、流式查询、upsert 和建表/模型反向生成支持。
+- SQLite 事务可选择 `DEFERRED`、`IMMEDIATE` 或 `EXCLUSIVE` 模式；SQLite 不支持行级 `FOR UPDATE`。
 
 ## 4.4.0
 

@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import math
+import ssl
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -36,6 +37,16 @@ def validate_config(config: dict[str, Any]) -> None:
                 f"orm.default references an unknown datasource: {default!r}"
             )
     server = config.get("server", {})
+    certfile, keyfile = server.get("ssl_certfile"), server.get("ssl_keyfile")
+    if (certfile is None) != (keyfile is None):
+        raise ValueError("server.ssl_certfile and server.ssl_keyfile must be set together")
+    for key in ("ssl_certfile", "ssl_keyfile"):
+        if key in server and (not isinstance(server[key], str) or not server[key].strip()):
+            raise ValueError(f"server.{key} must be a non-empty path")
+    if "ssl_context" in server and not isinstance(server["ssl_context"], ssl.SSLContext):
+        raise ValueError("server.ssl_context must be an ssl.SSLContext")
+    if "ssl_context" in server and (certfile is not None or keyfile is not None):
+        raise ValueError("Use either server.ssl_context or certificate/key paths")
     for key in ("resource_close_timeout", "resource_shutdown_timeout"):
         if key in server:
             value = server[key]
@@ -102,7 +113,9 @@ class Configuration:
         if not isinstance(config, dict):
             raise TypeError("Application configuration must be a mapping")
         validate_config(config)
-        return deepcopy(config)
+        ssl_context = config.get("server", {}).get("ssl_context")
+        memo = {id(ssl_context): ssl_context} if ssl_context is not None else None
+        return deepcopy(config, memo)
 
     def path(self, name: str) -> Path:
         return self.root / name

@@ -113,7 +113,9 @@ database:
     url: $POSTGRES_URL
 ```
 
-URL 格式分别是 `mysql://用户:密码@主机:3306/库名` 和 `postgres://用户:密码@主机:5432/库名`。账号、密码含特殊字符时需 URL 编码；分字段配置更容易避免编码错误。显式关键字参数优先于 URL 中的同名选项。
+URL 格式分别是 `mysql://用户:密码@主机:3306/库名`、`postgres://用户:密码@主机:5432/库名` 和 `sqlite:///相对或绝对路径.db`。账号、密码含特殊字符时需 URL 编码；分字段配置更容易避免编码错误。显式关键字参数优先于 URL 中的同名选项。
+
+SQLite 无需额外驱动；内存数据库可写为 `sqlite:///:memory:`。服务器可在 `server` 下配置 `ssl_certfile` 与 `ssl_keyfile` 启用 HTTPS，也可通过 Python API 传入自定义 `ssl_context`。
 
 在请求中通过 `request.app.db.mysql` / `request.app.db.postgres` 取连接。详细的超时、TLS、事务和 SQL 日志见[数据库](/database)及[日志](/logs)。
 

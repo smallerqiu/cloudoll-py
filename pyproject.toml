@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cloudoll"
 dynamic = ["version"]
-description = "Assist in quickly creating distributable microservices based on aiohttp, with a focus on simplicity and ease of use."
+description = "A distributable microservice framework with async ORM support for MySQL, PostgreSQL and SQLite."
 authors = [{ name = "Qiu", email = "smallerqiu@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.9"
@@ -32,6 +32,7 @@ dependencies = [
   "tabulate",
   "concurrent_log_handler",
   "portalocker",
+  "aiosqlite>=0.20,<1",
 ]
 
 [project.optional-dependencies]

@@ -125,17 +125,28 @@ class SQLCompiler:
             if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
                 raise ValueError("Interval amount must be a non-negative integer")
             sign = ">=" if op.startswith("LASTED_") else "<"
+            if getattr(self.dialect, "is_sqlite", False):
+                modifiers = {
+                    "DAY": "days", "MONTH": "months", "YEAR": "years",
+                    "HOUR": "hours", "MINUTE": "minutes", "SECOND": "seconds",
+                }
+                return f"datetime({column}) {sign} datetime('now', '-{amount} {modifiers[unit]}')"
             return f"{column} {sign} CURRENT_TIMESTAMP - {self.dialect.interval(amount, unit)}"
         if op in {"IS_TODAY", "THIS_WEEK", "THIS_MONTH", "THIS_YEAR"}:
             if op == "IS_TODAY":
                 return f"DATE({column}) = CURRENT_DATE"
             unit = op.split("_")[1].lower()
+            if getattr(self.dialect, "is_sqlite", False):
+                formats = {"week": "%Y-%W", "month": "%Y-%m", "year": "%Y"}
+                return f"strftime('{formats[unit]}', {column}) = strftime('{formats[unit]}', 'now')"
             if self.dialect.is_postgres:
                 return f"DATE_TRUNC('{unit}', {column}) = DATE_TRUNC('{unit}', CURRENT_DATE)"
             patterns = {"week": "%x-%v", "month": "%Y-%m", "year": "%Y"}
             pattern = patterns[unit]
             return f"DATE_FORMAT({column}, '{pattern}') = DATE_FORMAT(CURRENT_DATE, '{pattern}')"
         if op in {"JSON_CONTAINS_ARRAY", "JSON_CONTAINS_OBJECT"}:
+            if getattr(self.dialect, "is_sqlite", False):
+                raise NotImplementedError("JSON containment expressions are not supported by the SQLite ORM")
             values = node.rpt if isinstance(node.rpt, (tuple, list)) else (node.rpt,)
             args = ",".join(self.expression(v, params) for v in values)
             kind = "array" if op.endswith("ARRAY") else "object"
@@ -149,6 +160,8 @@ class SQLCompiler:
                 return f"STRING_AGG(CAST({column} AS TEXT), ',')"
             return f"GROUP_CONCAT({column})"
         if op == "DATE_FORMAT":
+            if getattr(self.dialect, "is_sqlite", False):
+                raise NotImplementedError("DATE_FORMAT uses MySQL format strings and is not supported by SQLite")
             if self.dialect.is_postgres:
                 raise NotImplementedError(
                     "DATE_FORMAT uses MySQL format strings; use PostgreSQL SQL explicitly"
@@ -244,6 +257,8 @@ class SQLCompiler:
         if state.offset is not None:
             sql += f" OFFSET {state.offset}"
         if state.lock:
+            if getattr(self.dialect, "is_sqlite", False):
+                raise ValueError("SQLite does not support row-level FOR UPDATE locks; use an IMMEDIATE transaction")
             if state.lock not in {
                 "FOR UPDATE",
                 "FOR UPDATE NOWAIT",
@@ -328,7 +343,7 @@ class SQLCompiler:
         validate(update_fields, "update_fields")
         if model.__primary_key__ in update_fields:
             raise ValueError("upsert cannot update the primary key")
-        if not self.dialect.is_postgres and conflict_fields is not None:
+        if not self.dialect.is_postgres and not getattr(self.dialect, "is_sqlite", False) and conflict_fields is not None:
             raise ValueError(
                 "MySQL cannot select conflict_fields; any unique key can conflict"
             )
@@ -348,13 +363,21 @@ class SQLCompiler:
                 + ",".join(self.dialect.identifier(key) for key in target)
                 + ") DO UPDATE SET "
             )
+        elif getattr(self.dialect, "is_sqlite", False):
+            target = conflict_fields or ([model.__primary_key__] if model.__primary_key__ else [])
+            validate(target, "conflict_fields")
+            if set(target) & set(update_fields):
+                raise ValueError("upsert cannot update conflict target fields")
+            compiled_sql = (
+                compiled.sql + " ON CONFLICT ("
+                + ",".join(self.dialect.identifier(key) for key in target)
+                + ") DO UPDATE SET "
+            )
         else:
             compiled_sql = compiled.sql + " ON DUPLICATE KEY UPDATE "
         incoming = dict(zip(keys, values))
         # Bind incoming values again: avoids MySQL's deprecated VALUES(column).
-        compiled_sql += ",".join(
-            self.dialect.identifier(key) + "=?" for key in update_fields
-        )
+        compiled_sql += ",".join(self.dialect.identifier(key) + "=?" for key in update_fields)
         return CompiledQuery(
             compiled_sql, compiled.params + [incoming[key] for key in update_fields]
         )

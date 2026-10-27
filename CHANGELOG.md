@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.5.0
+
+- Add native HTTPS support to `Application.run()` using `server.ssl_certfile` and `server.ssl_keyfile`, or a supplied `server.ssl_context`.
+- Add an async SQLite ORM engine with bounded pooling, transactions (including `IMMEDIATE` mode), streaming, URL parsing, SQLite SQL dialect, schema generation and model introspection.
+- Add SQLite upsert support and include `aiosqlite` as a runtime dependency.
+
 简体中文见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
 
 ## 4.4.0

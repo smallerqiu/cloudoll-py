@@ -1,7 +1,7 @@
 import collections.abc as collections_abc
 import re
 from typing import Any, Optional, Union, cast
-from urllib.parse import unquote
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 _implicit_encoding = "ascii"
 _implicit_errors = "strict"
@@ -10,6 +10,18 @@ __all__ = ["parse_coon"]
 
 
 def parse_coon(url: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    if url.startswith("sqlite://"):
+        parsed = urlsplit(url)
+        path = unquote(parsed.path)
+        if path == "/:memory:":
+            db = ":memory:"
+        elif path.startswith("//"):
+            db = path[1:]
+        else:
+            db = path.lstrip("/")
+        if not db:
+            raise ValueError("SQLite URL must include a database path")
+        return {"type": "sqlite", "db": db}, dict(parse_qsl(parsed.query))
     pattern = re.compile(
         r"""
             (?P<type>[\w\+\-]+)://

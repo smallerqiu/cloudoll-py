@@ -133,6 +133,16 @@ async def create_model(pool: DatabaseEngine, table_name: str) -> str:
 
 async def get_table_cols(pool: DatabaseEngine, table_name: str) -> list[Any]:
     driver = driver_name(pool.driver)
+    if driver == "sqlite":
+        rows = await pool.all(
+            "PRAGMA table_info(" + dialect_for(driver).identifier(table_name) + ")", None
+        )
+        return [
+            {"field": row["name"], "default": row["dflt_value"],
+             "column_type": row["type"], "null": "NO" if row["notnull"] else "YES",
+             "Key": "PRI" if row["pk"] else "", "comment": None}
+            for row in rows
+        ]
     if driver == "mysql":
         return await pool.all(
             "SHOW FULL COLUMNS FROM " + dialect_for(driver).identifier(table_name), None
@@ -163,6 +173,10 @@ async def get_table_cols(pool: DatabaseEngine, table_name: str) -> list[Any]:
 
 async def get_all_tables(pool: DatabaseEngine) -> list[Any]:
     driver = driver_name(pool.driver)
+    if driver == "sqlite":
+        return await pool.all(
+            "SELECT name AS table_name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name", None
+        )
     if driver == "mysql":
         return await pool.all(
             "SELECT TABLE_NAME AS table_name FROM information_schema.tables WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME",
@@ -299,7 +313,17 @@ def _default(value: Any, kind: str, postgres: bool) -> Any:
 
 
 def get_col(field: dict[str, Any], driver: str = "mysql") -> dict[str, Any]:
-    postgres = driver_name(driver) == "postgres"
+    normalized_driver = driver_name(driver)
+    if normalized_driver == "sqlite":
+        kind = field.get("column_type", "text").lower().split("(", 1)[0]
+        type_map = {"int": "integer", "bigint": "integer", "real": "float", "numeric": "numeric", "blob": "text"}
+        return dict(name=field["field"], column_type=type_map.get(kind, kind),
+                    primary_key=field.get("Key") == "PRI", default=_default(field.get("default"), kind, False),
+                    charset=None, max_length=None, scale_length=None,
+                    auto_increment=bool(field.get("auto_increment", False)),
+                    NOT_NULL=field.get("null") == "NO", update_generated=False,
+                    unsigned=False, comment=None)
+    postgres = normalized_driver == "postgres"
     if not postgres:
         match = re.fullmatch(
             r"([a-z]+)(?:\((\d+)(?:,(\d+))?\))?( unsigned)?", field["Type"].lower()

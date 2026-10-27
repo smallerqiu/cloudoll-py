@@ -80,7 +80,22 @@ class PostgreSQLDialect(MySQLDialect):
         return f"INTERVAL '{amount} {unit.lower()}'"
 
 
+class SQLiteDialect(MySQLDialect):
+    is_postgres = False
+    is_sqlite = True
+    quote = '"'
+
+    def _code(self, text: str) -> str:
+        text = re.sub(r"\bCURDATE\(\)", "date('now')", text, flags=re.I)
+        return re.sub(r"\bNOW\(\)", "datetime('now')", text, flags=re.I)
+
+    def prepare(self, sql: str, *, escape_percent: bool = False) -> str:
+        return self._code(sql)
+
+
 def dialect_for(driver: str) -> MySQLDialect:
+    if driver == "sqlite":
+        return SQLiteDialect()
     if driver in {
         "postgres",
         "postgresql",

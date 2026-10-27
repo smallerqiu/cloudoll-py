@@ -124,6 +124,8 @@ def test_missing_config_is_fatal_but_explicit_no_config_is_supported(tmp_path):
         {"server": {"resource_close_timeout": None}},
         {"server": {"resource_shutdown_timeout": float("inf")}},
         {"server": {"json_errors": "false"}},
+        {"server": {"ssl_certfile": "/tmp/cert.pem"}},
+        {"server": {"ssl_context": "bad"}},
         {"session": {"secure": "false"}},
         {"database": {"main": "not a mapping"}},
         {"jwt": {"require": "exp"}},

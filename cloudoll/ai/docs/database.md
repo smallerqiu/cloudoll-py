@@ -6,7 +6,7 @@ icon: database
 
 # 数据库与 ORM
 
-本页介绍 Cloudoll 4.4.0 的原生 MySQL/PostgreSQL 接口，包括保存点、流式查询与 SQL 日志。从 3.x 升级请先阅读[升级说明](/migration)。
+本页介绍 Cloudoll 4.5.0 的原生 MySQL、PostgreSQL 与 SQLite 接口，包括保存点、流式查询与 SQL 日志。从 3.x 升级请先阅读[升级说明](/migration)。
 
 ## 应用代码默认使用实体
 
@@ -26,7 +26,7 @@ Python API 的准确拼写是 `order_by` 和大写 `As`，不是 `orderby` / `as
 ## 安装与连接
 
 ```sh
-python -m pip install 'cloudoll[mysql,postgres]==4.4.0'
+python -m pip install 'cloudoll[mysql,postgres]==4.5.0'
 ```
 
 Web 应用在 [database 配置](/config)中声明连接，由框架建立、关闭，通过 `request.app.db.别名` 获取。不要每个请求创建一个池，也不要在请求结束时关闭共享池。
@@ -50,7 +50,9 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-DATABASE_URL 为 mysql://... 或 postgres://...。`create_engine` 是异步函数；同一个引擎在所属事件循环中复用。关闭前先退出所有事务和流式查询上下文。
+DATABASE_URL 可以是 `mysql://...`、`postgres://...` 或 `sqlite:///path/to/app.db`。SQLite 内存库使用 `sqlite:///:memory:`，引擎会将池大小限制为 1，确保连接间共享同一个内存数据库。`create_engine` 是异步函数；同一个引擎在所属事件循环中复用。关闭前先退出所有事务和流式查询上下文。
+
+SQLite 基于 `aiosqlite`，支持 ORM 查询、绑定参数、批量写入、事务、嵌套保存点、流式读取和模型建表。`async with engine.transaction(mode="IMMEDIATE")` 可在并发写前取得 SQLite 写锁；mode 支持 `DEFERRED`、`IMMEDIATE`、`EXCLUSIVE`。SQLite 不支持行级 `FOR UPDATE`。其余高级 SQL 函数和 DDL 特性仍按 SQLite 自身能力限制。
 
 ## 模型定义
 

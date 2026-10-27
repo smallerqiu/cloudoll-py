@@ -27,7 +27,7 @@ class QueryTypes(Enum):
 class MeteBase:
     driver: str
 
-    def transaction(self) -> AbstractAsyncContextManager[Any]:
+    def transaction(self, *, mode: Optional[str] = None) -> AbstractAsyncContextManager[Any]:
         raise NotImplementedError("This engine does not implement transactions")
 
     async def __aenter__(self: E) -> E:

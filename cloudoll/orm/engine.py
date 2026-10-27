@@ -239,13 +239,19 @@ class AsyncEngine(SavepointMixin, MeteBase):
             raise
 
     @asynccontextmanager
-    async def transaction(self: AE) -> AsyncIterator[AE]:
+    async def transaction(self: AE, *, mode: Optional[str] = None) -> AsyncIterator[AE]:
         """Pin a connection to the current task; commit or roll back on exit.
 
         Nested scopes use savepoints. DDL/explicit transaction-control SQL is
         unsupported. Use one transaction per task; no automatic write retries.
         """
+        if mode is not None and getattr(self, "driver", None) != "sqlite":
+            raise ValueError("Transaction mode is only supported by SQLite")
+        if mode is not None and mode not in {"DEFERRED", "IMMEDIATE", "EXCLUSIVE"}:
+            raise ValueError("SQLite transaction mode must be DEFERRED, IMMEDIATE or EXCLUSIVE")
         if self._state() is not None:
+            if mode is not None:
+                raise TransactionError("Cannot change the mode of a nested transaction")
             async with self.savepoint():
                 yield self
             return
@@ -262,7 +268,7 @@ class AsyncEngine(SavepointMixin, MeteBase):
         try:
             try:
                 await asyncio.wait_for(
-                    self._control(connection, "BEGIN"), self.query_timeout
+                    self._control(connection, "BEGIN" + (f" {mode}" if mode else "")), self.query_timeout
                 )
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 connection.close()
@@ -396,7 +402,7 @@ class AsyncEngine(SavepointMixin, MeteBase):
         rows = None
         try:
             await asyncio.wait_for(
-                self._control(connection, "START TRANSACTION READ ONLY"),
+                self._control(connection, "BEGIN" if self.driver == "sqlite" else "START TRANSACTION READ ONLY"),
                 self.query_timeout,
             )
             self._log_sql("STREAM", sql, params)

@@ -2,6 +2,14 @@
 
 英文原文见 [`CHANGELOG.md`](CHANGELOG.md)。
 
+## 4.5.0
+
+### 新功能
+
+- `Application.run()` 原生支持 HTTPS，可配置 `server.ssl_certfile` / `server.ssl_keyfile`，也可传入 `server.ssl_context`。
+- ORM 新增异步 SQLite 引擎，支持连接池、事务（含 `IMMEDIATE` 模式）、流式查询、SQLite URL、方言、建表和模型反向生成。
+- SQLite 支持 upsert；`aiosqlite` 加入运行时依赖。
+
 ## 4.4.0
 
 缺陷修复版本，向后兼容；Python 3.9+ 仍然支持。

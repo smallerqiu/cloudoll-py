@@ -52,6 +52,10 @@ async def create_engine(**kw: Any) -> Any:
         from .postgres import Postgres
 
         return await Postgres().create_engine(**{**configs, **query})
+    elif driver == "sqlite":
+        from .sqlite import SQLite
+
+        return await SQLite().create_engine(**{**configs, **query})
     elif driver in ["redis", "rediss"]:
         from redis import asyncio as aioredis
 
@@ -77,6 +81,10 @@ def __getattr__(name: str) -> Any:
         from .postgres import Postgres
 
         return Postgres
+    if name == "SQLite":
+        from .sqlite import SQLite
+
+        return SQLite
     if name == "Query":
         from .query import Query
 
