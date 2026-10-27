@@ -2,14 +2,70 @@
 
 from __future__ import annotations
 
+import atexit
 import asyncio
 import sqlite3
 from typing import Any, Optional, cast
 
 import aiosqlite
 
+from cloudoll.logging import warning
 from cloudoll.orm.base import Params, QueryTypes
 from cloudoll.orm.engine import AsyncEngine, boolean_option, cursor_result
+
+# aiosqlite runs every connection on a non-daemon worker thread that only ends
+# when it receives the stop sentinel, so an engine left open by a task that never
+# closed it keeps the interpreter waiting for that thread at exit. The live
+# connections stay reachable here so a normal exit can stop them synchronously.
+_open_connections: set[aiosqlite.Connection] = set()
+
+
+# How long the exit hook waits for a worker thread to finish closing its
+# connection: enough for the WAL checkpoint that only a real close performs,
+# short enough that a stuck query cannot hold up interpreter exit.
+_EXIT_JOIN_SECONDS = 2.0
+
+
+def _stop_open_connections() -> None:
+    while _open_connections:
+        connection = _open_connections.pop()
+        try:
+            connection.stop()
+            worker = getattr(connection, "_thread", None)
+            if worker is not None and worker.is_alive():
+                # The sentinel is processed by that thread, and daemon threads are
+                # still runnable during atexit; give it the chance to finish.
+                worker.join(_EXIT_JOIN_SECONDS)
+        except Exception:
+            warning("SQLite connection could not be stopped during interpreter exit")
+
+
+atexit.register(_stop_open_connections)
+
+
+def _tracked_connection(db: str, *, timeout: float, uri: bool) -> aiosqlite.Connection:
+    """Create a connection whose worker thread cannot outlive the interpreter.
+
+    aiosqlite starts one non-daemon thread per connection and only stops it from
+    close(), and the interpreter joins non-daemon threads before running atexit
+    hooks — so an engine nobody closed would hang the process before the hook
+    that could release it ever got a chance to run.
+    """
+    connection = aiosqlite.connect(
+        db, timeout=timeout, uri=uri, isolation_level=None
+    )
+    worker = getattr(connection, "_thread", None)
+    if worker is not None and not worker.daemon:
+        worker.daemon = True
+    _open_connections.add(connection)
+    return connection
+
+
+async def _close_connection_raw(connection: aiosqlite.Connection) -> None:
+    try:
+        await connection.close()
+    finally:
+        _open_connections.discard(connection)
 
 
 class _Cursor:
@@ -66,7 +122,7 @@ class _Connection:
     def close(self) -> None:
         if not self.closed:
             self.closed = True
-            self.close_task = asyncio.create_task(self.raw.close())
+            self.close_task = asyncio.create_task(_close_connection_raw(self.raw))
 
 
 class _CursorContext:
@@ -98,6 +154,11 @@ class _Pool:
         self._semaphore = asyncio.Semaphore(maxsize)
         self._closing = False
         self._close_tasks: set[asyncio.Task[Any]] = set()
+        # Set whenever no connection is still leased, so wait_closed() can sleep
+        # instead of polling; a busy loop there burns a core while a slow task
+        # holds a lease.
+        self._drained = asyncio.Event()
+        self._drained.set()
 
     def _close_connection(self, connection: _Connection) -> None:
         if connection.closed:
@@ -106,7 +167,7 @@ class _Pool:
                 connection.close_task.add_done_callback(self._close_tasks.discard)
             return
         connection.closed = True
-        task = asyncio.create_task(connection.raw.close())
+        task = asyncio.create_task(_close_connection_raw(connection.raw))
         connection.close_task = task
         self._close_tasks.add(task)
         task.add_done_callback(self._close_tasks.discard)
@@ -116,10 +177,12 @@ class _Pool:
         return len(self._idle)
 
     async def _new(self) -> _Connection:
-        raw = await asyncio.wait_for(
-            aiosqlite.connect(self.db, timeout=self.timeout, uri=self.uri, isolation_level=None),
-            timeout=self.timeout,
+        # Registered before the worker thread starts: a cancelled connect leaves
+        # the thread behind, and the exit hooks above are what release it.
+        candidate = _tracked_connection(
+            self.db, timeout=self.timeout, uri=self.uri
         )
+        raw = await asyncio.wait_for(candidate, timeout=self.timeout)
         raw.row_factory = sqlite3.Row
         await raw.execute(f"PRAGMA foreign_keys = {'ON' if self.foreign_keys else 'OFF'}")
         if self.journal_mode is not None:
@@ -137,6 +200,7 @@ class _Pool:
                 raise RuntimeError("SQLite pool is closing")
             connection = self._idle.pop() if self._idle else await self._new()
             self._leased.add(connection)
+            self._drained.clear()
             return connection
         except BaseException:
             self._semaphore.release()
@@ -147,6 +211,8 @@ class _Pool:
             return
         self._leased.remove(connection)
         self._semaphore.release()
+        if not self._leased:
+            self._drained.set()
         if self._closing or connection.closed:
             self._close_connection(connection)
             self.size -= 1
@@ -161,17 +227,21 @@ class _Pool:
         self._idle.clear()
 
     async def wait_closed(self) -> None:
-        while self._leased:
-            await asyncio.sleep(0)
-        if self._close_tasks:
-            await asyncio.gather(*tuple(self._close_tasks))
+        await self._drained.wait()
+        while self._close_tasks:
+            # A close task can spawn nothing, but its completion callback may not
+            # have run yet; waiting again on finished tasks returns immediately.
+            await asyncio.wait(tuple(self._close_tasks))
 
     def terminate(self) -> None:
         self._closing = True
-        for connection in list(self._leased) + self._idle:
+        connections = list(self._leased) + self._idle
+        for connection in connections:
             self._close_connection(connection)
+        self.size -= len(connections)
         self._leased.clear()
         self._idle.clear()
+        self._drained.set()
 
 
 class SQLite(AsyncEngine):
