@@ -134,13 +134,38 @@ async def create_model(pool: DatabaseEngine, table_name: str) -> str:
 async def get_table_cols(pool: DatabaseEngine, table_name: str) -> list[Any]:
     driver = driver_name(pool.driver)
     if driver == "sqlite":
-        rows = await pool.all(
-            "PRAGMA table_info(" + dialect_for(driver).identifier(table_name) + ")", None
+        table = dialect_for(driver).identifier(table_name)
+        rows = await pool.all("PRAGMA table_info(" + table + ")", None)
+        stored = await pool.all(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            [table_name],
         )
+        clauses = _sqlite_column_clauses(
+            stored[0]["sql"] if stored and stored[0].get("sql") else None
+        )
+        # A CREATE TABLE clause PRAGMA does not describe is a generated column,
+        # which Model cannot round-trip; refuse instead of dropping it silently.
+        if len(clauses) > len(rows) or any(
+            re.search(r"\bGENERATED\b", clause, re.I) for clause in clauses.values()
+        ):
+            raise ValueError(
+                f"Generated columns in table {table_name!r} require an explicit schema"
+            )
         return [
-            {"field": row["name"], "default": row["dflt_value"],
-             "column_type": row["type"], "null": "NO" if row["notnull"] else "YES",
-             "Key": "PRI" if row["pk"] else "", "comment": None}
+            {
+                "field": row["name"],
+                "default": row["dflt_value"],
+                "column_type": row["type"],
+                "null": "NO" if row["notnull"] else "YES",
+                "Key": "PRI" if row["pk"] else "",
+                "auto_increment": bool(
+                    row["pk"]
+                    and re.search(
+                        r"\bAUTOINCREMENT\b", clauses.get(str(row["name"]).lower(), ""), re.I
+                    )
+                ),
+                "comment": None,
+            }
             for row in rows
         ]
     if driver == "mysql":
@@ -312,17 +337,135 @@ def _default(value: Any, kind: str, postgres: bool) -> Any:
     return value
 
 
+def _sqlite_default(value: Any, kind: str) -> Any:
+    """Decode a PRAGMA `dflt_value`, which SQLite reports as raw SQL text.
+
+    A string constant keeps its quotes and its doubled inner quotes, while
+    numeric and CURRENT_TIMESTAMP constants arrive bare, so the text has to be
+    read as SQL instead of as a Python value. Anything else is an expression:
+    keeping it verbatim would make the generated model write a string default
+    where the database stores a function call.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    constant = re.fullmatch(r"'((?:''|[^'])*)'", text)
+    if constant:
+        return constant[1].replace("''", "'")
+    if kind in TEMPORAL and current_timestamp(text) is not None:
+        return current_timestamp(text)
+    if re.fullmatch(r"[+-]?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?", text):
+        return _default(text, kind, False)
+    raise ValueError(f"Unsupported SQLite default expression: {value!r}")
+
+
+def _split_column_clauses(definition: str) -> list[str]:
+    """Split a CREATE TABLE body on top-level commas, skipping tokens and () runs.
+
+    Quoted spans only need to be skipped, not parsed: a doubled quote inside a
+    string reads as the end of one token and the start of the next, which still
+    keeps every comma and bracket pair out of the split.
+    """
+    body = definition[definition.find("(") + 1 : definition.rfind(")")]
+    clauses: list[str] = []
+    current: list[str] = []
+    depth = 0
+    index = 0
+    while index < len(body):
+        character = body[index]
+        if character in "'\"`[":
+            closing = "]" if character == "[" else character
+            current.append(character)
+            index += 1
+            while index < len(body):
+                current.append(body[index])
+                index += 1
+                if body[index - 1] == closing:
+                    break
+            continue
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+        elif character == "," and depth == 0:
+            clauses.append("".join(current))
+            current = []
+            index += 1
+            continue
+        current.append(character)
+        index += 1
+    if "".join(current).strip():
+        clauses.append("".join(current))
+    return clauses
+
+
+_TABLE_CONSTRAINTS = re.compile(
+    r"\s*(?:CONSTRAINT\s+\S+\s+)?(PRIMARY|UNIQUE|FOREIGN|CHECK)\b", re.I
+)
+_LEADING_TOKEN = re.compile(
+    r'\s*("(?:[^"]|"")*"|`[^`]*`|\[[^\]]*\]|[A-Za-z_][A-Za-z_0-9$]*)'
+)
+
+
+def _column_name(clause: str) -> Optional[str]:
+    if _TABLE_CONSTRAINTS.match(clause):
+        return None
+    match = _LEADING_TOKEN.match(clause)
+    if match is None:
+        return None
+    token = match[1]
+    if token[0] in "\"`[":
+        return token[1:-1].replace('""', '"')
+    return token
+
+
+def _sqlite_column_clauses(definition: Optional[str]) -> dict[str, str]:
+    """Map each column named by a CREATE TABLE statement to its clause text.
+
+    `PRAGMA table_info` reports neither AUTOINCREMENT nor generated columns, so
+    the stored statement is the only place those facts are readable.
+    """
+    if not definition:
+        return {}
+    result = {}
+    for clause in _split_column_clauses(definition):
+        name = _column_name(clause)
+        if name is not None:
+            result[name.lower()] = clause
+    return result
+
+
 def get_col(field: dict[str, Any], driver: str = "mysql") -> dict[str, Any]:
     normalized_driver = driver_name(driver)
     if normalized_driver == "sqlite":
-        kind = field.get("column_type", "text").lower().split("(", 1)[0]
-        type_map = {"int": "integer", "bigint": "integer", "real": "float", "numeric": "numeric", "blob": "text"}
-        return dict(name=field["field"], column_type=type_map.get(kind, kind),
-                    primary_key=field.get("Key") == "PRI", default=_default(field.get("default"), kind, False),
-                    charset=None, max_length=None, scale_length=None,
-                    auto_increment=bool(field.get("auto_increment", False)),
-                    NOT_NULL=field.get("null") == "NO", update_generated=False,
-                    unsigned=False, comment=None)
+        declared = str(field.get("column_type") or "text").strip().lower()
+        match = re.fullmatch(r"([a-z ]+)(?:\((\d+)(?:,\s*(\d+))?\))?", declared)
+        if match is None:
+            raise ValueError(f"Unsupported SQLite type: {declared!r}")
+        type_map = {
+            "int": "integer",
+            "bigint": "integer",
+            "real": "float",
+            "numeric": "numeric",
+            "blob": "text",
+        }
+        kind = type_map.get(match[1], match[1])
+        return dict(
+            name=field["field"],
+            column_type=kind,
+            primary_key=field.get("Key") == "PRI",
+            default=_sqlite_default(field.get("default"), kind),
+            charset=None,
+            max_length=(
+                int(match[2]) if match[2] is not None and kind not in INTEGER else None
+            ),
+            scale_length=int(match[3]) if match[3] is not None else None,
+            auto_increment=bool(field.get("auto_increment", False)),
+            NOT_NULL=field.get("null") == "NO",
+            update_generated=False,
+            unsigned=False,
+            comment=None,
+        )
     postgres = normalized_driver == "postgres"
     if not postgres:
         match = re.fullmatch(
