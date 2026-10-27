@@ -58,6 +58,13 @@ class MySQLDialect:
     def interval(self, amount: Union[int, str], unit: str) -> str:
         return f"INTERVAL {amount} {unit}"
 
+    def unlimited_limit_clause(self) -> str:
+        """The LIMIT clause that pairs with OFFSET when no row cap is set.
+
+        An empty result means the dialect accepts a bare OFFSET clause.
+        """
+        return "LIMIT 18446744073709551615"
+
 
 class PostgreSQLDialect(MySQLDialect):
     is_postgres = True
@@ -79,6 +86,9 @@ class PostgreSQLDialect(MySQLDialect):
     def interval(self, amount: Union[int, str], unit: str) -> str:
         return f"INTERVAL '{amount} {unit.lower()}'"
 
+    def unlimited_limit_clause(self) -> str:
+        return ""
+
 
 class SQLiteDialect(MySQLDialect):
     is_postgres = False
@@ -91,6 +101,11 @@ class SQLiteDialect(MySQLDialect):
 
     def prepare(self, sql: str, *, escape_percent: bool = False) -> str:
         return self._code(sql)
+
+    def unlimited_limit_clause(self) -> str:
+        # SQLite only accepts an integer row count, so the MySQL sentinel fails
+        # with "datatype mismatch"; -1 is its documented unbounded LIMIT.
+        return "LIMIT -1"
 
 
 def dialect_for(driver: str) -> MySQLDialect:

@@ -252,8 +252,10 @@ class SQLCompiler:
             sql += f" {prefix} {text}"
         if state.limit is not None:
             sql += f" LIMIT {state.limit}"
-        elif state.offset is not None and not self.dialect.is_postgres:
-            sql += " LIMIT 18446744073709551615"
+        elif state.offset is not None:
+            limit_all = self.dialect.unlimited_limit_clause()
+            if limit_all:
+                sql += f" {limit_all}"
         if state.offset is not None:
             sql += f" OFFSET {state.offset}"
         if state.lock:

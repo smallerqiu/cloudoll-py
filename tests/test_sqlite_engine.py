@@ -52,6 +52,36 @@ async def test_sqlite_memory_database_keeps_one_connection():
 
 
 @pytest.mark.asyncio
+async def test_sqlite_offset_without_limit_reads_the_remainder():
+    # SQLite rejects the MySQL "no cap" sentinel with datatype mismatch, so an
+    # offset-only page has to compile to its own LIMIT -1 idiom.
+    db = await create_engine(url="sqlite:///:memory:")
+    try:
+        await create_table(db, [SQLiteEntry], None)
+        for value in ("alpha", "beta", "gamma"):
+            await SQLiteEntry.use(db).insert(value=value)
+        assert [row["value"] for row in await SQLiteEntry.use(db).offset(2).all()] == [
+            "gamma"
+        ]
+        assert [
+            row["value"] for row in await SQLiteEntry.use(db).limit(1).offset(1).all()
+        ] == ["beta"]
+    finally:
+        await db.close()
+
+
+def test_unbounded_offset_limit_clause_per_dialect():
+    from types import SimpleNamespace
+
+    def tail(driver: str) -> str:
+        return SQLiteEntry.use(SimpleNamespace(driver=driver)).offset(10).test()[0]
+
+    assert "LIMIT -1 OFFSET 10" in tail("sqlite")
+    assert "LIMIT 18446744073709551615 OFFSET 10" in tail("mysql")
+    assert "OFFSET 10" in tail("postgres") and "LIMIT" not in tail("postgres")
+
+
+@pytest.mark.asyncio
 async def test_sqlite_model_schema_crud_and_upsert():
     db = await create_engine(url="sqlite:///:memory:")
     try:
