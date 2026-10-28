@@ -67,7 +67,11 @@ def test_an_unclosed_engine_still_finishes_the_journal_on_disk(tmp_path):
     database = tmp_path / "app.db"
     result = run_unclosed_engine(f"sqlite:///{database}")
     assert result.returncode == 0, result.stderr
-    assert not (tmp_path / "app.db-wal").exists()
+    journal = tmp_path / "app.db-wal"
+    # Whether a clean close deletes the sidecar files depends on the bundled SQLite
+    # (3.47 removes them, 3.51 leaves an empty -wal plus a -shm), so the promise being
+    # tested is that no frame is left unmerged rather than that the name is gone.
+    assert not journal.exists() or journal.stat().st_size == 0, "WAL frames survived exit"
     connection = sqlite3.connect(database)
     try:
         assert connection.execute("SELECT value FROM kept").fetchall() == [("unread",)]
@@ -106,7 +110,9 @@ async def test_closing_waits_for_a_leased_connection_without_polling(monkeypatch
     try:
         closing = asyncio.create_task(db.close())
         await real_sleep(0.5)
-        assert not closing.done(), "close() returned while a connection was still leased"
+        assert not closing.done(), (
+            "close() returned while a connection was still leased"
+        )
         assert len(polls) < 50, f"close() polled {len(polls)} times while waiting"
         released.set()
         await asyncio.wait_for(closing, 5)
