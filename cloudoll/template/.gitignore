@@ -66,6 +66,11 @@ venv.bak/
 # Database files
 *.db
 *.sqlite
+*.sqlite3
+# SQLite write-ahead log and shared-memory sidecars, plus the hot journal
+*-wal
+*-shm
+*-journal
 
 # Log files
 *.log

@@ -188,4 +188,4 @@ if __name__ == "__main__":
 
 普通耗时日志在 DEBUG，超过 slow_query_seconds 阈值在 WARNING；默认阈值 1 秒。它与 echo 的 INFO SQL 日志是两套用途不同的记录。
 
-生产环境通常关闭 echo，尤其不要打开 echo_params：密码、token、个人信息都可能成为绑定值。即使关闭参数日志，手写 SQL 中的字面量仍可能泄露数据。此开关目前仅适用于原生 MySQL/PostgreSQL，不包括 Aurora。
+生产环境通常关闭 echo，尤其不要打开 echo_params：密码、token、个人信息都可能成为绑定值。即使关闭参数日志，手写 SQL 中的字面量仍可能泄露数据。此开关适用于原生 MySQL、PostgreSQL 与 SQLite，不包括 Aurora。

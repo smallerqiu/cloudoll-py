@@ -22,13 +22,14 @@
 - 每个开发子进程/热重载实例均从明确的项目根目录创建独立 Application，不复用 fork 继承的父进程默认应用或上下文；入口模块加载和子进程工作目录使用同一项目根目录。
 - 辅助监控服务使用合并后的 `server.host`，遵守配置与命令行的优先级。
 - 子进程绑定 HTTP 端口（或 Unix socket）成功后才报告就绪；进程创建失败、初始化错误、端口占用及 30 秒启动超时均向上传递。
+- 开发子进程与 `Application.run()` 共用 `web/configuration.build_ssl_context()`：按同一份 `server` 配置加载证书、以 HTTPS 绑定，并按 scheme 打印就绪地址；TLS 配置错误在绑定前抛出，不会退回明文。
 - 监控任务失败或子服务意外退出时，CLI 清理资源并以错误退出，不继续保持无服务的监控状态。
 - 热重载先通知旧子进程执行 aiohttp 清理，再启动替代进程。退出先取消监控任务，防止清理期间再次启动子服务。
 - 等待进程退出在工作线程中执行，不阻塞事件循环；先等待 5 秒协作关闭，再依次 terminate、等待 1 秒、kill、等待 1 秒。强制终止不保证用户清理钩子执行完毕；仍无法终止时明确报错。
 - 取消关闭操作不会放弃已开始的子进程回收，重复关闭不会重复操作同一进程。
 - 临时 TTY 在正常或异常退出后恢复原 `sys.stdin`，业务异常原样传播。Python 3.9+ 统一用 `asyncio.run()` 管理子进程事件循环。
 
-## 事务：原生 MySQL / PostgreSQL
+## 事务：原生 MySQL / PostgreSQL / SQLite
 
 ```python
 from cloudoll.orm import create_engine
@@ -44,7 +45,8 @@ async with db.transaction():
 
 事务内固定使用同一条连接，正常退出提交，异常（包括任务取消）退出回滚。无显式事务的单次查询也有独立的提交/回滚边界。批量写入作为一次事务执行。
 
-- 本节描述原生 `mysql` / `postgres`。AWS 包装驱动的事务已另行实现，但未测试；取消、超时和故障切换行为不同，详见 [Aurora 接入说明](aurora.md)。
+- 本节描述原生 `mysql` / `postgres` / `sqlite`。AWS 包装驱动的事务已另行实现，但未测试；取消、超时和故障切换行为不同，详见 [Aurora 接入说明](aurora.md)。
+- SQLite 的 `db.transaction(mode=...)` 支持 `DEFERRED`（默认）、`IMMEDIATE`、`EXCLUSIVE`：需要并发写入时先以 `IMMEDIATE` 拿写锁，避免升级到写锁时才发生 SQLITE_BUSY。SQLite 没有行级锁，`for_update()` 在编译期直接报错而不是静默去掉。
 - 支持嵌套事务（自动使用保存点）和显式 `db.savepoint()`。事务属于创建它的 asyncio task，不能在事务内部用 `create_task()` 或 `gather()` 并发共享连接。独立任务可以各自创建事务。
 - 某条 SQL 失败，即使在块内捕获异常，事务也会被标记失败；后续查询被拒绝，退出时回滚并抛 `TransactionError`。
 - 请勿在事务块中执行 DDL 或原始 `BEGIN` / `COMMIT` / `ROLLBACK`。特别是 MySQL DDL 可能隐式提交，库不解析或阻止所有原始 SQL。
@@ -108,9 +110,13 @@ await user.update()                          # 只更新 name，而不是整个�
 | `close_timeout` | 10 | 原生连接池关闭期限；必须有限且为正数，不接受 None |
 | `slow_query_seconds` | 1 | 超过阈值输出慢操作警告；None 关闭阈值 |
 
-URL 查询参数和结构化参数都可使用，显式关键字优先。TLS 保留驱动的原生差异：MySQL 传 `ssl=ssl.create_default_context(cafile=...)`；PostgreSQL 传 `sslmode="verify-full"`、`sslrootcert`，必要时 `sslcert` / `sslkey`。默认不强制 TLS，生产配置必须自行启用。
+URL 查询参数和结构化参数都可使用，显式关键字优先。TLS 保留驱动的原生差异：MySQL 传 `ssl=ssl.create_default_context(cafile=...)`；PostgreSQL 传 `sslmode="verify-full"`、`sslrootcert`，必要时 `sslcert` / `sslkey`。默认不强制 TLS，生产配置必须自行启用。SQLite 是本机文件，没有传输层 TLS，可见性由文件属主与目录权限决定。
+
+SQLite 另有自己的池与引擎选项：`maxsize`（默认 5，`:memory:` 固定为 1）、`journal_mode`（不设置则不改 PRAGMA，文件库默认 `delete`；多进程读写建议 `WAL`）、`foreign_keys`（默认 `true`）、`uri`（仅在字段配置 `type: sqlite` + `db` 时按 SQLite URI 解释路径；URL 的 `?` 会被解析成引擎选项）、`sqlite_timeout` / `timeout`（aiosqlite 等锁秒数，同时是建立连接的等待上限）。表里其余超时由基类统一施加：`acquire_timeout` 限制借连接，`query_timeout` 限制单条 SQL 与事务控制语句，`close_timeout` 限制关池。
 
 执行超时或取消会废弃连接，避免将仍有未读协议数据的连接放回池中。随后通过池获取新连接恢复查询，不自动重试原 SQL。调用方可捕获 `asyncio.TimeoutError`。取消或提交失败的写入不能仅凭异常推断是否生效。
+
+SQLite 的关池是事件驱动的：`close()` 等借用中的连接归还后才关闭，不轮询；超过 `close_timeout` 会终止仍持有的连接并抛异常。进程退出时，仍未关闭引擎的 aiosqlite 工作线程由模块级 atexit 钩子停下并限时 join，因此不会拖住解释器退出，WAL 检查点也照常完成——但这条兜底不替代显式 `close()`，事务级清理仍不保证。
 
 ## 日志与请求
 
@@ -123,7 +129,7 @@ from cloudoll.logging import configure_logging
 configure_logging(files=True)  # CLI 会主动调用；普通 import 不会
 ```
 
-重复配置只替换 Cloudoll 自己的 handler，保留宿主 handler。数据库耗时日志不包含 SQL 或参数；原生 MySQL/PostgreSQL 可显式设置 `echo: true`，通过 `cloudoll` logger 在 INFO 级别记录 SQL。参数只有同时设置 `echo_params: true` 才输出，两项默认均为 false。覆盖查询、写入、批量操作、流式查询及 BEGIN/COMMIT/ROLLBACK/保存点控制语句；在执行前记录的是尝试执行的 SQL，不代表执行成功。SQL 保留占位符，参数单独输出，不拼接成可执行字符串。底层驱动 echo 仍关闭，避免重复输出或绕过参数开关。Aurora 不在本功能范围。
+重复配置只替换 Cloudoll 自己的 handler，保留宿主 handler。数据库耗时日志不包含 SQL 或参数；原生 MySQL/PostgreSQL/SQLite 可显式设置 `echo: true`，通过 `cloudoll` logger 在 INFO 级别记录 SQL。参数只有同时设置 `echo_params: true` 才输出，两项默认均为 false。覆盖查询、写入、批量操作、流式查询及 BEGIN/COMMIT/ROLLBACK/保存点控制语句；在执行前记录的是尝试执行的 SQL，不代表执行成功。SQL 保留占位符，参数单独输出，不拼接成可执行字符串。底层驱动 echo 仍关闭，避免重复输出或绕过参数开关。Aurora 不在本功能范围。
 
 直接创建引擎时使用 `await create_engine(type="postgres", ..., echo=True, echo_params=False)`；也支持 URL 参数 `?echo=true&echo_params=false`，显式关键字优先。作为库使用时先调用 `configure_logging()` 或由宿主配置 `cloudoll` logger 的 INFO 输出；CLI 已配置日志。布尔 URL 值支持 true/false、1/0、yes/no、on/off，非法值会报错。
 

@@ -66,7 +66,7 @@ JWT 是签名，不是加密。验证身份后仍要做权限检查；Session Co
 
 回滚不自动撤销 Python 对象中的修改；PostgreSQL 原始 INSERT 不带 RETURNING 时没有 ID。无 where 或主键的 update/delete 被拒绝。
 
-原生 MySQL/PostgreSQL 支持任务所属的事务、保存点和流式查询；不允许将事务连接交给子任务，不自动重放 SQL。Aurora 的实现尚未测试，不支持原生流式查询。
+原生 MySQL、PostgreSQL 与 SQLite 支持任务所属的事务、保存点和流式查询；不允许将事务连接交给子任务，不自动重放 SQL。Aurora 的实现尚未测试，不支持原生流式查询。
 
 ## 应用、CLI 与部署
 

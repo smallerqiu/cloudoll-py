@@ -30,7 +30,7 @@ EnvYAML 会自动读取当前工作目录下的 `.env`。从项目根目录启�
 
 不要提交包含密码或密钥的 `.env`；可提交仅包含变量名和占位值的 `.env.example`。
 
-显式指定的配置文件不存在会抛 FileNotFoundError，不再返回空配置继续启动。核心配置节、端口/请求大小、布尔开关、资源关闭期限和 JWT 策略会在应用创建时校验，on_create 修改后再次校验。业务自定义键仍可使用；数据库驱动参数由相应引擎校验。
+显式指定的配置文件不存在会抛 FileNotFoundError，不再返回空配置继续启动。核心配置节、端口/请求大小、布尔开关、资源关闭期限、TLS 证书选项和 JWT 策略会在应用创建时校验，on_create 修改后再次校验。业务自定义键仍可使用；数据库驱动参数由相应引擎校验。
 
 有意不读配置文件时明确使用 `Application().create(env=None, entry_model=None)` 或传入 `config={}`。不要通过缺失生产配置实现默认回退。
 
@@ -44,6 +44,9 @@ server:
   json_errors: true
   resource_close_timeout: 10
   resource_shutdown_timeout: 30
+  # 启用 HTTPS：两项必须同时给出，相对路径按应用根目录解析
+  # ssl_certfile: /etc/ssl/cloudoll/fullchain.pem
+  # ssl_keyfile: /etc/ssl/cloudoll/privkey.pem
   static:
     prefix: /static
     show_index: false
@@ -115,9 +118,11 @@ database:
 
 URL 格式分别是 `mysql://用户:密码@主机:3306/库名`、`postgres://用户:密码@主机:5432/库名` 和 `sqlite:///相对或绝对路径.db`。账号、密码含特殊字符时需 URL 编码；分字段配置更容易避免编码错误。显式关键字参数优先于 URL 中的同名选项。
 
-SQLite 无需额外驱动；内存数据库可写为 `sqlite:///:memory:`。服务器可在 `server` 下配置 `ssl_certfile` 与 `ssl_keyfile` 启用 HTTPS，也可通过 Python API 传入自定义 `ssl_context`。
+SQLite 无需额外驱动；`sqlite:///app.db` 里的路径按进程启动目录解析，跨目录启动请用绝对路径。内存数据库写为 `sqlite:///:memory:`，此时连接池上限固定为 1，否则每个连接各有一个独立的内存库。数据源字段可用 `maxsize`（池上限，默认 5）、`journal_mode`（多进程并发读写建议 `WAL`）、`foreign_keys`（默认开启）、`timeout`（等锁与单条查询的秒数，默认 60）、`close_timeout`（关闭连接池的等待上限，默认 10）。
 
-在请求中通过 `request.app.db.mysql` / `request.app.db.postgres` 取连接。详细的超时、TLS、事务和 SQL 日志见[数据库](/database)及[日志](/logs)。
+服务器可在 `server` 下配置 `ssl_certfile` 与 `ssl_keyfile` 启用 HTTPS，开发热重载与生产运行都生效，证书相对路径按应用根目录解析；也可通过 Python API 传入自定义 `ssl_context`，但它不能与证书路径同时设置。详见[部署](/deployment)。
+
+在请求中通过 `request.app.db.别名` 取连接，例如 `request.app.db.mysql`、`request.app.db.postgres`、`request.app.db.sqlite_db`。详细的超时、TLS、事务和 SQL 日志见[数据库](/database)及[日志](/logs)。
 
 ## 默认 ORM 数据源
 

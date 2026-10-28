@@ -1,6 +1,6 @@
 # 流式查询与类型支持
 
-## 原生 MySQL / PostgreSQL 流式读取
+## 原生 MySQL / PostgreSQL / SQLite 流式读取
 
 ```python
 query = User.use(db).where(User.id > 0).order_by(User.id.asc())
@@ -13,13 +13,14 @@ async with query.stream(batch_size=500) as rows:
 
 - MySQL 使用 `aiomysql.SSDictCursor`，按需读取协议数据。
 - PostgreSQL 使用 `DECLARE ... NO SCROLL CURSOR` 和分批 `FETCH`，因为 aiopg 的异步连接不支持 Psycopg 命名游标参数。
+- SQLite 在 aiosqlite 的工作线程里逐步执行语句并按 `batch_size` 调用 `fetchmany`，行不会先汇成一个完整列表；数据在本机文件里，没有网络协议缓冲。
 - 客户端保存一批行，内存量随 `batch_size` 和单行大小变化，不随结果总行数线性增长。SQL 在数据库端仍可能排序、聚合或使用临时空间，这不是数据库端“零内存”保证。
 
 必须使用 `async with` 来限定连接生命周期：正常读完、`break`、消费逻辑抛异常或任务取消都会释放连接。MySQL 提前退出时直接废弃未读完的连接，不调用会把剩余结果读完的关闭路径；下一次请求由池补充连接。PostgreSQL 正常提前退出时关闭服务端游标。
 
 ### 边界与限制
 
-- 第一版只支持原生 `mysql` / `postgres`，AWS 引擎调用 `stream()` 明确报不支持，不降级成全量读取。Aurora 改造仍未测试。
+- 第一版支持原生 `mysql` / `postgres` / `sqlite`，AWS 引擎调用 `stream()` 明确报不支持，不降级成全量读取。Aurora 改造仍未测试。
 - 使用独立的只读事务，不支持放在已有事务/另一个 stream 内部。流式块内不能通过同一引擎执行其他查询、开启事务或关闭引擎；应先退出流式块。
 - 流由创建它的 task 消费，不可交给子任务并发迭代。退出上下文后继续迭代会报错。
 - `batch_size` 必须是正整数，不能为 bool。`query_timeout` 应用于打开游标和每次批量读取，不是导出任务的总时限。
@@ -79,6 +80,6 @@ python tests/run_local_databases.py \
   --python .venv/bin/python --python .venv39/bin/python
 ```
 
-最后一条只验证原生 MySQL/PostgreSQL，不运行 AWS/Aurora 测试。覆盖完整读取、分页批次、提前退出、异常、取消、读取超时、只读限制及单连接池的后续可用性。
+最后一条只验证原生 MySQL/PostgreSQL，不运行 AWS/Aurora 测试。覆盖完整读取、分页批次、提前退出、异常、取消、读取超时、只读限制及单连接池的后续可用性。SQLite 的流式读取（分批 `fetchmany`、提前退出释放连接）在普通门禁的 `tests/test_sqlite_engine.py` 里用临时文件库覆盖，不需要外部服务。
 
 驱动依据：[aiomysql 游标文档](https://aiomysql.readthedocs.io/en/stable/cursors.html)、[aiopg 游标限制](https://aiopg.readthedocs.io/en/stable/core.html)、[Psycopg 服务端游标说明](https://www.psycopg.org/docs/usage/#server-side-cursors)。

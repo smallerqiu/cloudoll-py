@@ -13,7 +13,7 @@ Cloudoll 是基于 aiohttp 的异步 Python Web 库，提供路由、模板、Se
 
 ## 环境与安装
 
-基础功能需要 Python 3.9+；AWS extra 需要 Python 3.10+。数据库驱动按需安装。
+基础功能需要 Python 3.9+；AWS extra 需要 Python 3.10+。MySQL、PostgreSQL 驱动按需安装，SQLite 已随基础包装入，无需额外 extra。
 
 ```sh
 python3 -m venv .venv
@@ -89,7 +89,7 @@ if __name__ == "__main__":
 - [目录结构](/structure)与[配置](/config)：项目路径、环境变量和依赖。
 - [参数校验](/validation)：Body、Query、Form、Path 模型与字段错误。
 - [路由](/router)、[模板](/view)、[中间件](/middleware)：处理请求。
-- [数据库](/database)：MySQL/PostgreSQL、事务、保存点、流式查询和类型。
+- [数据库](/database)：MySQL、PostgreSQL 与 SQLite、事务、保存点、流式查询和类型。
 - [日志](/logs)：SQL 调试开关和请求追踪。
 - [生命周期](/app-start)、[HTTP 客户端](/http-client)：后台任务与资源回收。
 - [部署](/deployment)：生产模式、Supervisor 和容器。

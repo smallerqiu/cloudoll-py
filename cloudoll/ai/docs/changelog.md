@@ -12,9 +12,19 @@ icon: logs
 
 ## 4.5.0
 
-- `Application.run()` 支持通过证书路径或自定义 `ssl.SSLContext` 启用 HTTPS。
-- ORM 新增基于 `aiosqlite` 的 SQLite 引擎、事务、流式查询、upsert 和建表/模型反向生成支持。
-- SQLite 事务可选择 `DEFERRED`、`IMMEDIATE` 或 `EXCLUSIVE` 模式；SQLite 不支持行级 `FOR UPDATE`。
+### HTTPS
+
+- `server.ssl_certfile` + `server.ssl_keyfile` 或自定义 `server.ssl_context` 可直接启用 HTTPS，`cloudoll start` 的热重载子进程与 `Application.run()` 都按配置提供服务，本地和线上行为一致。
+- 证书相对路径按应用根目录解析。证书与私钥必须成对配置；缺文件、路径读不到、证书与私钥不匹配都会在启动时点名报错，不会退回明文 HTTP。`ssl_context` 与证书路径不能同时设置。
+
+### SQLite
+
+- ORM 新增基于 `aiosqlite` 的 SQLite 引擎：`sqlite:///app.db`、`sqlite:///:memory:` 都可直接作为数据源，支持 ORM 查询、绑定参数、批量写入、事务、嵌套保存点、流式读取、`upsert` 与建表/模型反向生成。
+- 可配置 `maxsize`、`journal_mode`（并发读写建议 `WAL`）、`foreign_keys`（默认开启）、`timeout`、`close_timeout`；内存库的连接池固定为 1。
+- 事务支持 `DEFERRED`、`IMMEDIATE`、`EXCLUSIVE` 模式，并发写入前可用 `IMMEDIATE` 取得写锁；SQLite 不支持行级 `FOR UPDATE`，会明确报错而不是静默忽略。
+- 只写 `offset()` 不写 `limit()` 的分页在三种驱动下都能取到完整剩余行。
+- 忘记关闭的 SQLite 引擎不再拖住进程退出，`WAL` 日志仍会在退出前合并回主文件；`close()` 等待借用中的连接归还，不再空转占用 CPU。
+- 反向生成读回 SQLite 表时，默认值、`CURRENT_TIMESTAMP`、自增计数器都会还原；表达式默认值（如 `datetime('now')`）和生成列会明确要求手写模型，`AUTOINCREMENT` 必须落在 `INTEGER PRIMARY KEY` 上。
 
 ## 4.4.0
 

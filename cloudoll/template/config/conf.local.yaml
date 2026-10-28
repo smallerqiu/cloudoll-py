@@ -3,6 +3,10 @@ server:
   port: 9001
   ignore_dirs: ["logs", "test"]
   client_max_size: 10000
+  # HTTPS works the same under `cloudoll start` and production runs. Set both
+  # files or neither; relative paths are resolved from this project root.
+  #   ssl_certfile: ./certs/fullchain.pem
+  #   ssl_keyfile: ./certs/privkey.pem
   static:
     prefix: /static
 
@@ -17,8 +21,13 @@ server:
 #     echo_params: false
 #   redis_0:
 #     url: redis://host:port:/0
+#   sqlite_db:
+#     url: sqlite:///./dev.db   # Relative paths follow the directory you start from
+#     journal_mode: WAL         # Optional; friendlier for concurrent readers
+#   # SQLite is a local file: there is no transport TLS, file permissions decide
+#   # who can read it. Prefer MySQL/PostgreSQL for multi-host deployments.
 
-# Optional: enable class-level ORM queries after configuring mysql_db above.
+# Optional: enable class-level ORM queries after configuring mysql_db or sqlite_db above.
 # orm:
 #   default: mysql_db
 

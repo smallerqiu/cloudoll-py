@@ -6,7 +6,7 @@
 
 Cloudoll 是一个基于 aiohttp 的 Python Web 开发库，提供路由自动注册、中间件、模板渲染、会话管理、JWT、数据库访问及命令行脚手架，帮助快速构建 Web 应用和微服务。
 
-ORM 内置 SQLite 支持，MySQL/PostgreSQL 按需安装驱动；`Application.run()` 可直接加载 PEM 证书启用 HTTPS。
+ORM 内置 SQLite 支持，MySQL/PostgreSQL 按需安装驱动；配置 PEM 证书后，`cloudoll start` 与生产 `Application.run()` 都直接以 HTTPS 提供服务。
 
 本文适用于 Cloudoll 4.5.0。从 3.x 升级前请阅读下方迁移说明。
 

@@ -7,8 +7,8 @@
 | `orm/model.py` | 模型元数据、字段值、序列化和兼容入口 |
 | `orm/query.py` | 独立查询状态、链式构造、执行、记录绑定 |
 | `orm/compiler.py` | 将表达式与查询状态编译成 SQL 和有序参数，不修改输入状态 |
-| `orm/dialects.py` | MySQL/PostgreSQL 标识符、日期表达式、RETURNING、DB-API 占位符转换 |
-| 数据库驱动模块 | 连接、游标、执行与返回值适配 |
+| `orm/dialects.py` | MySQL/PostgreSQL/SQLite 标识符、日期表达式、RETURNING、DB-API 占位符转换、只有 offset 时的分页补齐 |
+| 数据库驱动模块 | 连接、游标、执行与返回值适配；`orm/sqlite.py` 是 aiosqlite 连接池，并负责进程退出时收尾未关闭的连接 |
 
 已有链式接口保持可用：
 
@@ -26,6 +26,10 @@ await user.update()
 模型实例的 `where()`、`select()`、`insert()`、`update()` 等旧入口通过兼容层委托给查询对象。可使用 `User(...).bind(pool)` 显式绑定记录。直接读取查询对象的内部双下划线状态不属于兼容 API；对应状态现在位于 `Query.state`。
 
 编译器对空 `IN`、`NULL` 比较、分组 HAVING 计数和参数顺序作统一处理。PostgreSQL 特有的 SQL 不再通过全局字符串替换实现；方言转换保留 SQL 字面量和注释。MySQL 的 `DATE_FORMAT` 在 PostgreSQL 下明确报不支持，避免悄悄生成错误 SQL。原始 SQL 字符串仍应由调用方负责安全性，不要拼接外部输入。
+
+“只有 offset 没有 limit”怎么写由方言自己决定：MySQL 补 `LIMIT 18446744073709551615`，PostgreSQL 用裸 `OFFSET`，SQLite 用 `LIMIT -1`。把 MySQL 的哨兵值发给 SQLite 会报 datatype mismatch，所以这条不放进通用编译器。SQLite 引擎的行结果为 `sqlite3.Row` 转字典，与 MySQL/PostgreSQL 的字典返回值保持同一形状。
+
+`orm/sqlite.py` 的池按 `maxsize` 用信号量限流，`close()` 等借用中的连接归还后才关池（事件驱动，不轮询）。aiosqlite 每条连接起一个非守护线程，而 CPython 在运行 atexit 钩子之前就先 join 非守护线程，所以连接线程在启动前被标记为守护，模块级 atexit 钩子再对仍未关闭的连接 `stop()` 并限时 join，让 WAL 检查点跑完；忘记 `close()` 的脚本因此不会卡在退出上。
 
 ## Web 应用
 
@@ -56,6 +60,8 @@ application.create(env="local", entry_model=None).run()
 
 `root` 默认为实例创建时的工作目录。配置、静态资源、模板和控制器均相对该根目录解析。传入的配置会被复制，应用运行时的修改不会污染调用方的数据。
 
+HTTPS 由 `web/configuration.py` 的 `build_ssl_context()` 统一解析 `server.ssl_certfile` / `ssl_keyfile` / `ssl_context`：`Application.run()` 与开发热重载子进程（`clitool/watch.py` 的 `start_main_app()`）调用同一个函数，所以一份配置在两种模式下得到同一个 SSLContext，不会出现“本地明文、线上 TLS”的差别。相对证书路径按应用根目录解析，与模板、静态资源同规则；类型错误、只配一半、文件缺失、证书与私钥不匹配都在绑定端口之前抛出并点名是哪一项。`ssl_context` 与证书路径互斥。开发模式的就绪地址按实际 scheme 打印。
+
 每个应用的自动发现模块位于独立的 Python 包命名空间下，不再把项目目录插入全局 `sys.path`。控制器间应使用相对导入，例如同级模块 `from .helper import value`。若旧项目依赖自动添加搜索路径后才能执行的 `from models import User`，请改为正确的包相对导入，或把共享代码做成可安装的独立包。第三方包的绝对导入不受影响。
 
 模块级 `from cloudoll.web import app, get, middleware` 继续可用。`app` 是上下文代理，创建应用、处理请求时指向对应实例；未绑定上下文的旧入口使用惰性创建的默认应用。新代码应优先使用显式实例，避免在无上下文后台任务中依赖默认应用。
@@ -67,7 +73,7 @@ python -m pip install -e '.[mysql,postgres,cache,dev]'
 python -m mypy
 python -m pytest -q -m 'not integration' -k 'not aws'
 python -m build
-python tests/check_wheel.py dist/cloudoll-4.1.0-py3-none-any.whl
+python tests/check_wheel.py dist/cloudoll-4.5.0-py3-none-any.whl
 ```
 
 真实数据库集成测试需要明确的测试连接：
@@ -79,6 +85,8 @@ python -m pytest -q tests/integration/test_databases.py -k 'not aws'
 ```
 
 测试会创建随机命名的临时表并在结束时删除，只能连接允许建表的专用测试数据库。覆盖真实 CRUD、自动生成主键、绑定记录更新、批量插入、分组计数、分页和错误后的连接可用性。当前命令明确排除 AWS 包装驱动，其改造仍未验证。
+
+SQLite 的用例不需要外部服务：反向生成、建表回环、连接池生命周期和退出清理都跑在 `:memory:` 或临时目录里的文件库上，属于上面的普通门禁命令；其中进程退出行为用子进程断言，`tests/test_sqlite_pool_lifecycle.py` 必须以能导入本仓库源码的工作目录运行。
 
 macOS 上也可以通过脚本创建完全隔离的临时数据库实例：
 

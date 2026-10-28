@@ -18,7 +18,11 @@ server:
   ssl_keyfile: /etc/ssl/cloudoll/privkey.pem
 ```
 
-`Application.run()` 会创建 TLS server context 并加载证书。也可在 Python 中通过 `server.ssl_context` 传入自定义 `ssl.SSLContext`，但不能与证书路径同时设置。证书续期后需重启进程以加载新证书。反向代理部署仍可由代理终止 TLS。
+证书配置对开发和生产都生效：`cloudoll start` 的热重载子进程与 `Application.run()` 用同一套规则加载证书并打印 `https://` 监听地址，不会出现“本地 HTTP、线上 HTTPS”的差别。相对路径按应用根目录解析，和模板、静态资源用的是同一个根，因此从其他目录启动服务也不会找错证书文件。
+
+证书和私钥必须成对出现，只填其中一个会在启动时报错。也可在 Python 中通过 `server.ssl_context` 传入自定义 `ssl.SSLContext`，但不能与证书路径同时设置。证书缺失、不可读或与私钥不匹配时，启动直接失败并点名是哪一项、哪个路径，不会静默退回明文 HTTP。证书续期后需重启进程以加载新证书。反向代理部署仍可由代理终止 TLS。
+
+443 是特权端口，Linux 下需要 `CAP_NET_BIND_SERVICE` 或以 root 启动后再降权；HTTPS 站点请把 `session.secure` 设为 true，详见[配置](/config)。
 
 ## 生产启动与 CLI 边界
 

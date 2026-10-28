@@ -54,9 +54,13 @@ DATABASE_URL 可以是 `mysql://...`、`postgres://...` 或 `sqlite:///path/to/a
 
 SQLite 基于 `aiosqlite`，支持 ORM 查询、绑定参数、批量写入、事务、嵌套保存点、流式读取和模型建表。`async with engine.transaction(mode="IMMEDIATE")` 可在并发写前取得 SQLite 写锁；mode 支持 `DEFERRED`、`IMMEDIATE`、`EXCLUSIVE`。SQLite 不支持行级 `FOR UPDATE`。其余高级 SQL 函数和 DDL 特性仍按 SQLite 自身能力限制。
 
+SQLite 连接池选项：`maxsize` 上限（默认 5，内存库固定为 1）；`foreign_keys` 默认 `true`，关掉后已有脏数据可继续写入；`journal_mode` 不设置时沿用 SQLite 自身默认（文件库为 `DELETE`），可取 `DELETE`、`TRUNCATE`、`PERSIST`、`MEMORY`、`WAL`、`OFF`，多个进程读写同一文件时建议 `WAL`，此时库里会附带 `-wal`、`-shm` 两个文件，别把它们提交进版本库；`timeout`（或只用于驱动等锁的 `sqlite_timeout`）为秒数。SQLite 的 URI 写法（`file:...?mode=ro` 之类）只有在用字段配置 `type: sqlite` + `db` 并加 `uri: true` 时才可用；`sqlite://` URL 里 `?` 之后的内容会被当成本页这些引擎选项，不会拼进路径。相对路径按进程启动目录解析，独立脚本换工作目录后会在别处新建同名文件，服务部署请用绝对路径。
+
+`await db.close()` 会等待仍在使用的连接归还后再关闭，不会忙等；超时则按 `close_timeout` 终止连接并抛出异常。即使忘记关闭引擎，进程退出也不会被它拖住：退出时未关闭的连接会被停下，`WAL` 日志仍在退出前合并回主文件，但这条路径不保证事务级清理，长期服务仍应显式关闭或用 Web 配置托管。
+
 ## 模型定义
 
-两种数据库共用模型接口，导入来自 `cloudoll.orm.model`，不是 mysql 模块。下面保存为项目根目录 `models.py`：
+MySQL、PostgreSQL 与 SQLite 共用模型接口，导入来自 `cloudoll.orm.model`，不是 mysql 模块。下面保存为项目根目录 `models.py`：
 
 ```python
 from cloudoll.orm.model import Model, models
@@ -179,6 +183,8 @@ total = await query.count()
 rows = await query.clone().order_by(User.id.asc()).limit(20).all()
 sql, params = query.test()
 ```
+
+只写 `.offset(n)` 不给 `.limit()` 表示“从第 n 行起取到结束”，三种驱动都返回完整的剩余行，不需要为 SQLite 另外传一个很大的 limit。
 
 ## JOIN 与聚合
 
@@ -364,7 +370,7 @@ changed = await User.upsert(
     update_fields=["name", "email"],
 )
 
-# 仅 PostgreSQL：实际数据库须已为 email 建立对应唯一约束/唯一索引。
+# PostgreSQL 与 SQLite：实际数据库须已为 email 建立对应唯一约束/唯一索引。
 changed = await User.upsert(
     {"name": "Alice", "email": "alice@example.test"},
     conflict_fields=["email"],
@@ -377,8 +383,9 @@ changed = await User.upsert(
 `update_fields`，不会把未列出的字段（包括默认值或自动时间字段）顺便覆盖。
 更新列必须存在于应用默认值后的插入数据中；不允许更新主键，不接受 SQL 表达式值。
 
-PostgreSQL 使用 ON CONFLICT，默认冲突目标为模型主键，也可指定 `conflict_fields`；
+PostgreSQL 与 SQLite 使用 ON CONFLICT，默认冲突目标为模型主键，也可指定 `conflict_fields`；
 这些列必须包含在插入数据中、对应数据库的唯一约束，且不能同时列为更新列。
+SQLite 的冲突目标同样必须已有对应的唯一索引，`ON CONFLICT` 不会替你建约束。
 MySQL 使用 ON DUPLICATE KEY UPDATE，**任意主键/唯一键冲突都可能触发更新**，
 不能选定某个冲突目标，所以传 `conflict_fields` 会明确报错，不会静默忽略。
 ORM 不自动创建唯一约束。租户隔离需正确设计唯一键；upsert 不替代授权检查。
@@ -490,7 +497,7 @@ async with query.stream(batch_size=500) as rows:
 
 使用服务端/非缓冲游标按批读取，不是 all() 后切片。必须 async with：完整读取、break、异常、取消都需要释放连接。
 
-仅原生 MySQL/PostgreSQL 支持。流使用独立只读事务，不能嵌在事务或另一个 stream 里；流式块内也不能通过同一引擎执行其他查询、开事务或关闭引擎。由创建它的 task 消费，退出后不可继续迭代。
+原生 MySQL、PostgreSQL 与 SQLite 支持。SQLite 在本机按 `batch_size` 分批取行，不会先把整个结果集读进 Python；MySQL/PostgreSQL 走非缓冲游标。流使用独立事务，不能嵌在事务或另一个 stream 里；流式块内也不能通过同一引擎执行其他查询、开事务或关闭引擎。由创建它的 task 消费，退出后不可继续迭代。
 
 batch_size 为正整数，query_timeout 限制每次打开/批量读取，不是整个导出的总时限。长时间导出仍会占用池连接、数据库事务和服务端排序资源，应限制并发与总时长。
 
@@ -530,7 +537,9 @@ db = await create_engine(url=mysql_url, ssl=tls)
 
 PostgreSQL 可配置 `sslmode: verify-full`、`sslrootcert: /path/to/ca.pem`，需要时加 sslcert/sslkey。TLS 不会由 Cloudoll 自动强制启用，证书与连接主机名应匹配。
 
-两种驱动通过 echo=True 开 SQL 日志，通过 echo_params=True 额外开参数日志。独立脚本还需 configure_logging()，完整用法和敏感信息警告见[日志](/logs)。
+SQLite 是本机文件，没有传输加密这一层：可见性由文件属主和目录权限决定。多机部署、需要加密或需要集中备份的数据仍应选 MySQL/PostgreSQL，SQLite 适合单进程或单机的小库。
+
+三种原生驱动都通过 echo=True 开 SQL 日志，通过 echo_params=True 额外开参数日志。独立脚本还需 configure_logging()，完整用法和敏感信息警告见[日志](/logs)。
 
 ## 模型生成与建表
 
@@ -539,13 +548,16 @@ PostgreSQL 可配置 `sslmode: verify-full`、`sslrootcert: /path/to/ca.pem`，�
 ```sh
 cloudoll gen -db postgres -c model -t users -p generated_models.py -env local
 cloudoll gen -db postgres -c table -t users -p generated_models.py -env local
+cloudoll gen -db sqlite_db -c model -t users -p generated_models.py -env local
 ```
 
-第二条会实际创建表，只应在新的测试库或经过审查的目标库执行，不要在刚反向生成的同一个已存在表上直接运行。-t 支持逗号分隔表名或 ALL。
+第二条会实际创建表，只应在新的测试库或经过审查的目标库执行，不要在刚反向生成的同一个已存在表上直接运行。-t 支持逗号分隔表名或 ALL，`-db` 用哪个驱动别名都一样，取的就是 [database 配置](/config)里的名字。
 
-生成器只支持原生 MySQL/PostgreSQL，**不是迁移工具**：不修改已有表，不迁移数据、索引、外键、CHECK、触发器和权限。生成模型文件追加而非覆盖，同名类拒绝重复追加。建表会执行模型 Python 文件，只能加载可信文件。
+生成器支持原生 MySQL、PostgreSQL 与 SQLite，**不是迁移工具**：不修改已有表，不迁移数据、索引、外键、CHECK、触发器和权限。生成模型文件追加而非覆盖，同名类拒绝重复追加。建表会执行模型 Python 文件，只能加载可信文件。
 
-复合主键、无法表达的类型/默认表达式会明确拒绝。callable ORM 默认值不支持生成 DDL。PostgreSQL 不模拟 MySQL UNSIGNED/ON UPDATE，serial 转 identity 不保留原序列状态。PostgreSQL 建表批次可事务回滚，MySQL DDL 隐式提交，运行错误可能留下部分已创建表。
+复合主键、无法表达的类型/默认表达式会明确拒绝。callable ORM 默认值不支持生成 DDL。PostgreSQL 不模拟 MySQL UNSIGNED/ON UPDATE，serial 转 identity 不保留原序列状态。PostgreSQL 建表批次可事务回滚，MySQL 与 SQLite 的 DDL 隐式提交，运行错误可能留下部分已创建表。
+
+SQLite 的表信息有限，反向生成按能读到的内容处理：建表语句里的默认值会还原成模型默认值（SQLite 建表不接受占位符，所以 DDL 里写的是字面量），带引号的字符串和 `CURRENT_TIMESTAMP` 认得，`datetime('now')`、`1+1` 这类表达式默认值直接拒绝，不会悄悄变成一个没有默认值的列；生成列在表信息里列不出来，遇到会要求你手写模型。自增只认建表语句里写明的 `AUTOINCREMENT`，普通 `INTEGER PRIMARY KEY` 仍按普通主键生成。反向出来的模型再建表时，`AUTOINCREMENT` 必须落在 `INTEGER PRIMARY KEY` 上，否则报错。
 
 ## 类型支持
 

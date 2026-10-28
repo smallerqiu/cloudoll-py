@@ -5,7 +5,7 @@ English | [简体中文](README.zh-CN.md)
 Cloudoll 4.5.0 is an aiohttp-based Python library for routing, middleware,
 templates, sessions, JWT, database access and application scaffolding.
 The ORM supports SQLite out of the box and MySQL/PostgreSQL through optional drivers;
-`Application.run()` can serve HTTPS directly from PEM certificates.
+PEM certificates enable HTTPS in both `cloudoll start` and production `Application.run()`.
 
 ## AI-assisted development
 
@@ -77,7 +77,7 @@ configure_logging(format='json', files=False)
 ```
 
 JSON logging supports structured secret-key masking and a custom string redactor.
-Native MySQL/PostgreSQL support opt-in echo=True and echo_params=True; both default
+Native MySQL/PostgreSQL/SQLite support opt-in echo=True and echo_params=True; both default
 to false. SQL is logged at INFO and parameter output requires both switches.
 SQL text itself can contain secrets; avoid enabling this in production.
 

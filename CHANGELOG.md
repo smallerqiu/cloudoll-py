@@ -2,9 +2,38 @@
 
 ## 4.5.0
 
-- Add native HTTPS support to `Application.run()` using `server.ssl_certfile` and `server.ssl_keyfile`, or a supplied `server.ssl_context`.
-- Add an async SQLite ORM engine with bounded pooling, transactions (including `IMMEDIATE` mode), streaming, URL parsing, SQLite SQL dialect, schema generation and model introspection.
-- Add SQLite upsert support and include `aiosqlite` as a runtime dependency.
+### HTTPS
+
+- `server.ssl_certfile` plus `server.ssl_keyfile`, or a Python `server.ssl_context`,
+  serve HTTPS. The development reloader (`cloudoll start`) uses the same settings as
+  production `Application.run()`, so a TLS-only site no longer behaves differently
+  locally, and the ready message shows the real `https://` address.
+- Relative certificate paths are resolved from the application root, like templates and
+  static files. Missing, unreadable, half-configured or mismatched certificates fail at
+  startup and name the option and path involved instead of falling back to plain HTTP.
+  `ssl_context` and certificate paths cannot be combined.
+
+### SQLite
+
+- New async SQLite engine on `aiosqlite`, declared as a runtime dependency: ORM queries,
+  bound parameters, batch writes, transactions, nested savepoints, streaming reads,
+  `upsert` with `conflict_fields`, and `cloudoll gen` model/table generation.
+- Datasources accept `sqlite:///app.db` and `sqlite:///:memory:` (an in-memory database
+  keeps its pool at one connection). Options: `maxsize` (default 5), `journal_mode`
+  (`WAL` recommended for concurrent readers), `foreign_keys` (on by default),
+  `timeout` / `sqlite_timeout`, `close_timeout`.
+- `transaction(mode=...)` accepts `DEFERRED`, `IMMEDIATE` and `EXCLUSIVE`; take the write
+  lock with `IMMEDIATE` when several writers compete. SQLite has no row locks, so
+  `for_update()` raises instead of being silently dropped.
+- Paging with only `offset()` returns the remaining rows on every driver; you no longer
+  need a large fake `limit()`, and a MySQL-sized limit is never sent to SQLite.
+- An engine nobody closed no longer hangs interpreter exit, and a `WAL` journal is still
+  merged back into the database file on the way out. `close()` waits for borrowed
+  connections to come back without spinning the CPU.
+- Reverse engineering a SQLite table restores literal defaults, `CURRENT_TIMESTAMP` and
+  an explicit `AUTOINCREMENT` counter. Expression defaults such as `datetime('now')`, and
+  generated columns, are refused with a clear message rather than turning into plain
+  columns. Generated `AUTOINCREMENT` requires `INTEGER PRIMARY KEY`.
 
 简体中文见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
 

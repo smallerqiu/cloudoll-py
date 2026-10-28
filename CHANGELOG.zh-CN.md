@@ -4,11 +4,19 @@
 
 ## 4.5.0
 
-### 新功能
+### HTTPS
 
-- `Application.run()` 原生支持 HTTPS，可配置 `server.ssl_certfile` / `server.ssl_keyfile`，也可传入 `server.ssl_context`。
-- ORM 新增异步 SQLite 引擎，支持连接池、事务（含 `IMMEDIATE` 模式）、流式查询、SQLite URL、方言、建表和模型反向生成。
-- SQLite 支持 upsert；`aiosqlite` 加入运行时依赖。
+- `server.ssl_certfile` + `server.ssl_keyfile`，或 Python 侧传入 `server.ssl_context`，即可直接以 HTTPS 提供服务。`cloudoll start` 的热重载进程与生产 `Application.run()` 读同一套配置，本地不再出现“明文调试、线上 TLS”的差别，就绪地址按实际协议打印。
+- 证书相对路径按应用根目录解析，与模板、静态资源同规则，换个目录启动不会找错文件。缺文件、路径读不到、只配了证书或私钥、证书与私钥不匹配，都会在绑定端口前点名报错，不会静默退回明文。`ssl_context` 与证书路径不能同时设置。
+
+### SQLite
+
+- 新增基于 `aiosqlite` 的异步 SQLite 引擎（驱动已计入运行时依赖）：ORM 查询、绑定参数、批量写入、事务、嵌套保存点、流式读取、可指定 `conflict_fields` 的 `upsert`，以及 `cloudoll gen` 反向生成模型与建表。
+- 数据源可写 `sqlite:///app.db` 或 `sqlite:///:memory:`（内存库的连接池固定为 1，否则各连接看到的是各自独立的内存库）。可配置 `maxsize`（默认 5）、`journal_mode`（多进程读写建议 `WAL`）、`foreign_keys`（默认开启）、`timeout`、`close_timeout`。
+- `transaction(mode=...)` 支持 `DEFERRED`、`IMMEDIATE`、`EXCLUSIVE`：并发写入先用 `IMMEDIATE` 取写锁，避免写入时才撞锁。SQLite 没有行级锁，`for_update()` 直接报错而不是被静默忽略。
+- 只写 `offset()` 不给 `limit()` 的分页在三种驱动下都能取回完整剩余行，不用再为 SQLite 编造一个很大的 limit。
+- 忘记关闭的 SQLite 引擎不再拖住进程退出，`WAL` 日志仍会在退出前合并回主文件；`close()` 等待借出的连接归还，不再空转占用 CPU。
+- 反向生成会还原字面量默认值、`CURRENT_TIMESTAMP` 和显式写明的 `AUTOINCREMENT` 计数器；`datetime('now')` 这类表达式默认值和生成列会明确要求你手写模型，而不是悄悄变成一个无默认值的普通列。生成 `AUTOINCREMENT` 时必须带 `INTEGER PRIMARY KEY`。
 
 ## 4.4.0
 
