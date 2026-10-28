@@ -10,7 +10,7 @@ icon: config
 
 ## 可逆加密
 
-需要在之后取回原文时用 `CryFernet`（AES-128-CBC + HMAC，来自 `cryptography` 的 Fernet 令牌格式）。`cryptography` 自 4.5.0 起是基础依赖，装 `cloudoll` 就有，不需要额外 extra：
+需要在之后取回原文时用 `CryFernet`（AES-128-CBC + HMAC，来自 `cryptography` 的 Fernet 令牌格式）。`cryptography` 自 4.5.1 起是基础依赖，装 `cloudoll` 就有，不需要额外 extra：
 
 ```python
 import os

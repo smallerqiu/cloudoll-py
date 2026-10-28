@@ -8,7 +8,7 @@ Cloudoll 是一个基于 aiohttp 的 Python Web 开发库，提供路由自动�
 
 ORM 内置 SQLite 支持，MySQL/PostgreSQL 按需安装驱动；配置 PEM 证书后，`cloudoll start` 与生产 `Application.run()` 都直接以 HTTPS 提供服务。
 
-本文适用于 Cloudoll 4.5.0。从 3.x 升级前请阅读下方迁移说明。
+本文适用于 Cloudoll 4.5.1。从 3.x 升级前请阅读下方迁移说明。
 
 ## AI 辅助开发
 
@@ -27,10 +27,10 @@ ORM 内置 SQLite 支持，MySQL/PostgreSQL 按需安装驱动；配置 PEM 证�
 
 ## 安装
 
-安装 4.5.0：
+安装 4.5.1：
 
 ```sh
-python -m pip install 'cloudoll==4.5.0'
+python -m pip install 'cloudoll==4.5.1'
 ```
 
 在当前仓库目录安装源码：
@@ -43,16 +43,16 @@ python -m pip install -e .
 
 ```sh
 # MySQL
-python -m pip install 'cloudoll[mysql]==4.5.0'
+python -m pip install 'cloudoll[mysql]==4.5.1'
 
 # PostgreSQL
-python -m pip install 'cloudoll[postgres]==4.5.0'
+python -m pip install 'cloudoll[postgres]==4.5.1'
 
 # AWS 数据库驱动
-python -m pip install 'cloudoll[aws]==4.5.0'
+python -m pip install 'cloudoll[aws]==4.5.1'
 
 # Redis / Memcached 会话或 Redis 数据库
-python -m pip install 'cloudoll[cache]==4.5.0'
+python -m pip install 'cloudoll[cache]==4.5.1'
 ```
 
 源码开发时可用 `python -m pip install -e '.[mysql,postgres,cache,dev]'` 安装。
@@ -548,8 +548,8 @@ cloudoll restart -n myapp
 python -m pip install -e '.[mysql,postgres,cache,dev]'
 python -m pytest -q -m 'not integration' -k 'not aws'
 python -m build
-python tests/check_wheel.py dist/cloudoll-4.5.0-py3-none-any.whl
-python tests/check_release.py dist/cloudoll-4.5.0-py3-none-any.whl
+python tests/check_wheel.py dist/cloudoll-4.5.1-py3-none-any.whl
+python tests/check_release.py dist/cloudoll-4.5.1-py3-none-any.whl
 ```
 
 最后一条命令用于验证构建出的 wheel，版本号变化后请调整文件名。测试使用模拟数据库连接及本机 HTTP 服务；真实数据库连接和 AWS 故障切换需要单独的集成环境。

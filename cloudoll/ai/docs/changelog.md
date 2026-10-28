@@ -6,25 +6,39 @@ icon: logs
 
 # 更新日志
 
-按版本倒序记录 Cloudoll 的主要变化。当前使用方法请以本站 4.5.0 文档为准，历史功能不代表当前仍保留相同 API。
+按版本倒序记录 Cloudoll 的主要变化。当前使用方法请以本站 4.5.1 文档为准，历史功能不代表当前仍保留相同 API。
 
 历史版本日期为对应源码提交日期。各版本源码可通过表格中的链接查看。
+
+## 4.5.1
+
+修复 4.5.0 的缺陷，向后兼容；Python 3.9+ 仍然支持。
+
+### HTTPS
+
+- `cloudoll start` 的热重载进程与 `Application.run()` 读同一套证书配置。此前只有 `Application.run()` 会读取，配了 HTTPS 的站点在本地仍用明文应答，就绪提示也照常打印 `http://`。
+- 缺文件、路径读不到、只配了证书或只配了私钥、证书与私钥不匹配，都会在绑定端口之前点名报错，说明是哪个配置项和哪个路径，不再抛出不带配置名的原始错误，也不会静默退回明文。
+- 证书相对路径按应用根目录解析，与模板、静态资源同规则，换个目录启动不会指向另一个文件。`ssl_context` 与证书路径仍不能同时设置。
+
+### SQLite
+
+- 只写 `offset()` 不给 `limit()` 的分页可取回剩余行。此前沿用 MySQL 的“不限行数”写法，SQLite 不接受，会直接报 `datatype mismatch`，只能编造一个很大的 `limit()`。
+- `close()` 等待其他任务借出的连接时不再空转占用 CPU，已经释放的连接也不会再被 `pool_stats()` 报成仍在使用；忘记关闭的引擎不再拖住进程退出，`WAL` 日志会在退出前合并回主数据库文件。
+- `cloudoll gen` 读回 SQLite 表时还原正确：文本与数字默认值不再被二次加引号，`CURRENT_TIMESTAMP` 仍是函数，`AUTOINCREMENT` 计数器按 `INTEGER PRIMARY KEY` 生成；`datetime('now')` 这类表达式默认值和生成列会明确要求手写模型，而不是悄悄变成没有默认值的普通列。生成的建表语句不再使用参数占位。
+- `cryptography` 正式列入基础依赖：`cloudoll.utils.password` 一直直接 import 它，却只在装了安全会话 extra 时才间接获得。
 
 ## 4.5.0
 
 ### HTTPS
 
-- `server.ssl_certfile` + `server.ssl_keyfile` 或自定义 `server.ssl_context` 可直接启用 HTTPS，`cloudoll start` 的热重载子进程与 `Application.run()` 都按配置提供服务，本地和线上行为一致。
-- 证书相对路径按应用根目录解析。证书与私钥必须成对配置；缺文件、路径读不到、证书与私钥不匹配都会在启动时点名报错，不会退回明文 HTTP。`ssl_context` 与证书路径不能同时设置。
+- `server.ssl_certfile` + `server.ssl_keyfile` 或自定义 `server.ssl_context`，`Application.run()` 可直接以 HTTPS 提供服务。
 
 ### SQLite
 
 - ORM 新增基于 `aiosqlite` 的 SQLite 引擎：`sqlite:///app.db`、`sqlite:///:memory:` 都可直接作为数据源，支持 ORM 查询、绑定参数、批量写入、事务、嵌套保存点、流式读取、`upsert` 与建表/模型反向生成。
 - 可配置 `maxsize`、`journal_mode`（并发读写建议 `WAL`）、`foreign_keys`（默认开启）、`timeout`、`close_timeout`；内存库的连接池固定为 1。
 - 事务支持 `DEFERRED`、`IMMEDIATE`、`EXCLUSIVE` 模式，并发写入前可用 `IMMEDIATE` 取得写锁；SQLite 不支持行级 `FOR UPDATE`，会明确报错而不是静默忽略。
-- 只写 `offset()` 不写 `limit()` 的分页在三种驱动下都能取到完整剩余行。
-- 忘记关闭的 SQLite 引擎不再拖住进程退出，`WAL` 日志仍会在退出前合并回主文件；`close()` 等待借用中的连接归还，不再空转占用 CPU。
-- 反向生成读回 SQLite 表时，默认值、`CURRENT_TIMESTAMP`、自增计数器都会还原；表达式默认值（如 `datetime('now')`）和生成列会明确要求手写模型，`AUTOINCREMENT` 必须落在 `INTEGER PRIMARY KEY` 上。
+- `upsert` 的 `conflict_fields` 在 SQLite 可用，冲突目标就是已有的唯一索引；MySQL 仍拒绝该选项。
 
 ## 4.4.0
 

@@ -120,7 +120,7 @@ URL 格式分别是 `mysql://用户:密码@主机:3306/库名`、`postgres://用
 
 SQLite 无需额外驱动；`sqlite:///app.db` 里的路径按进程启动目录解析，跨目录启动请用绝对路径。内存数据库写为 `sqlite:///:memory:`，此时连接池上限固定为 1，否则每个连接各有一个独立的内存库。数据源字段可用 `maxsize`（池上限，默认 5）、`journal_mode`（多进程并发读写建议 `WAL`）、`foreign_keys`（默认开启）、`timeout`（等锁与单条查询的秒数，默认 60）、`close_timeout`（关闭连接池的等待上限，默认 10）。
 
-服务器可在 `server` 下配置 `ssl_certfile` 与 `ssl_keyfile` 启用 HTTPS，开发热重载与生产运行都生效，证书相对路径按应用根目录解析；也可通过 Python API 传入自定义 `ssl_context`，但它不能与证书路径同时设置。详见[部署](/deployment)。
+服务器可在 `server` 下配置 `ssl_certfile` 与 `ssl_keyfile` 启用 HTTPS，开发热重载与生产运行都生效（4.5.1 起；4.5.0 只有 `Application.run()` 读取该配置），证书相对路径按应用根目录解析；也可通过 Python API 传入自定义 `ssl_context`，但它不能与证书路径同时设置。详见[部署](/deployment)。
 
 在请求中通过 `request.app.db.别名` 取连接，例如 `request.app.db.mysql`、`request.app.db.postgres`、`request.app.db.sqlite_db`。详细的超时、TLS、事务和 SQL 日志见[数据库](/database)及[日志](/logs)。
 

@@ -6,7 +6,7 @@ icon: database
 
 # 数据库与 ORM
 
-本页介绍 Cloudoll 4.5.0 的原生 MySQL、PostgreSQL 与 SQLite 接口，包括保存点、流式查询与 SQL 日志。从 3.x 升级请先阅读[升级说明](/migration)。
+本页介绍 Cloudoll 4.5.1 的原生 MySQL、PostgreSQL 与 SQLite 接口，包括保存点、流式查询与 SQL 日志。从 3.x 升级请先阅读[升级说明](/migration)。
 
 ## 应用代码默认使用实体
 
@@ -26,7 +26,7 @@ Python API 的准确拼写是 `order_by` 和大写 `As`，不是 `orderby` / `as
 ## 安装与连接
 
 ```sh
-python -m pip install 'cloudoll[mysql,postgres]==4.5.0'
+python -m pip install 'cloudoll[mysql,postgres]==4.5.1'
 ```
 
 Web 应用在 [database 配置](/config)中声明连接，由框架建立、关闭，通过 `request.app.db.别名` 获取。不要每个请求创建一个池，也不要在请求结束时关闭共享池。
@@ -56,7 +56,7 @@ SQLite 基于 `aiosqlite`，支持 ORM 查询、绑定参数、批量写入、�
 
 SQLite 连接池选项：`maxsize` 上限（默认 5，内存库固定为 1）；`foreign_keys` 默认 `true`，关掉后已有脏数据可继续写入；`journal_mode` 不设置时沿用 SQLite 自身默认（文件库为 `DELETE`），可取 `DELETE`、`TRUNCATE`、`PERSIST`、`MEMORY`、`WAL`、`OFF`，多个进程读写同一文件时建议 `WAL`，此时库里会附带 `-wal`、`-shm` 两个文件，别把它们提交进版本库；`timeout`（或只用于驱动等锁的 `sqlite_timeout`）为秒数。SQLite 的 URI 写法（`file:...?mode=ro` 之类）只有在用字段配置 `type: sqlite` + `db` 并加 `uri: true` 时才可用；`sqlite://` URL 里 `?` 之后的内容会被当成本页这些引擎选项，不会拼进路径。相对路径按进程启动目录解析，独立脚本换工作目录后会在别处新建同名文件，服务部署请用绝对路径。
 
-`await db.close()` 会等待仍在使用的连接归还后再关闭，不会忙等；超时则按 `close_timeout` 终止连接并抛出异常。即使忘记关闭引擎，进程退出也不会被它拖住：退出时未关闭的连接会被停下，`WAL` 日志仍在退出前合并回主文件，但这条路径不保证事务级清理，长期服务仍应显式关闭或用 Web 配置托管。
+`await db.close()` 会等待仍在使用的连接归还后再关闭，不会忙等；超时则按 `close_timeout` 终止连接并抛出异常。即使忘记关闭引擎，进程退出也不会被它拖住（4.5.1 起）：退出时未关闭的连接会被停下，`WAL` 日志仍在退出前合并回主文件，但这条路径不保证事务级清理，长期服务仍应显式关闭或用 Web 配置托管。
 
 ## 模型定义
 
@@ -184,7 +184,7 @@ rows = await query.clone().order_by(User.id.asc()).limit(20).all()
 sql, params = query.test()
 ```
 
-只写 `.offset(n)` 不给 `.limit()` 表示“从第 n 行起取到结束”，三种驱动都返回完整的剩余行，不需要为 SQLite 另外传一个很大的 limit。
+只写 `.offset(n)` 不给 `.limit()` 表示“从第 n 行起取到结束”，三种驱动都返回完整的剩余行（4.5.1 起），不需要为 SQLite 另外传一个很大的 limit。
 
 ## JOIN 与聚合
 
@@ -557,7 +557,7 @@ cloudoll gen -db sqlite_db -c model -t users -p generated_models.py -env local
 
 复合主键、无法表达的类型/默认表达式会明确拒绝。callable ORM 默认值不支持生成 DDL。PostgreSQL 不模拟 MySQL UNSIGNED/ON UPDATE，serial 转 identity 不保留原序列状态。PostgreSQL 建表批次可事务回滚，MySQL 与 SQLite 的 DDL 隐式提交，运行错误可能留下部分已创建表。
 
-SQLite 的表信息有限，反向生成按能读到的内容处理：建表语句里的默认值会还原成模型默认值（SQLite 建表不接受占位符，所以 DDL 里写的是字面量），带引号的字符串和 `CURRENT_TIMESTAMP` 认得，`datetime('now')`、`1+1` 这类表达式默认值直接拒绝，不会悄悄变成一个没有默认值的列；生成列在表信息里列不出来，遇到会要求你手写模型。自增只认建表语句里写明的 `AUTOINCREMENT`，普通 `INTEGER PRIMARY KEY` 仍按普通主键生成。反向出来的模型再建表时，`AUTOINCREMENT` 必须落在 `INTEGER PRIMARY KEY` 上，否则报错。
+SQLite 的表信息有限，反向生成按能读到的内容处理（还原规则自 4.5.1 起；4.5.0 会把读到的默认值二次加引号并忽略自增计数器）：建表语句里的默认值会还原成模型默认值（SQLite 建表不接受占位符，所以 DDL 里写的是字面量），带引号的字符串和 `CURRENT_TIMESTAMP` 认得，`datetime('now')`、`1+1` 这类表达式默认值直接拒绝，不会悄悄变成一个没有默认值的列；生成列在表信息里列不出来，遇到会要求你手写模型。自增只认建表语句里写明的 `AUTOINCREMENT`，普通 `INTEGER PRIMARY KEY` 仍按普通主键生成。反向出来的模型再建表时，`AUTOINCREMENT` 必须落在 `INTEGER PRIMARY KEY` 上，否则报错。
 
 ## 类型支持
 

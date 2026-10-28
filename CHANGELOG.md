@@ -1,17 +1,51 @@
 # Changelog
 
+## 4.5.1
+
+Defect-fix release for 4.5.0; backward compatible. Python 3.9+ remains supported.
+
+### HTTPS
+
+- `cloudoll start` now serves HTTPS from the same settings as production
+  `Application.run()`. Before this release only `Application.run()` read them, so a
+  TLS-only site answered plain HTTP on the port you had configured for HTTPS and the
+  ready message printed `http://`.
+- Missing, unreadable, half-configured (certificate without its key, or the reverse) and
+  mismatched certificates now fail before the port is bound and name the option and the
+  resolved path, instead of surfacing the driver's bare error or staying on plain HTTP.
+- Relative certificate paths follow the application root, like templates and static
+  files, so starting from another directory no longer points at a different file.
+  `ssl_context` and certificate paths still cannot be combined.
+
+### SQLite
+
+- Paging with `offset()` and no `limit()` returns the remaining rows. It previously
+  failed with `datatype mismatch` because the "no cap" wording used for MySQL is not
+  valid SQLite, which forced a fake huge `limit()`.
+- `close()` waits for connections another task borrowed without spinning, and a
+  terminated pool no longer reports those connections as still in use in `pool_stats()`.
+- An engine that was never closed no longer blocks the process from exiting, and a `WAL`
+  journal is checkpointed into the database file on the way out.
+- `cloudoll gen` reads a SQLite table back correctly: text and numeric defaults keep
+  their value instead of being re-quoted, `CURRENT_TIMESTAMP` stays a function, and an
+  `AUTOINCREMENT` counter is recognised and emitted as `INTEGER PRIMARY KEY`. Expression
+  defaults such as `datetime('now')` and generated columns raise a clear "write this
+  model by hand" error rather than quietly becoming a plain column with no default.
+  Generated SQLite `CREATE TABLE` statements no longer bind parameters, which SQLite
+  rejects in DDL.
+
+### Packaging
+
+- `cryptography` is now a declared base dependency. `cloudoll.utils.password` imported it
+  directly but only had it installed when the secure session extra happened to pull it
+  in, so a plain `pip install cloudoll` could fail on that one import.
+
 ## 4.5.0
 
 ### HTTPS
 
 - `server.ssl_certfile` plus `server.ssl_keyfile`, or a Python `server.ssl_context`,
-  serve HTTPS. The development reloader (`cloudoll start`) uses the same settings as
-  production `Application.run()`, so a TLS-only site no longer behaves differently
-  locally, and the ready message shows the real `https://` address.
-- Relative certificate paths are resolved from the application root, like templates and
-  static files. Missing, unreadable, half-configured or mismatched certificates fail at
-  startup and name the option and path involved instead of falling back to plain HTTP.
-  `ssl_context` and certificate paths cannot be combined.
+  serve HTTPS from `Application.run()`.
 
 ### SQLite
 
@@ -25,15 +59,8 @@
 - `transaction(mode=...)` accepts `DEFERRED`, `IMMEDIATE` and `EXCLUSIVE`; take the write
   lock with `IMMEDIATE` when several writers compete. SQLite has no row locks, so
   `for_update()` raises instead of being silently dropped.
-- Paging with only `offset()` returns the remaining rows on every driver; you no longer
-  need a large fake `limit()`, and a MySQL-sized limit is never sent to SQLite.
-- An engine nobody closed no longer hangs interpreter exit, and a `WAL` journal is still
-  merged back into the database file on the way out. `close()` waits for borrowed
-  connections to come back without spinning the CPU.
-- Reverse engineering a SQLite table restores literal defaults, `CURRENT_TIMESTAMP` and
-  an explicit `AUTOINCREMENT` counter. Expression defaults such as `datetime('now')`, and
-  generated columns, are refused with a clear message rather than turning into plain
-  columns. Generated `AUTOINCREMENT` requires `INTEGER PRIMARY KEY`.
+- SQLite accepts `conflict_fields` on `upsert` because its conflict target is the unique
+  index; MySQL still rejects the option because any unique key may trigger its update.
 
 简体中文见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
 
