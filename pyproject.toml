@@ -33,6 +33,10 @@ dependencies = [
   "concurrent_log_handler",
   "portalocker",
   "aiosqlite>=0.20,<1",
+  # cloudoll.utils.password uses Fernet directly; aiohttp-session[secure] happened to
+  # provide it transitively, which left the import unresolved for installs of the base
+  # package.
+  "cryptography>=41.0",
 ]
 
 [project.optional-dependencies]
